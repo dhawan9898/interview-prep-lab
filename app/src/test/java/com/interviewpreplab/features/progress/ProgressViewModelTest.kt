@@ -1,10 +1,8 @@
 package com.interviewpreplab.features.progress
 
-import androidx.lifecycle.SavedStateHandle
 import com.interviewpreplab.core.database.entities.TopicProgressEntity
 import com.interviewpreplab.core.database.repository.ProgressRepository
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
