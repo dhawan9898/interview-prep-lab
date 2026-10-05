@@ -219,7 +219,7 @@ fun TopicDetailScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .background(MaterialTheme.colorScheme.background)
     ) {
         TopAppBar(
             title = { Text(topic.title) },
@@ -235,82 +235,159 @@ fun TopicDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Visualization
-            Box(
+            // Frame Counter
+            Text(
+                text = "Frame ${state.frameIdx + 1} of ${state.frames.size}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            // Visualization Container
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
+                    .height(280.dp)
+                    .padding(8.dp)
             ) {
-                when (topic.id) {
-                    "bubble-sort" -> {
-                        val scene = state.currentFrame?.scene as? BarsScene
-                        if (scene != null) {
-                            BarsRenderer(scene, 9)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (state.currentFrame != null) {
+                        when (topic.id) {
+                            "bubble-sort", "selection-sort", "insertion-sort", "quick-sort" -> {
+                                val scene = state.currentFrame?.scene as? BarsScene
+                                if (scene != null) {
+                                    BarsRenderer(scene, 9, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "merge-sort", "heap-sort", "shell-sort", "counting-sort" -> {
+                                val scene = state.currentFrame?.scene as? BarsScene
+                                if (scene != null) {
+                                    BarsRenderer(scene, 15, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "binary-search", "jump-search", "linear-search" -> {
+                                val scene = state.currentFrame?.scene as? BarsScene
+                                if (scene != null) {
+                                    BarsRenderer(scene, 20, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "stack", "queue", "circular-queue", "heap" -> {
+                                val scene = state.currentFrame?.scene as? SlotsScene
+                                if (scene != null) {
+                                    SlotsRenderer(scene, direction = "v")
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "linked-list" -> {
+                                val scene = state.currentFrame?.scene as? ListScene
+                                if (scene != null) {
+                                    ListRenderer(scene)
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "bst" -> {
+                                val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.TreeScene
+                                if (scene != null) {
+                                    TreeRenderer(scene)
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "heap" -> {
+                                val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.TreeScene
+                                if (scene != null) {
+                                    TreeRenderer(scene)
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            "graph" -> {
+                                val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.GraphScene
+                                if (scene != null) {
+                                    GraphRenderer(scene)
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            else -> {
+                                Text("Visualization not available", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
-                    }
-                    "stack" -> {
-                        val scene = state.currentFrame?.scene as? SlotsScene
-                        if (scene != null) {
-                            SlotsRenderer(scene, direction = "v")
-                        }
-                    }
-                    "linked-list" -> {
-                        val scene = state.currentFrame?.scene as? ListScene
-                        if (scene != null) {
-                            ListRenderer(scene)
-                        }
-                    }
-                    "bst" -> {
-                        val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.TreeScene
-                        if (scene != null) {
-                            TreeRenderer(scene)
-                        }
-                    }
-                    "heap" -> {
-                        val scene = state.currentFrame?.scene as? SlotsScene
-                        if (scene != null) {
-                            SlotsRenderer(scene, direction = "v")
-                        }
-                    }
-                    "graph" -> {
-                        val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.GraphScene
-                        if (scene != null) {
-                            GraphRenderer(scene)
-                        }
+                    } else {
+                        Text("No frames loaded", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
 
-            // Narration
+            // Narration & Explanation (CLEAR AND PROMINENT)
             state.currentFrame?.let { frame ->
-                Column(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
                 ) {
-                    Text(
-                        "Phase: ${frame.phase}",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Text(
-                        frame.narr,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-
-                    // Stats
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(top = 8.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        frame.stats.forEach { (key, value) ->
-                            Text(
-                                "$key: $value",
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                        // Phase label
+                        Text(
+                            text = "Phase: ${frame.phase.uppercase()}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        // Main explanation (LARGE, READABLE)
+                        Text(
+                            text = frame.narr,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Statistics
+                        if (frame.stats.isNotEmpty()) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp)
+                            ) {
+                                frame.stats.forEach { (key, value) ->
+                                    Column {
+                                        Text(
+                                            text = key.replace("_", " ").uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = value.toString(),
+                                            style = MaterialTheme.typography.headlineSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
