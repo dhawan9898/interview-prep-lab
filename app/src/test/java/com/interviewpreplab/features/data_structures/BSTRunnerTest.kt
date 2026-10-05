@@ -11,8 +11,8 @@ class BSTRunnerTest {
         val state = BSTRunner.BSTState(null, 0)
         val (frames, newState) = BSTRunner.insert(state, 50)
 
-        assertNotNull(newState.root)
-        assertEquals(50, newState.root.value)
+        val root = assertNotNull(newState.root)
+        assertEquals(50, root.value)
         assertEquals(1, newState.size)
     }
 

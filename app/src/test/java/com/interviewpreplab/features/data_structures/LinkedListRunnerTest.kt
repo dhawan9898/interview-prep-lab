@@ -14,8 +14,8 @@ class LinkedListRunnerTest {
 
         assertTrue(frames.isNotEmpty())
         assertEquals(1, newState.size)
-        assertNotNull(newState.head)
-        assertEquals(42, newState.head.value)
+        val head = assertNotNull(newState.head)
+        assertEquals(42, head.value)
     }
 
     @Test
