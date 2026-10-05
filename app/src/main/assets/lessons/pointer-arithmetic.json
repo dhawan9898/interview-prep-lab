@@ -89,5 +89,27 @@
       "label": "Reference: Pointer arithmetic in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/pointer-arithmetics-in-c-with-examples/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Sum an array by walking a pointer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse a string in place with two pointers",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute the distance between two pointers into one array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement memmove handling overlapping regions",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Index a 2D array using only pointer arithmetic",
+      "difficulty": "Medium"
+    }
   ]
 }

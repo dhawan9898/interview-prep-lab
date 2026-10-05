@@ -80,6 +80,30 @@
           "code": "gcc -g -O1 -fsanitize=undefined,address prog.c"
         }
       ]
+    },
+    {
+      "title": "Why UB can help performance",
+      "summary": "The compiler-side argument.",
+      "sections": [
+        {
+          "body": "Because the compiler may assume UB never happens it can skip bounds and overflow checks, keep values in registers wider than their declared type, and reorder or vectorize loops. This is why signed overflow is undefined while unsigned wraps: the freedom is a deliberate trade for speed."
+        }
+      ]
+    },
+    {
+      "title": "Related traps",
+      "summary": "Other places UB hides.",
+      "sections": [
+        {
+          "bullets": [
+            "Passing NULL to printf's `%s`.",
+            "Calling realloc with a size of 0 (implementation-defined or UB depending on version).",
+            "Using a pointer after realloc moved the block.",
+            "Comparing or subtracting pointers to different arrays.",
+            "In C++: `delete this`, deleting through a base pointer without a virtual destructor."
+          ]
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -100,6 +124,24 @@
     {
       "label": "CERT C Coding Standard",
       "url": "https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Identify the undefined behavior in eight short snippets",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write overflow-safe add and multiply checks",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Fix a strict-aliasing violation with memcpy",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Show an optimizer removing a check that relies on signed overflow",
+      "difficulty": "Hard"
     }
   ]
 }

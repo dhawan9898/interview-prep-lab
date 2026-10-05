@@ -97,5 +97,23 @@
       "label": "RFC 7323: TCP Extensions for High Performance",
       "url": "https://www.rfc-editor.org/rfc/rfc7323"
     }
+  ],
+  "practice": [
+    {
+      "title": "Label seq and ack numbers in a captured handshake",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Watch connection states with ss during a connect",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain SYN floods and SYN cookies",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Describe a simultaneous open",
+      "difficulty": "Hard"
+    }
   ]
 }

@@ -92,5 +92,23 @@
       "label": "RFC 1337: TIME-WAIT Assassination Hazards in TCP",
       "url": "https://www.rfc-editor.org/rfc/rfc1337"
     }
+  ],
+  "practice": [
+    {
+      "title": "Draw the state transitions on both sides of a close",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Capture a RST close and a FIN close and compare",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why TIME-WAIT lasts 2 x MSL",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Diagnose thousands of sockets stuck in CLOSE-WAIT",
+      "difficulty": "Medium"
+    }
   ]
 }

@@ -93,5 +93,31 @@
       "label": "Reference: Singly linked list tutorial (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Reverse a linked list",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the middle node",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Merge two sorted lists",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Detect a cycle with Floyd fast/slow pointers",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Remove the n-th node from the end",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reverse nodes in groups of k",
+      "difficulty": "Hard"
+    }
   ]
 }

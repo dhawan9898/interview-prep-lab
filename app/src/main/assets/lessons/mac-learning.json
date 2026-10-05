@@ -88,5 +88,23 @@
       "label": "Reference: Network switch (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Network_switch"
     }
+  ],
+  "practice": [
+    {
+      "title": "Trace the MAC table after four frames",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain unknown-unicast flooding",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Diagnose MAC flapping",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Simulate MAC flooding and apply port security",
+      "difficulty": "Medium"
+    }
   ]
 }

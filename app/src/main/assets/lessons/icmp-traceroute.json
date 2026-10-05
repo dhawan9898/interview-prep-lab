@@ -110,5 +110,23 @@
       "label": "Reference: Traceroute (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Traceroute"
     }
+  ],
+  "practice": [
+    {
+      "title": "Interpret a traceroute that contains asterisks",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the path MTU with ping and the DF bit",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why hops differ between runs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a toy traceroute with raw sockets",
+      "difficulty": "Hard"
+    }
   ]
 }

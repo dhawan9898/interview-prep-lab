@@ -83,6 +83,15 @@
           "body": "Hash tables give O(1) average lookup but no ordering. BSTs give O(log n) with range queries, sorted iteration, and nearest-key lookup."
         }
       ]
+    },
+    {
+      "title": "Handling duplicates",
+      "summary": "Choose a policy.",
+      "sections": [
+        {
+          "body": "A strict BST rejects duplicates. Practical options: store a count in each node, always send equal keys to the right (or left) subtree consistently, or keep a list of values per key. Whatever you choose, make search, insert, and delete agree on it."
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -99,6 +108,36 @@
     {
       "label": "Reference: Binary search tree (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/binary-search-tree-data-structure/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Validate a binary search tree",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Convert a sorted array to a balanced BST",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "k-th smallest element in a BST",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Lowest common ancestor of two nodes",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Delete a node (all three cases)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Recover a BST with two swapped nodes",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Merge two BSTs",
+      "difficulty": "Hard"
     }
   ]
 }

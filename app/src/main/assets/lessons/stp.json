@@ -96,5 +96,23 @@
       "label": "Reference: Spanning Tree Protocol (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Spanning_Tree_Protocol"
     }
+  ],
+  "practice": [
+    {
+      "title": "Compute path costs for a topology",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Configure PortFast and BPDU Guard",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Elect the root and port roles for a four-switch ring",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain the RSTP proposal/agreement handshake",
+      "difficulty": "Medium"
+    }
   ]
 }

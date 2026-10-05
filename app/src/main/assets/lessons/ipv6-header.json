@@ -110,5 +110,23 @@
       "label": "RFC 8201: Path MTU Discovery for IPv6",
       "url": "https://www.rfc-editor.org/rfc/rfc8201"
     }
+  ],
+  "practice": [
+    {
+      "title": "Compress and expand IPv6 addresses",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why routers cannot fragment IPv6",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Decode a 40-byte IPv6 header",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Order a set of extension headers correctly",
+      "difficulty": "Medium"
+    }
   ]
 }

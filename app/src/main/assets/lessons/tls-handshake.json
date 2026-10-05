@@ -98,5 +98,23 @@
       "label": "RFC 7301: TLS ALPN Extension",
       "url": "https://www.rfc-editor.org/rfc/rfc7301"
     }
+  ],
+  "practice": [
+    {
+      "title": "Explain forward secrecy",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Inspect a certificate chain with openssl s_client",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Identify TLS 1.3 handshake messages in a capture",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compare the security of 1-RTT and 0-RTT",
+      "difficulty": "Hard"
+    }
   ]
 }

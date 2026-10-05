@@ -104,5 +104,27 @@
       "label": "Reference: Pointers in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/c-pointers/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Swap two integers using pointers",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse an array in place with two pointers",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement strlen and strcpy using pointers",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Allocate a 2D array dynamically with int **",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Spot the wild and dangling pointers in five snippets",
+      "difficulty": "Medium"
+    }
   ]
 }

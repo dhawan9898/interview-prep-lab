@@ -73,6 +73,15 @@
           "body": "The 'heap' in priority queues is a tree-shaped data structure. The 'heap' here is the process memory region used for dynamic allocation. They are unrelated."
         }
       ]
+    },
+    {
+      "title": "Automatic memory management in other languages",
+      "summary": "Java and garbage collection.",
+      "sections": [
+        {
+          "body": "In Java, primitives and references live in stack frames while objects live on the heap; the garbage collector reclaims unreachable objects, so there is no free(). That removes dangling pointers and most leaks but adds GC pauses and less predictable timing than C's explicit control."
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -89,6 +98,24 @@
     {
       "label": "Reference: Stack vs Heap memory allocation (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/stack-vs-heap-memory-allocation/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Fix a function that returns the address of a local variable",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Trigger a stack overflow and find the maximum recursion depth",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Benchmark malloc against stack allocation",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a simple bump allocator",
+      "difficulty": "Hard"
     }
   ]
 }

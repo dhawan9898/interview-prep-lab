@@ -71,6 +71,20 @@
           ]
         }
       ]
+    },
+    {
+      "title": "Applications",
+      "summary": "Where it is used for real.",
+      "sections": [
+        {
+          "bullets": [
+            "Small or nearly sorted data.",
+            "Base case inside hybrid sorts such as Timsort and introsort.",
+            "Sub-step inside bucket sort for each bucket.",
+            "Online situations where items arrive one at a time."
+          ]
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -87,6 +101,24 @@
     {
       "label": "Reference: Insertion sort algorithm (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Sort a nearly sorted array and count shifts",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement binary insertion sort",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort a linked list with insertion sort",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Build a merge sort that switches to insertion sort for short runs",
+      "difficulty": "Hard"
     }
   ]
 }

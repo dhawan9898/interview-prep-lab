@@ -65,6 +65,21 @@
           "body": "Push onto an `in` stack; when `out` is empty, pop everything from `in` onto `out`. Each element moves at most once, so amortized O(1) per operation."
         }
       ]
+    },
+    {
+      "title": "Types of queues",
+      "summary": "Variants at a glance.",
+      "sections": [
+        {
+          "bullets": [
+            "Simple (linear) queue: FIFO with the dead-space problem.",
+            "Circular queue: wraps indices to reuse space.",
+            "Deque: insert and remove at both ends.",
+            "Priority queue: dequeue by priority, usually a heap.",
+            "Blocking and concurrent queues: thread-safe producer-consumer buffers."
+          ]
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -81,6 +96,36 @@
     {
       "label": "Reference: Queue data structure (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/queue-data-structure/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement a queue using two stacks",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a stack using queues",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Level-order traversal with BFS",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse the first K elements of a queue",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement K queues in one array",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sliding window maximum",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Shortest path in a maze",
+      "difficulty": "Hard"
     }
   ]
 }

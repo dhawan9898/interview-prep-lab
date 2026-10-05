@@ -79,6 +79,16 @@
           "body": "The same discipline applies to `fopen`/`fclose`, sockets, and mutexes. Leaking descriptors hits the per-process limit long before RAM runs out."
         }
       ]
+    },
+    {
+      "title": "Smart pointers in C++",
+      "summary": "Automatic cleanup with RAII.",
+      "sections": [
+        {
+          "body": "`std::unique_ptr` owns one object and frees it when it goes out of scope; `std::shared_ptr` reference-counts shared ownership; `std::weak_ptr` observes without owning and breaks reference cycles. Using them removes most manual delete calls and therefore most leaks.",
+          "code": "auto p = std::make_unique<Widget>();   // freed automatically"
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -99,6 +109,24 @@
     {
       "label": "Valgrind manual: Memcheck",
       "url": "https://valgrind.org/docs/manual/mc-manual.html"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Find a leak with valgrind --leak-check=full",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Fix leaks on every error path using a goto cleanup block",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Free a nested structure (list of strings) correctly",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a malloc/free tracking wrapper that reports leaks at exit",
+      "difficulty": "Hard"
     }
   ]
 }

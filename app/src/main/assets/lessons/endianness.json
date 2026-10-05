@@ -97,5 +97,23 @@
       "label": "Linux man-pages: byteorder(3)",
       "url": "https://man7.org/linux/man-pages/man3/byteorder.3.html"
     }
+  ],
+  "practice": [
+    {
+      "title": "Detect host endianness",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write a 32-bit byte swap without builtins",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Parse an Ethernet and IP header from a byte buffer portably",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Convert a file of 16-bit big-endian samples to host order",
+      "difficulty": "Medium"
+    }
   ]
 }

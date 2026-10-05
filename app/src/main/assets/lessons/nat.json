@@ -90,5 +90,23 @@
       "label": "RFC 5382: NAT Behavioral Requirements for TCP",
       "url": "https://www.rfc-editor.org/rfc/rfc5382"
     }
+  ],
+  "practice": [
+    {
+      "title": "Fill in the translation table for three hosts sharing one IP",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Configure port forwarding with iptables",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why active FTP breaks behind NAT",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compare cone and symmetric NAT for peer-to-peer",
+      "difficulty": "Hard"
+    }
   ]
 }

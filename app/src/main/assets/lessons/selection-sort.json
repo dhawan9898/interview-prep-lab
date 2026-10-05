@@ -64,6 +64,20 @@
           "body": "Cycle sort writes each element at most once to its final position, achieving the theoretical minimum number of writes, still O(n²) time."
         }
       ]
+    },
+    {
+      "title": "Applications",
+      "summary": "Where it is still reasonable.",
+      "sections": [
+        {
+          "bullets": [
+            "Teaching sorting fundamentals.",
+            "Very small arrays where overhead of better algorithms is not worth it.",
+            "Situations where memory writes are costly, because it does at most n-1 swaps.",
+            "Conceptual foundation of heap sort."
+          ]
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -80,6 +94,24 @@
     {
       "label": "Reference: Selection sort (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement and count the swaps",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the k-th smallest element using k passes",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Make selection sort stable",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort a linked list with selection sort",
+      "difficulty": "Medium"
     }
   ]
 }

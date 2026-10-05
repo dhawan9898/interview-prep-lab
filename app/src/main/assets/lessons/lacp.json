@@ -103,5 +103,23 @@
       "label": "Reference: Link aggregation (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Link_aggregation"
     }
+  ],
+  "practice": [
+    {
+      "title": "Which active/passive combinations form a bundle?",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why one flow cannot exceed one member link",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Configure EtherChannel and verify it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Choose a hashing policy for a given traffic mix",
+      "difficulty": "Hard"
+    }
   ]
 }

@@ -77,6 +77,15 @@
           "body": "Color start vertex 0 and alternate colors across edges; a conflict means an odd cycle, so the graph is not bipartite."
         }
       ]
+    },
+    {
+      "title": "Tree traversals are special-case graph searches",
+      "summary": "DFS orders and level order.",
+      "sections": [
+        {
+          "body": "On a binary tree, DFS gives inorder (left, node, right), preorder (node, left, right), and postorder (left, right, node); BFS gives level order. A tree is a connected acyclic graph, so no visited set is needed, but general graphs need one to avoid infinite loops."
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -97,6 +106,28 @@
     {
       "label": "Reference: BFS vs DFS (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/bfs-vs-dfs-binary-tree/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "BFS shortest path in an unweighted graph",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Number of islands",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Detect a cycle in a directed graph",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Topological sort",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Word ladder",
+      "difficulty": "Hard"
     }
   ]
 }

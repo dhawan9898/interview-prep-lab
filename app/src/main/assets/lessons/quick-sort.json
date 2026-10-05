@@ -82,6 +82,30 @@
           ]
         }
       ]
+    },
+    {
+      "title": "Naive partition",
+      "summary": "The simplest, memory-hungry scheme.",
+      "sections": [
+        {
+          "body": "Copy elements smaller than the pivot into a temporary array, then the pivot, then larger ones, and copy back. It is stable and easy to reason about but uses O(n) extra space per partition, which defeats quick sort's in-place advantage; Lomuto and Hoare avoid it."
+        }
+      ]
+    },
+    {
+      "title": "Where quick sort is used",
+      "summary": "Applications.",
+      "sections": [
+        {
+          "bullets": [
+            "C and C++ standard-library sorts (typically introsort variants).",
+            "Database record ordering and in-memory sorting.",
+            "K-th element selection through quickselect.",
+            "Preprocessing for binary search.",
+            "Geometry: convex hull algorithms sort points first."
+          ]
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -98,6 +122,24 @@
     {
       "label": "Reference: Quick sort algorithm (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement Lomuto partition",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Sort colors with a three-way (Dutch flag) partition",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the k-th smallest element with quickselect",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Bound the stack to O(log n) by recursing into the smaller side first",
+      "difficulty": "Hard"
     }
   ]
 }

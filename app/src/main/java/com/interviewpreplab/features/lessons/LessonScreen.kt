@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -206,6 +207,15 @@ fun LessonScreen(
                     }
                 }
             }
+            val practice = lesson?.practice.orEmpty()
+            if (practice.isNotEmpty()) {
+                item {
+                    SectionCard(accent) {
+                        Text("Practice problems", style = MaterialTheme.typography.titleMedium, color = accent)
+                        practice.forEach { PracticeRow(it) }
+                    }
+                }
+            }
             val refs = lesson?.references.orEmpty()
             if (refs.isNotEmpty()) {
                 item {
@@ -295,5 +305,24 @@ private fun SubtopicCard(sub: Subtopic, accent: androidx.compose.ui.graphics.Col
                 sub.sections.orEmpty().forEach { SectionBlock(it, accent) }
             }
         }
+    }
+}
+
+@Composable
+private fun PracticeRow(item: PracticeItem) {
+    val color = when (item.difficulty) {
+        "Easy" -> MaterialTheme.colorScheme.secondary
+        "Hard" -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.tertiary
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            item.difficulty.orEmpty().uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = MonospaceFamily,
+            color = color,
+            modifier = Modifier.width(56.dp)
+        )
+        Text(item.title.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
     }
 }

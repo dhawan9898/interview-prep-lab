@@ -93,5 +93,23 @@
       "label": "Reference: Structure member alignment, padding and data packing (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/structure-member-alignment-padding-and-data-packing/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Compute sizeof for five structs by hand, then verify",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reorder members to minimize struct size",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Print offsetof for every member",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Serialize a struct field by field instead of fwrite",
+      "difficulty": "Medium"
+    }
   ]
 }

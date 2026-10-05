@@ -86,5 +86,27 @@
       "label": "Reference: Function pointer in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/function-pointer-in-c/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Build a calculator using an array of function pointers",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Sort ints ascending and descending with qsort comparators",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Sort an array of structs by multiple keys",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a generic map(array, fn)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Build an event callback registry",
+      "difficulty": "Hard"
+    }
   ]
 }

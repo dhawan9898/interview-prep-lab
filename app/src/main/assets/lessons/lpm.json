@@ -73,5 +73,23 @@
       "label": "Reference: Longest prefix match (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Longest_prefix_match"
     }
+  ],
+  "practice": [
+    {
+      "title": "Choose the route for ten destinations in a six-entry table",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Build a binary trie for a routing table",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a longest-prefix lookup in code",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain a /24 hijack against a /16",
+      "difficulty": "Hard"
+    }
   ]
 }

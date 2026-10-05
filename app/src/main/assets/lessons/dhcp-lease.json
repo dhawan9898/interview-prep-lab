@@ -103,5 +103,23 @@
       "label": "RFC 8415: DHCP for IPv6",
       "url": "https://www.rfc-editor.org/rfc/rfc8415"
     }
+  ],
+  "practice": [
+    {
+      "title": "Order the DORA messages and name the UDP ports",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute T1 and T2 for a 24-hour lease",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Configure a relay and explain giaddr",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Defend against a rogue DHCP server with snooping",
+      "difficulty": "Medium"
+    }
   ]
 }

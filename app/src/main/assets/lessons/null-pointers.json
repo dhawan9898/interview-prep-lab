@@ -87,5 +87,23 @@
       "label": "Reference: NULL pointer in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/null-pointer-in-c/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Write a strlen that safely handles NULL",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Wrap malloc in a checked version that reports failure",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the NULL dereference in a linked-list delete routine",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Add NULL validation and error codes to a small API",
+      "difficulty": "Medium"
+    }
   ]
 }

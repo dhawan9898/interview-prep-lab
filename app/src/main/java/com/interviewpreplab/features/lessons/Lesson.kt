@@ -9,7 +9,8 @@ data class Lesson(
     val sections: List<LessonSection>? = null,
     val subtopics: List<Subtopic>? = null,
     val takeaways: List<String>? = null,
-    val references: List<Reference>? = null
+    val references: List<Reference>? = null,
+    val practice: List<PracticeItem>? = null
 )
 
 data class LessonSection(
@@ -26,6 +27,8 @@ data class Subtopic(
 )
 
 data class Reference(val label: String? = null, val url: String? = null)
+
+data class PracticeItem(val title: String? = null, val difficulty: String? = null)
 
 object LessonLoader {
     private val gson = Gson()

@@ -94,5 +94,27 @@
       "label": "Reference: Heap data structure (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/heap-data-structure/"
     }
+  ],
+  "practice": [
+    {
+      "title": "Check whether an array is a min-heap",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement heap sort in place",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the k largest elements",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Merge k sorted lists",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Median of a data stream",
+      "difficulty": "Hard"
+    }
   ]
 }

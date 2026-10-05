@@ -94,5 +94,23 @@
       "label": "CWE-416: Use After Free",
       "url": "https://cwe.mitre.org/data/definitions/416.html"
     }
+  ],
+  "practice": [
+    {
+      "title": "Fix a function that returns a dangling pointer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reproduce a double free and read the error",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the use-after-free in a linked-list deletion loop",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Use ASan to read the allocation, free, and use stacks",
+      "difficulty": "Medium"
+    }
   ]
 }

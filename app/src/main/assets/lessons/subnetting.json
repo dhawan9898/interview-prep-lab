@@ -104,5 +104,23 @@
       "label": "Reference: Subnetwork (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Subnet"
     }
+  ],
+  "practice": [
+    {
+      "title": "Network, broadcast, and host range for 172.16.37.200/21",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Split 192.168.10.0/24 into four subnets",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "VLSM plan for 100, 50, 20, and 2 hosts",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Summarize four contiguous /24s into one prefix",
+      "difficulty": "Medium"
+    }
   ]
 }

@@ -104,5 +104,23 @@
       "label": "Linux man-pages: elf(5)",
       "url": "https://man7.org/linux/man-pages/man5/elf.5.html"
     }
+  ],
+  "practice": [
+    {
+      "title": "Print the addresses of a global, static, local, and heap object and order them",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Use the size command to see how initialized vs uninitialized globals change data and bss",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Show stack growth direction with a recursive function",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why writing through a string literal pointer crashes",
+      "difficulty": "Medium"
+    }
   ]
 }

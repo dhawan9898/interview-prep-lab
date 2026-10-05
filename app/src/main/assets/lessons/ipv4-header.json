@@ -95,5 +95,23 @@
       "label": "RFC 1191: Path MTU Discovery",
       "url": "https://www.rfc-editor.org/rfc/rfc1191"
     }
+  ],
+  "practice": [
+    {
+      "title": "Decode an IPv4 header from hex",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why a TTL=1 packet dies at the first router",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute a header checksum by hand",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Fragment a 4000-byte payload for MTU 1500 and list the offsets",
+      "difficulty": "Medium"
+    }
   ]
 }

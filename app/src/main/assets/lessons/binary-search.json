@@ -74,6 +74,25 @@
           ]
         }
       ]
+    },
+    {
+      "title": "Recursive version",
+      "summary": "Clear but costs stack.",
+      "sections": [
+        {
+          "body": "The recursive form searches (lo, hi) by calling itself on one half. It has the same O(log n) time but uses O(log n) stack frames; the iterative loop uses O(1) space and is the better default.",
+          "code": "int bs(const int a[], int lo, int hi, int x) {\n  if (lo > hi) return -1;\n  int mid = lo + (hi - lo) / 2;\n  if (a[mid] == x) return mid;\n  return a[mid] < x ? bs(a, mid + 1, hi, x) : bs(a, lo, mid - 1, x);\n}"
+        }
+      ]
+    },
+    {
+      "title": "Unbounded (exponential) search",
+      "summary": "When the size is unknown.",
+      "sections": [
+        {
+          "body": "Double an index 1, 2, 4, 8, ... until the value there reaches the target or the end, then binary search the last interval. Costs O(log p) where p is the target's position, useful for infinite streams and very large sorted sources."
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -90,6 +109,28 @@
     {
       "label": "Reference: Binary search (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/binary-search/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Search a sorted array iteratively",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute integer square root with binary search",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find first and last position of a target",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Search in a rotated sorted array",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Minimum ship capacity to deliver within D days",
+      "difficulty": "Hard"
     }
   ]
 }

@@ -92,5 +92,23 @@
       "label": "Reference: Ethernet frame (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Ethernet_frame"
     }
+  ],
+  "practice": [
+    {
+      "title": "Parse a hex dump of a frame into its fields",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute the padding needed for a 20-byte payload",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Identify protocols from EtherType values",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Verify an FCS with CRC-32",
+      "difficulty": "Medium"
+    }
   ]
 }

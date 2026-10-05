@@ -98,5 +98,23 @@
       "label": "Reference: Ethernet frame (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Ethernet_frame"
     }
+  ],
+  "practice": [
+    {
+      "title": "Capture an ARP exchange in Wireshark and label each field",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Show the ARP cache before and after pinging a neighbour",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Build a raw ARP request with scapy",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Detect ARP spoofing from duplicate MAC entries",
+      "difficulty": "Hard"
+    }
   ]
 }

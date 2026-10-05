@@ -66,6 +66,16 @@
           "body": "With one writer and one reader, the writer only updates `tail` and the reader only `head`, so a ring buffer needs no locks, just correct memory ordering."
         }
       ]
+    },
+    {
+      "title": "getFront and getRear",
+      "summary": "Peeking without removing.",
+      "sections": [
+        {
+          "body": "With front, size, and capacity: the front element is `a[front]`; the rear element is `a[(front + size - 1) % capacity]`. Return a sentinel or error when size is 0.",
+          "code": "int get_front(const Q *q) { return q->size ? q->a[q->front] : -1; }\nint get_rear(const Q *q)  { return q->size ? q->a[(q->front + q->size - 1) % q->cap] : -1; }"
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -82,6 +92,24 @@
     {
       "label": "Reference: Circular queue (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement with a size counter",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Moving average from a data stream",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement without a size counter using one spare slot",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design a circular deque",
+      "difficulty": "Medium"
     }
   ]
 }

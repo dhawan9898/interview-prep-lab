@@ -66,6 +66,16 @@
           "body": "Each adjacent swap removes exactly one inversion (a pair out of order). So the number of swaps equals the inversion count, which ranges from 0 (sorted) to n(n-1)/2 (reversed). A merge-sort variant counts inversions in O(n log n)."
         }
       ]
+    },
+    {
+      "title": "Recursive bubble sort",
+      "summary": "Same algorithm, recursion for the passes.",
+      "sections": [
+        {
+          "body": "One recursive call performs a single pass (moving the maximum to the end) and then recurses on the first n-1 elements, stopping when n is 1 or no swap occurred. Time stays O(n²) and the call stack adds O(n) space, so the iterative form is preferred.",
+          "code": "void bubble_rec(int a[], int n) {\n  if (n <= 1) return;\n  int swapped = 0;\n  for (int i = 0; i < n - 1; i++)\n    if (a[i] > a[i+1]) { swap(&a[i], &a[i+1]); swapped = 1; }\n  if (swapped) bubble_rec(a, n - 1);\n}"
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -81,6 +91,24 @@
     {
       "label": "Reference: Bubble sort algorithm (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/bubble-sort-algorithm/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement with an early-exit flag and count swaps",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Sort in descending order and sort strings",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement recursive bubble sort",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Count inversions with bubble sort and compare with merge sort",
+      "difficulty": "Medium"
     }
   ]
 }

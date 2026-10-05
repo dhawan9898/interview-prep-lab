@@ -35,6 +35,8 @@ class LessonAssetsTest {
             assertTrue(lesson.subtopics.orEmpty().size >= 2, "${topic.id}: needs at least 2 subtopics")
             assertTrue(lesson.takeaways.orEmpty().isNotEmpty(), "${topic.id}: takeaways missing")
             assertTrue(lesson.references.orEmpty().isNotEmpty(), "${topic.id}: references missing")
+            assertTrue(lesson.practice.orEmpty().size >= 3, "${topic.id}: needs at least 3 practice problems")
+            assertTrue(lesson.practice.orEmpty().all { it.difficulty in setOf("Easy", "Medium", "Hard") }, "${topic.id}: bad difficulty")
         }
     }
 

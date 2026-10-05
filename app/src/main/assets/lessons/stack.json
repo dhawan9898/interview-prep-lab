@@ -69,6 +69,15 @@
           "body": "Keep a stack of indices with decreasing values. When a larger value arrives, pop and resolve each smaller one. Each element is pushed and popped once, so total O(n)."
         }
       ]
+    },
+    {
+      "title": "Deque-based implementation",
+      "summary": "Using a double-ended queue as a stack.",
+      "sections": [
+        {
+          "body": "A deque (C++ `std::deque`, Python `collections.deque`) supports O(1) push and pop at one end and grows without reallocating the whole buffer, so it makes a convenient stack with no capacity limit. Array stacks are tighter in memory; linked stacks avoid resizing but add per-node overhead."
+        }
+      ]
     }
   ],
   "takeaways": [
@@ -85,6 +94,40 @@
     {
       "label": "Reference: Stack data structure (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/stack-data-structure/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Check balanced parentheses",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Convert infix to postfix",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse a string using a stack",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Next greater element",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Stock span problem",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Tower of Hanoi",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Largest rectangle in a histogram",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Detect redundant brackets",
+      "difficulty": "Hard"
     }
   ]
 }

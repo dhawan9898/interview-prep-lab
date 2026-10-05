@@ -105,5 +105,23 @@
       "label": "Reference: IEEE 802.1Q (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/IEEE_802.1Q"
     }
+  ],
+  "practice": [
+    {
+      "title": "Configure two VLANs with an access port and a trunk",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Decode an 802.1Q tag from hex",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design router-on-a-stick for three VLANs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain double-tagging VLAN hopping",
+      "difficulty": "Hard"
+    }
   ]
 }

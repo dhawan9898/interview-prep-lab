@@ -97,5 +97,23 @@
       "label": "CWE-121: Stack-based Buffer Overflow",
       "url": "https://cwe.mitre.org/data/definitions/121.html"
     }
+  ],
+  "practice": [
+    {
+      "title": "Spot the overflow in a strcpy/gets snippet and fix it with snprintf",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compile with and without -fstack-protector and compare behaviour",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Use AddressSanitizer to locate a heap overflow",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a bounded string copy that always NUL-terminates",
+      "difficulty": "Medium"
+    }
   ]
 }

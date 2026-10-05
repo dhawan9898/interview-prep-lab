@@ -114,5 +114,23 @@
       "label": "Reference: Dijkstra routing animation background",
       "url": "https://en.wikipedia.org/wiki/Open_Shortest_Path_First"
     }
+  ],
+  "practice": [
+    {
+      "title": "Elect the DR and BDR from priorities and router IDs",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute the SPF tree and costs for a five-router graph",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Diagnose a neighbour stuck in ExStart",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design areas for three sites",
+      "difficulty": "Medium"
+    }
   ]
 }

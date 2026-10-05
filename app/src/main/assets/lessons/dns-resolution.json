@@ -103,5 +103,23 @@
       "label": "RFC 4033: DNS Security Introduction and Requirements",
       "url": "https://www.rfc-editor.org/rfc/rfc4033"
     }
+  ],
+  "practice": [
+    {
+      "title": "Use dig +trace and label each referral",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Predict cache behaviour from a set of TTLs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain CNAME chains and why a CNAME cannot sit at the zone apex",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find DNSSEC records in a response",
+      "difficulty": "Hard"
+    }
   ]
 }
