@@ -24,9 +24,6 @@
 # Attempt to set APP_HOME
 APP_HOME="$( cd "$(dirname "$0")" && pwd )"
 
-# Add default JVM options
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
-
 # Find JAVA_HOME
 if [ -z "$JAVA_HOME" ]; then
     JAVA_EXE=$(command -v java)
@@ -47,9 +44,11 @@ fi
 CLASSPATH="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
 
 # Execute Gradle
-exec "$JAVA_EXE" $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS \
-    "-Dorg.gradle.appname=$(basename "$0")" \
-    "-Dorg.gradle.wrapper.properties=$APP_HOME/gradle/wrapper/gradle-wrapper.properties" \
+exec "$JAVA_EXE" \
+    -Xmx64m \
+    -Xms64m \
+    -Dorg.gradle.appname=$(basename "$0") \
+    -Dorg.gradle.wrapper.properties="$APP_HOME/gradle/wrapper/gradle-wrapper.properties" \
     -classpath "$CLASSPATH" \
     org.gradle.wrapper.GradleWrapperMain \
     "$@"
