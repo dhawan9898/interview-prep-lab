@@ -40,9 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.background
 import com.interviewpreplab.core.model.BarsScene
 import com.interviewpreplab.core.model.Frame
 import com.interviewpreplab.core.model.ListScene
