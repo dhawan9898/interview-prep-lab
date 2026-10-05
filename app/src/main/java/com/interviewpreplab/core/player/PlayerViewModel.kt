@@ -3,11 +3,13 @@ package com.interviewpreplab.core.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.interviewpreplab.core.model.Frame
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 data class PlayerState(
     val frames: List<Frame> = emptyList(),
@@ -21,7 +23,8 @@ data class PlayerState(
  * Core playback engine. Owns state and animation timing.
  * Reused across all domains (sorts, trees, kernel, networking).
  */
-class PlayerViewModel : ViewModel() {
+@HiltViewModel
+class PlayerViewModel @Inject constructor() : ViewModel() {
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state
 
