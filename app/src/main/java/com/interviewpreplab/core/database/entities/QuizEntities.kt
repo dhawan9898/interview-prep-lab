@@ -1,8 +1,10 @@
 package com.interviewpreplab.core.database.entities
 
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
+import androidx.room.Relation
 
 enum class QuizType {
     MCQ,                    // Multiple choice question
@@ -56,6 +58,7 @@ data class QuizAttemptEntity(
 )
 
 data class QuizWithAttempts(
-    val quiz: QuizEntity,
+    @Embedded val quiz: QuizEntity,
+    @Relation(parentColumn = "quizId", entityColumn = "quizId")
     val attempts: List<QuizAttemptEntity> = emptyList()
 )
