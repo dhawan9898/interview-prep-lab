@@ -41,7 +41,11 @@ import com.interviewpreplab.core.ui.BarsRenderer
 import com.interviewpreplab.core.ui.ListRenderer
 import com.interviewpreplab.core.ui.PlayerControls
 import com.interviewpreplab.core.ui.SlotsRenderer
+import com.interviewpreplab.core.ui.TreeRenderer
+import com.interviewpreplab.features.data_structures.BSTRunner
+import com.interviewpreplab.features.data_structures.CircularQueueRunner
 import com.interviewpreplab.features.data_structures.LinkedListRunner
+import com.interviewpreplab.features.data_structures.QueueRunner
 import com.interviewpreplab.features.data_structures.StackRunner
 import com.interviewpreplab.features.sorts.BubbleSortRunner
 import com.interviewpreplab.ui.theme.InterviewPrepLabTheme
@@ -96,11 +100,15 @@ fun MainScreen(playerVM: PlayerViewModel) {
 @Composable
 fun TopicListScreen(onTopicSelected: (Topic) -> Unit) {
     val topics = listOf(
+        // Sorting
         Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
+
+        // Data Structures
         Topic("stack", "Stack", "Data Structures", "LIFO data structure"),
         Topic("queue", "Queue", "Data Structures", "FIFO data structure with dead space"),
         Topic("circular-queue", "Circular Queue", "Data Structures", "FIFO with modulo wraparound"),
         Topic("linked-list", "Singly Linked List", "Data Structures", "Dynamic list with pointers"),
+        Topic("bst", "Binary Search Tree", "Data Structures", "Ordered tree for efficient search"),
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -198,6 +206,12 @@ fun TopicDetailScreen(
                         val scene = state.currentFrame?.scene as? ListScene
                         if (scene != null) {
                             ListRenderer(scene)
+                        }
+                    }
+                    "bst" -> {
+                        val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.TreeScene
+                        if (scene != null) {
+                            TreeRenderer(scene)
                         }
                     }
                 }
@@ -319,6 +333,27 @@ private fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
 
             val (f3, s3) = LinkedListRunner.insertAtHead(state, 30)
             frames.addAll(f3)
+
+            frames
+        }
+        "bst" -> {
+            val frames = mutableListOf(BSTRunner.buildInitial())
+            var state = BSTRunner.BSTState(null, 0)
+
+            val (f1, s1) = BSTRunner.insert(state, 50)
+            frames.addAll(f1)
+            state = s1
+
+            val (f2, s2) = BSTRunner.insert(state, 30)
+            frames.addAll(f2)
+            state = s2
+
+            val (f3, s3) = BSTRunner.insert(state, 70)
+            frames.addAll(f3)
+            state = s3
+
+            val (f4, s4) = BSTRunner.search(state, 30)
+            frames.addAll(f4)
 
             frames
         }
