@@ -68,7 +68,7 @@ fun SlotsRenderer(
                         color = color,
                         topLeft = Offset(x, y),
                         size = Size(slotSize, slotSize),
-                        style = androidx.compose.ui.graphics.Stroke(width = 2f)
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
                     )
 
                     // Draw value
@@ -125,7 +125,7 @@ fun SlotsRenderer(
                         color = color,
                         topLeft = Offset(x, y),
                         size = Size(slotSize, slotSize),
-                        style = androidx.compose.ui.graphics.Stroke(width = 2f)
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
                     )
 
                     if (slot.value != null) {

@@ -217,10 +217,15 @@ private fun FlashcardSessionScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
+                    val difficultyLabel = when {
+                        card.difficulty <= 2 -> "easy"
+                        card.difficulty == 3 -> "medium"
+                        else -> "hard"
+                    }
                     Box(
                         modifier = Modifier
                             .background(
-                                color = when (card.difficulty?.lowercase()) {
+                                color = when (difficultyLabel) {
                                     "easy" -> Color(0xFF4CAF50).copy(alpha = 0.2f)
                                     "medium" -> Color(0xFFFFC107).copy(alpha = 0.2f)
                                     "hard" -> Color(0xFFF44336).copy(alpha = 0.2f)
@@ -231,10 +236,10 @@ private fun FlashcardSessionScreen(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = card.difficulty?.uppercase() ?: "N/A",
+                            text = difficultyLabel.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = when (card.difficulty?.lowercase()) {
+                            color = when (difficultyLabel) {
                                 "easy" -> Color(0xFF4CAF50)
                                 "medium" -> Color(0xFFFFC107)
                                 "hard" -> Color(0xFFF44336)

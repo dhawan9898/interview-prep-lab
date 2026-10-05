@@ -47,7 +47,7 @@ object QuizEngine {
             correctAnswer = entity.correctAnswer,
             difficulty = entity.difficulty,
             explanation = entity.explanation,
-            quizType = entity.quizType
+            quizType = entity.quizType.name
         )
     }
 

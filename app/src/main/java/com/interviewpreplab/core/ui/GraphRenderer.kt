@@ -119,7 +119,7 @@ fun GraphRenderer(
                     color = nodeColor,
                     radius = nodeRadius,
                     center = pos,
-                    style = androidx.compose.ui.graphics.Stroke(width = 2f)
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
                 )
 
                 // Draw label (node ID)

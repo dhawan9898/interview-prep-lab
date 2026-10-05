@@ -1,7 +1,7 @@
 package com.interviewpreplab.ui.theme
 
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkMode
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -64,7 +64,7 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun InterviewPrepLabTheme(
-    darkTheme: Boolean = isSystemInDarkMode(),
+    darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {

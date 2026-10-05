@@ -73,7 +73,7 @@ fun ListRenderer(
                     color = nodeColor,
                     topLeft = Offset(x, y),
                     size = Size(nodeWidth, nodeHeight),
-                    style = androidx.compose.ui.graphics.Stroke(width = 2f)
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
                 )
 
                 // Value text

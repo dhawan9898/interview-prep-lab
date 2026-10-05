@@ -10,12 +10,20 @@ import java.util.UUID
  * Generates frame-by-frame narration.
  */
 object LinkedListRunner {
+    /** Runner-side linked node; converted to scene [Node]s (next = id) for rendering. */
+    data class ListNode(
+        val id: String,
+        val value: Int,
+        val next: ListNode? = null,
+        val roles: Set<String> = emptySet()
+    )
+
     data class LinkedListState(
-        val head: Node? = null,
+        val head: ListNode? = null,
         val size: Int = 0
     )
 
-    private fun copyNode(node: Node?): Node? {
+    private fun copyNode(node: ListNode?): ListNode? {
         if (node == null) return null
         return node.copy(
             next = copyNode(node.next)
@@ -26,7 +34,7 @@ object LinkedListRunner {
         val frames = mutableListOf<Frame>()
 
         // Create new node
-        val newNode = Node(
+        val newNode = ListNode(
             id = UUID.randomUUID().toString().take(8),
             value = value,
             next = copyNode(state.head),
@@ -39,11 +47,7 @@ object LinkedListRunner {
             phase = "insert-create",
             stats = mapOf("size" to (state.size + 1).toString()),
             scene = ListScene(
-                nodes = if (state.head != null) {
-                    listOf(newNode) + nodeListToNodes(state.head)
-                } else {
-                    listOf(newNode)
-                },
+                nodes = nodeListToNodes(newNode),
                 head = 0
             )
         ))
@@ -54,11 +58,7 @@ object LinkedListRunner {
             phase = "insert-link",
             stats = mapOf("size" to (state.size + 1).toString()),
             scene = ListScene(
-                nodes = if (state.head != null) {
-                    listOf(newNode) + nodeListToNodes(state.head)
-                } else {
-                    listOf(newNode)
-                },
+                nodes = nodeListToNodes(newNode),
                 head = 0
             )
         ))
@@ -69,11 +69,7 @@ object LinkedListRunner {
             phase = "insert-done",
             stats = mapOf("size" to (state.size + 1).toString()),
             scene = ListScene(
-                nodes = if (state.head != null) {
-                    listOf(newNode) + nodeListToNodes(state.head)
-                } else {
-                    listOf(newNode)
-                },
+                nodes = nodeListToNodes(newNode),
                 head = 0,
                 pointers = mapOf("HEAD" to 0)
             )
@@ -137,11 +133,11 @@ object LinkedListRunner {
         )
     }
 
-    private fun nodeListToNodes(head: Node?): List<Node> {
+    private fun nodeListToNodes(head: ListNode?): List<Node> {
         val result = mutableListOf<Node>()
         var current = head
         while (current != null) {
-            result.add(current)
+            result.add(Node(id = current.id, value = current.value, next = current.next?.id, roles = current.roles))
             current = current.next
         }
         return result

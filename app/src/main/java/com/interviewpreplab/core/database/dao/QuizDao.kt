@@ -38,7 +38,7 @@ interface QuizDao {
     fun getQuizzesByTopic(topicId: String): Flow<List<QuizEntity>>
 
     @Query("SELECT * FROM quizzes WHERE difficulty = :difficulty ORDER BY RANDOM() LIMIT :limit")
-    fun getQuizzesByDifficulty(difficulty: Int, limit: Int = 10): Flow<List<QuizEntity>>
+    fun getQuizzesByDifficulty(difficulty: String, limit: Int = 10): Flow<List<QuizEntity>>
 
     @Query("SELECT * FROM quiz_attempts WHERE quizId = :quizId ORDER BY timestamp DESC")
     fun getAttempts(quizId: String): Flow<List<QuizAttemptEntity>>

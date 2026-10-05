@@ -50,7 +50,7 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.6.1")
     implementation("androidx.compose.ui:ui-graphics:1.6.1")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.1")
-    implementation("androidx.compose.material3:material3:1.1.2")
+    implementation("androidx.compose.material3:material3:1.2.1")
     implementation("androidx.compose.material:material-icons-extended:1.6.1")
     implementation("androidx.compose.foundation:foundation:1.6.1")
     implementation("androidx.compose.runtime:runtime:1.6.1")
@@ -94,6 +94,6 @@ dependencies {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     kotlinOptions {
-        freeCompilerArgs += "-Xopt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
     }
 }

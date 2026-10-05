@@ -134,7 +134,7 @@ fun TreeRenderer(
                     color = nodeColor,
                     topLeft = Offset(pos.x, pos.y),
                     size = androidx.compose.ui.geometry.Size(nodeWidth, nodeHeight),
-                    style = androidx.compose.ui.graphics.Stroke(width = 2f)
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
                 )
 
                 // Draw value

@@ -10,10 +10,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fire
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -195,7 +196,7 @@ private fun StreakCard(currentStreak: Int, longestStreak: Int) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Default.Fire,
+                    imageVector = Icons.Default.LocalFireDepartment,
                     contentDescription = "Streak",
                     tint = Color(0xFFFF6F00),
                     modifier = Modifier.padding(end = 8.dp)
@@ -370,7 +371,7 @@ private fun AccuracyCard(
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(
-                    progress = { (percentage / 100f).coerceIn(0f, 1f) },
+                    progress = { (percentage / 100.0).toFloat().coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxSize(),
                     color = when {
                         percentage >= 80 -> Color(0xFF4CAF50)
@@ -493,11 +494,4 @@ private fun TipItem(
             )
         }
     }
-}
-
-// Helper extension for Box modifier with size
-private fun Modifier.size(size: androidx.compose.ui.unit.Dp): Modifier {
-    return this.then(
-        androidx.compose.foundation.layout.size(size)
-    )
 }

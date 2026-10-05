@@ -27,12 +27,12 @@ data class QuizEntity(
     @PrimaryKey
     val quizId: String,
     val topicId: String,
-    val quizType: QuizType,
     val question: String,
     val options: String,                // JSON array ["A", "B", "C", "D"]
-    val correctAnswer: Int,
-    val difficulty: Int = 1,            // 1-5 scale
+    val correctAnswer: String,          // Text of the correct option
+    val difficulty: String = "easy",    // easy | medium | hard
     val explanation: String = "",
+    val quizType: QuizType = QuizType.MCQ,
     val dateCreated: Long = System.currentTimeMillis()
 )
 
@@ -51,7 +51,7 @@ data class QuizAttemptEntity(
     @PrimaryKey
     val attemptId: String,
     val quizId: String,
-    val userAnswer: Int,
+    val userAnswer: String,
     val isCorrect: Boolean,
     val timeSpent: Long = 0L,           // milliseconds
     val timestamp: Long = System.currentTimeMillis()

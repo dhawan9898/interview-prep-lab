@@ -18,7 +18,7 @@ object StackRunner {
 
     sealed class StackOp {
         data class Push(val value: Int) : StackOp()
-        data class Pop : StackOp()
+        object Pop : StackOp()
     }
 
     fun runPush(state: StackState, value: Int): Pair<List<Frame>, StackState> {
