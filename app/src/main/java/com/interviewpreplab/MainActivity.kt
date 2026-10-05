@@ -54,6 +54,9 @@ import com.interviewpreplab.core.ui.MemoryRenderer
 import com.interviewpreplab.core.ui.PlayerControls
 import com.interviewpreplab.core.ui.SlotsRenderer
 import com.interviewpreplab.core.ui.TreeRenderer
+import com.interviewpreplab.core.ui.PacketFlowRenderer
+import com.interviewpreplab.core.ui.PacketHeaderRenderer
+import com.interviewpreplab.core.ui.TopologyRenderer
 import com.interviewpreplab.features.c_programming.MemoryLayoutRunner
 import com.interviewpreplab.features.c_programming.PointersRunner
 import com.interviewpreplab.features.c_programming.StackVsHeapRunner
@@ -66,6 +69,26 @@ import com.interviewpreplab.features.c_programming.MemoryLeaksRunner
 import com.interviewpreplab.features.c_programming.StructPaddingRunner
 import com.interviewpreplab.features.c_programming.EndiannessRunner
 import com.interviewpreplab.features.c_programming.UndefinedBehaviorRunner
+import com.interviewpreplab.features.networking.ARPRunner
+import com.interviewpreplab.features.networking.TCPHandshakeRunner
+import com.interviewpreplab.features.networking.EthernetRunner
+import com.interviewpreplab.features.networking.IPv4HeaderRunner
+import com.interviewpreplab.features.networking.IPv6HeaderRunner
+import com.interviewpreplab.features.networking.SubnettingRunner
+import com.interviewpreplab.features.networking.LongestPrefixMatchRunner
+import com.interviewpreplab.features.networking.ICMPTracerouteRunner
+import com.interviewpreplab.features.networking.NATRunner
+import com.interviewpreplab.features.networking.OSPFRunner
+import com.interviewpreplab.features.networking.BGPRunner
+import com.interviewpreplab.features.networking.TCPTeardownRunner
+import com.interviewpreplab.features.networking.DNSResolutionRunner
+import com.interviewpreplab.features.networking.DHCPLeaseRunner
+import com.interviewpreplab.features.networking.TLSHandshakeRunner
+import com.interviewpreplab.features.networking.MACLearningRunner
+import com.interviewpreplab.features.networking.VLANRunner
+import com.interviewpreplab.features.networking.STPRunner
+import com.interviewpreplab.features.networking.LACPRunner
+import com.interviewpreplab.features.networking.SwitchDiagnosticsRunner
 import com.interviewpreplab.features.data_structures.BSTRunner
 import com.interviewpreplab.features.progress.ProgressScreen
 import com.interviewpreplab.features.data_structures.CircularQueueRunner
@@ -140,6 +163,27 @@ val topicList = listOf(
     Topic("bst", "Binary Search Tree", "Data Structures", "Ordered tree for efficient search"),
     Topic("heap", "Min Heap", "Data Structures", "Priority queue with heap property"),
     Topic("graph", "Graph (BFS/DFS)", "Data Structures", "Node and edge traversal"),
+
+    // Networking L2/L3
+    Topic("ethernet", "Ethernet Framing", "Networking", "MAC addresses, frame structure, FCS"),
+    Topic("arp", "ARP Protocol", "Networking", "IP-to-MAC address resolution"),
+    Topic("ipv4-header", "IPv4 Header", "Networking", "Addressing, TTL, fragmentation"),
+    Topic("ipv6-header", "IPv6 Header", "Networking", "128-bit addressing, simplified header"),
+    Topic("subnetting", "Subnetting & CIDR", "Networking", "Network division, prefix notation"),
+    Topic("lpm", "Longest-Prefix Match", "Networking", "Routing algorithm, path selection"),
+    Topic("icmp-traceroute", "ICMP & Traceroute", "Networking", "Diagnostics, TTL-based discovery"),
+    Topic("nat", "NAT", "Networking", "Private-to-public translation"),
+    Topic("ospf", "OSPF Routing", "Networking", "Link-state routing, SPF algorithm"),
+    Topic("bgp", "BGP Routing", "Networking", "Interdomain routing, AS paths"),
+    Topic("tcp-teardown", "TCP Teardown", "Networking", "FIN-ACK handshake, graceful close"),
+    Topic("dns-resolution", "DNS Resolution", "Networking", "Domain-to-IP lookup, hierarchy"),
+    Topic("dhcp-lease", "DHCP Lease", "Networking", "Dynamic IP assignment, lease management"),
+    Topic("tls-handshake", "TLS Handshake", "Networking", "Encryption setup, certificate exchange"),
+    Topic("mac-learning", "MAC Learning", "Networking", "Switch table building, flooding"),
+    Topic("vlan", "VLAN Trunking", "Networking", "Virtual networks, 802.1Q tagging"),
+    Topic("stp", "Spanning Tree", "Networking", "Loop prevention, redundancy"),
+    Topic("lacp", "Link Aggregation", "Networking", "Multi-link bundling, load balancing"),
+    Topic("switch-diag", "Switch Diagnostics", "Networking", "Troubleshooting, show commands"),
 )
 
 @Composable
@@ -367,6 +411,41 @@ fun TopicDetailScreen(
                                     Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
+
+                            // Networking Topics
+                            "ethernet", "arp", "ipv4-header", "ipv6-header", "dns-resolution",
+                            "dhcp-lease", "tcp-teardown" -> {
+                                val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.PacketHeaderScene
+                                if (scene != null) {
+                                    PacketHeaderRenderer(scene, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+
+                            "tcp-handshake", "icmp-traceroute", "nat", "ospf", "bgp" -> {
+                                val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.PacketFlowScene
+                                if (scene != null) {
+                                    PacketFlowRenderer(scene, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+
+                            "mac-learning", "vlan", "stp", "lacp", "switch-diag" -> {
+                                val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.TopologyScene
+                                if (scene != null) {
+                                    TopologyRenderer(scene, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+
+                            // Other topics that use simple text visualization
+                            "subnetting", "lpm", "tls-handshake" -> {
+                                Text("Protocol overview - see narration below", style = MaterialTheme.typography.bodySmall)
+                            }
+
                             else -> {
                                 Text("Visualization not available", style = MaterialTheme.typography.bodySmall)
                             }
@@ -564,6 +643,29 @@ private fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
             frames.addAll(GraphRunner.bfs(graph, "A"))
             frames
         }
+
+        // Networking Topics
+        "ethernet" -> EthernetRunner.run()
+        "arp" -> ARPRunner.run()
+        "ipv4-header" -> IPv4HeaderRunner.run()
+        "ipv6-header" -> IPv6HeaderRunner.run()
+        "subnetting" -> SubnettingRunner.run()
+        "lpm" -> LongestPrefixMatchRunner.run()
+        "icmp-traceroute" -> ICMPTracerouteRunner.run()
+        "nat" -> NATRunner.run()
+        "ospf" -> OSPFRunner.run()
+        "bgp" -> BGPRunner.run()
+        "tcp-teardown" -> TCPTeardownRunner.run()
+        "dns-resolution" -> DNSResolutionRunner.run()
+        "dhcp-lease" -> DHCPLeaseRunner.run()
+        "tls-handshake" -> TLSHandshakeRunner.run()
+        "mac-learning" -> MACLearningRunner.run()
+        "vlan" -> VLANRunner.run()
+        "stp" -> STPRunner.run()
+        "lacp" -> LACPRunner.run()
+        "switch-diag" -> SwitchDiagnosticsRunner.run()
+        "tcp-handshake" -> TCPHandshakeRunner.run()
+
         else -> emptyList()
     }
 
