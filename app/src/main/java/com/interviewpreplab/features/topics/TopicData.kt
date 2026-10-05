@@ -59,6 +59,18 @@ val topicList = listOf(
     Topic("trie", "Trie", "Data Structures", "Prefix tree for strings"),
     Topic("graph", "Graph (BFS/DFS)", "Data Structures", "Node and edge traversal"),
 
+    // Graph Algorithms
+    Topic("dijkstra", "Dijkstra's Algorithm", "Graph Algorithms", "Shortest paths with non-negative weights"),
+    Topic("topological-sort", "Topological Sort", "Graph Algorithms", "Ordering a DAG; Kahn and DFS"),
+    Topic("union-find", "Union-Find", "Graph Algorithms", "Disjoint sets, path compression"),
+    Topic("mst", "Minimum Spanning Tree", "Graph Algorithms", "Kruskal and Prim"),
+
+    // Algorithm Techniques
+    Topic("recursion", "Recursion & Backtracking", "Algorithm Techniques", "Base case, call stack, backtracking"),
+    Topic("two-pointers", "Two Pointers & Sliding Window", "Algorithm Techniques", "O(n) scans replacing nested loops"),
+    Topic("dynamic-programming", "Dynamic Programming", "Algorithm Techniques", "Memoization, tabulation, classic problems"),
+    Topic("kmp", "KMP String Matching", "Algorithm Techniques", "Failure table, O(n+m) pattern search"),
+
     // Networking L2/L3
     Topic("ethernet", "Ethernet Framing", "Networking", "MAC addresses, frame structure, FCS"),
     Topic("arp", "ARP Protocol", "Networking", "IP-to-MAC address resolution"),
@@ -98,7 +110,7 @@ val courses = listOf(
     Course("c-systems", "C Systems Programming", "Memory, pointers, undefined behavior", listOf("C Programming"), CourseAccent.Memory),
     Course("networking", "Network L2/L3 Architecture", "Frames, routing, TCP, switching", listOf("Networking"), CourseAccent.Packet),
     Course("kernel", "Linux Kernel Internals", "Scheduler, syscalls, VFS, eBPF", emptyList(), CourseAccent.Kernel),
-    Course("dsa", "DSA Foundations", "Sorting, searching, data structures", listOf("Sorting", "Searching", "Data Structures"), CourseAccent.Stack),
+    Course("dsa", "DSA Foundations", "Sorting, searching, data structures", listOf("Sorting", "Searching", "Data Structures", "Graph Algorithms", "Algorithm Techniques"), CourseAccent.Stack),
 )
 
 fun courseOf(topic: Topic): Course? = courses.firstOrNull { topic.category in it.categories }

@@ -1,0 +1,121 @@
+{
+  "summary": "The Knuth-Morris-Pratt algorithm finds a pattern inside a text in O(n + m) time. It preprocesses the pattern into a failure table so that, after a mismatch, it never re-examines text characters that are already known to match.",
+  "sections": [
+    {
+      "heading": "The problem with naive search",
+      "body": "Naive matching slides the pattern one position at a time and restarts comparison from the pattern's start, costing O(n·m) in the worst case (for example text 'aaaaaaab', pattern 'aaab')."
+    },
+    {
+      "heading": "The LPS (failure) array",
+      "body": "lps[i] is the length of the longest proper prefix of pattern[0..i] that is also a suffix of it. It tells KMP how far the pattern can safely fall back after a mismatch at position i + 1. For 'aabaaac' the table is [0, 1, 0, 1, 2, 2, 0]; for 'AAAA' it is [0, 1, 2, 3].",
+      "code": "void build_lps(const char *p, int m, int lps[]) {\n  int len = 0; lps[0] = 0;\n  for (int i = 1; i < m; ) {\n    if (p[i] == p[len]) lps[i++] = ++len;\n    else if (len) len = lps[len - 1];     // fall back, do not advance i\n    else lps[i++] = 0;\n  }\n}"
+    },
+    {
+      "heading": "Matching",
+      "body": "Walk the text with i and the pattern with j. On a match advance both. On a mismatch, if j > 0 set j = lps[j - 1] (reuse the matched prefix), otherwise advance i. When j reaches m, the pattern occurs at i - m.",
+      "code": "int kmp(const char *t, const char *p) {\n  int n = strlen(t), m = strlen(p), i = 0, j = 0, pos = -1;\n  int *lps = malloc(m * sizeof *lps);\n  build_lps(p, m, lps);\n  while (i < n) {\n    if (t[i] == p[j]) { i++; j++; if (j == m) { pos = i - j; break; } }\n    else if (j) j = lps[j - 1];\n    else i++;\n  }\n  free(lps); return pos;\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Preprocessing: O(m).",
+        "Search: O(n); i never moves backward and each fallback strictly decreases j, bounded by the advances.",
+        "Total O(n + m) time, O(m) extra space."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Walkthrough",
+      "summary": "Text ABABDABACDABABCABAB, pattern ABABCABAB.",
+      "sections": [
+        {
+          "body": "LPS for the pattern: [0,0,1,2,0,1,2,3,4]. Matching reaches ABAB then mismatches at D versus C; j falls back to lps[3] = 2, keeping 'AB' matched, and continues without moving i backward, finally matching at index 10."
+        }
+      ]
+    },
+    {
+      "title": "Finding all occurrences",
+      "summary": "Continue after a match.",
+      "sections": [
+        {
+          "body": "Instead of stopping at j == m, record i - m and set j = lps[m - 1] to allow overlapping matches, then keep scanning."
+        }
+      ]
+    },
+    {
+      "title": "Rabin-Karp",
+      "summary": "A rolling-hash alternative.",
+      "sections": [
+        {
+          "body": "Compare a hash of each text window with the pattern's hash, updating the window hash in O(1) and verifying on a match. Average O(n + m), worst O(nm), and easy to extend to multiple patterns."
+        }
+      ]
+    },
+    {
+      "title": "Z-algorithm and Boyer-Moore",
+      "summary": "Other linear and sublinear matchers.",
+      "sections": [
+        {
+          "body": "The Z-function gives similar guarantees with simpler code. Boyer-Moore compares from the pattern's end and can skip many characters, making it fastest in practice on long patterns and natural-language text."
+        }
+      ]
+    },
+    {
+      "title": "Applications",
+      "summary": "Where it matters.",
+      "sections": [
+        {
+          "bullets": [
+            "Text editors and grep-style search.",
+            "Plagiarism and DNA sequence matching.",
+            "Spam and intrusion detection.",
+            "Finding periodic structure: the smallest period of a string is m - lps[m-1] when it divides m."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "KMP avoids re-comparing text by using the pattern's own prefix-suffix structure.",
+    "lps[i] = longest proper prefix of p[0..i] that is also a suffix.",
+    "O(n + m) time and O(m) space.",
+    "Compare with Rabin-Karp and Boyer-Moore for other trade-offs."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: KMP algorithm (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "label": "Knuth, Morris, Pratt: Fast Pattern Matching in Strings (1977)",
+      "url": "https://epubs.siam.org/doi/10.1137/0206024"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Compute the LPS array for three patterns by hand",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement KMP search and return all matches",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the smallest repeating unit of a string",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement strStr",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Shortest palindrome by prepending characters",
+      "difficulty": "Hard"
+    }
+  ]
+}

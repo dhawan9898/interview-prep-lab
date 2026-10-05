@@ -1,0 +1,142 @@
+{
+  "summary": "Recursion solves a problem by having a function call itself on a smaller version of the same problem. Every recursive function needs a base case that stops the calls and a recursive case that makes progress toward it.",
+  "sections": [
+    {
+      "heading": "Anatomy",
+      "bullets": [
+        "Base case: the smallest input, answered directly.",
+        "Recursive case: reduce the problem and combine the sub-result.",
+        "Progress: each call must move closer to the base case or recursion never ends."
+      ],
+      "code": "long fact(int n) {\n  if (n <= 1) return 1;          // base case\n  return n * fact(n - 1);        // recursive case\n}"
+    },
+    {
+      "heading": "The call stack",
+      "body": "Each call pushes a stack frame holding its parameters, locals, and return address. Calls wait in LIFO order, and results return as frames pop. fact(4) pushes fact(4), fact(3), fact(2), fact(1), then unwinds multiplying 1, 2, 6, 24. Depth n uses O(n) stack, and missing or unreachable base cases overflow it."
+    },
+    {
+      "heading": "Classic examples",
+      "bullets": [
+        "Factorial and sum of 1..n: linear recursion.",
+        "Fibonacci: tree recursion, exponential time when naive.",
+        "Power by squaring: halve the exponent each call, O(log n).",
+        "Tower of Hanoi: move n-1 disks, move one, move n-1 again; 2^n - 1 moves.",
+        "Binary search, merge sort, quick sort, tree traversals."
+      ],
+      "code": "long fib(int n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }   // O(2^n)\n\ndouble power(double x, int n) {\n  if (n == 0) return 1;\n  double h = power(x, n / 2);\n  return (n % 2) ? h * h * x : h * h;       // O(log n)\n}\n\nvoid hanoi(int n, char from, char to, char via) {\n  if (n == 0) return;\n  hanoi(n - 1, from, via, to);\n  printf(\"move disk %d %c -> %c\\n\", n, from, to);\n  hanoi(n - 1, via, to, from);\n}"
+    },
+    {
+      "heading": "Recursion versus iteration",
+      "bullets": [
+        "Recursion mirrors recursive structures (trees, divide and conquer) and is often shorter.",
+        "Iteration avoids stack growth and call overhead.",
+        "Any recursion can be rewritten with an explicit stack.",
+        "Deep recursion in C risks stack overflow (typically a few hundred thousand frames)."
+      ]
+    },
+    {
+      "heading": "Analyzing cost",
+      "body": "Write a recurrence and solve it. Factorial: T(n) = T(n-1) + O(1) = O(n). Binary search: T(n) = T(n/2) + O(1) = O(log n). Merge sort: T(n) = 2T(n/2) + O(n) = O(n log n). Naive Fibonacci: T(n) = T(n-1) + T(n-2) = O(2^n), because it recomputes subproblems."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Tail recursion",
+      "summary": "Recursive call is the last action.",
+      "sections": [
+        {
+          "body": "If the call is in tail position, the frame can be reused, making it as cheap as a loop. Scheme guarantees this; C compilers often do it at -O2 but the standard does not require it.",
+          "code": "long fact_tail(int n, long acc) { return n <= 1 ? acc : fact_tail(n - 1, acc * n); }"
+        }
+      ]
+    },
+    {
+      "title": "Backtracking",
+      "summary": "Recursion with undo.",
+      "sections": [
+        {
+          "body": "Build a solution step by step, recurse, and undo the step if it leads nowhere. Used for permutations, subsets, N-Queens, Sudoku, and maze solving. Pruning invalid partial solutions keeps it practical.",
+          "code": "void subsets(int i, int n, int path[], int len) {\n  if (i == n) { print(path, len); return; }\n  subsets(i + 1, n, path, len);              // exclude i\n  path[len] = i; subsets(i + 1, n, path, len + 1);   // include i\n}"
+        }
+      ]
+    },
+    {
+      "title": "Memoization",
+      "summary": "Cache sub-results.",
+      "sections": [
+        {
+          "body": "Store each computed result by argument so repeated subproblems return instantly. This turns naive Fibonacci from O(2^n) into O(n) and is the top-down form of dynamic programming."
+        }
+      ]
+    },
+    {
+      "title": "Mutual and indirect recursion",
+      "summary": "Functions calling each other.",
+      "sections": [
+        {
+          "body": "isEven(n) calls isOdd(n-1) and vice versa. Declare prototypes first. Recursive-descent parsers use this heavily, one function per grammar rule."
+        }
+      ]
+    },
+    {
+      "title": "Debugging recursion",
+      "summary": "Practical tips.",
+      "sections": [
+        {
+          "bullets": [
+            "Verify the base case first, including empty input.",
+            "Print depth and arguments to trace calls.",
+            "Check that each call strictly reduces the problem.",
+            "Use a debugger's call-stack view."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Base case plus a recursive step that makes progress.",
+    "Each call uses a stack frame: depth equals memory.",
+    "Naive tree recursion can be exponential; memoize to fix it.",
+    "Tail calls and explicit stacks avoid overflow."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Introduction to recursion (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Sum the digits of a number recursively",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse a string recursively",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Print all subsets of a set",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Generate all permutations of a string",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Solve N-Queens for N = 6",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Convert fib to memoized and compare running times",
+      "difficulty": "Medium"
+    }
+  ]
+}

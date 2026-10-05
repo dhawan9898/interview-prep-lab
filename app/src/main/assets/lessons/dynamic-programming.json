@@ -1,0 +1,136 @@
+{
+  "summary": "Dynamic programming (DP) solves problems that break into overlapping subproblems with optimal substructure. Instead of recomputing the same subproblem, it stores each answer once and reuses it, turning exponential brute force into polynomial time.",
+  "sections": [
+    {
+      "heading": "When DP applies",
+      "bullets": [
+        "Optimal substructure: an optimal solution is built from optimal solutions to subproblems.",
+        "Overlapping subproblems: the same subproblems are needed many times.",
+        "Typical signals: count the ways, find the minimum/maximum, is it possible, choices at each step."
+      ]
+    },
+    {
+      "heading": "Two styles",
+      "bullets": [
+        "Top-down (memoization): write the recursion, cache results in a table keyed by the arguments.",
+        "Bottom-up (tabulation): fill a table iteratively from the smallest subproblems up."
+      ],
+      "code": "/* top-down */\nlong memo[100];\nlong fib(int n) {\n  if (n < 2) return n;\n  if (memo[n]) return memo[n];\n  return memo[n] = fib(n - 1) + fib(n - 2);\n}\n/* bottom-up, O(1) space */\nlong fib2(int n) { long a = 0, b = 1; for (int i = 0; i < n; i++) { long t = a + b; a = b; b = t; } return a; }"
+    },
+    {
+      "heading": "A recipe",
+      "bullets": [
+        "Define the state: what does dp[i] (or dp[i][j]) mean?",
+        "Write the transition: how does it depend on smaller states?",
+        "Set the base cases.",
+        "Choose an order that computes dependencies first.",
+        "Read the answer from the right cell.",
+        "Optionally compress space by keeping only the rows you need."
+      ]
+    },
+    {
+      "heading": "0/1 knapsack",
+      "body": "State dp[w] = best value using capacity w. Iterate capacity downward so each item is used at most once.",
+      "code": "int knapsack(int W, int wt[], int val[], int n) {\n  int dp[W + 1]; memset(dp, 0, sizeof dp);\n  for (int i = 0; i < n; i++)\n    for (int w = W; w >= wt[i]; w--)\n      dp[w] = max(dp[w], dp[w - wt[i]] + val[i]);\n  return dp[W];\n}"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Longest common subsequence",
+      "summary": "Two-sequence DP.",
+      "sections": [
+        {
+          "body": "dp[i][j] is the LCS length of the first i characters of A and first j of B. If A[i-1] == B[j-1] then dp[i][j] = dp[i-1][j-1] + 1, else max(dp[i-1][j], dp[i][j-1]). O(nm) time.",
+          "code": "for (i = 1; i <= n; i++) for (j = 1; j <= m; j++)\n  dp[i][j] = (a[i-1] == b[j-1]) ? dp[i-1][j-1] + 1 : max(dp[i-1][j], dp[i][j-1]);"
+        }
+      ]
+    },
+    {
+      "title": "Coin change",
+      "summary": "Minimum coins for an amount.",
+      "sections": [
+        {
+          "body": "dp[x] = min over coins c of dp[x - c] + 1, with dp[0] = 0. Unreachable amounts stay at infinity. O(amount × coins).",
+          "code": "for (x = 1; x <= amt; x++) { dp[x] = INF;\n  for (k = 0; k < nc; k++) if (coins[k] <= x && dp[x - coins[k]] + 1 < dp[x]) dp[x] = dp[x - coins[k]] + 1; }"
+        }
+      ]
+    },
+    {
+      "title": "Longest increasing subsequence",
+      "summary": "O(n²) and O(n log n).",
+      "sections": [
+        {
+          "body": "dp[i] = 1 + max dp[j] for j < i with a[j] < a[i], giving O(n²). Maintaining a sorted list of smallest tails and binary searching improves it to O(n log n)."
+        }
+      ]
+    },
+    {
+      "title": "Greedy versus DP",
+      "summary": "Know the difference.",
+      "sections": [
+        {
+          "body": "Greedy commits to a locally best choice and never revisits it; it works only when that choice is provably safe (Dijkstra, Kruskal). DP considers all choices via stored subproblems, so it handles cases greedy gets wrong, such as coin change with arbitrary denominations."
+        }
+      ]
+    },
+    {
+      "title": "Space optimization",
+      "summary": "Rolling arrays.",
+      "sections": [
+        {
+          "body": "If dp[i] depends only on dp[i-1], keep two rows or one row updated in the right direction. Knapsack uses a single array iterated downward; LCS needs only the previous row."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "DP = overlapping subproblems + optimal substructure + stored answers.",
+    "Define state, transition, base case, and order.",
+    "Memoization (top-down) and tabulation (bottom-up) are equivalent in power.",
+    "Compress space when a state needs only recent rows."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Introduction to dynamic programming (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-dynamic-programming-data-structures-and-algorithm-tutorials/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Climbing stairs",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "House robber",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Coin change (minimum coins)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest common subsequence",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "0/1 knapsack",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Edit distance",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest increasing subsequence in O(n log n)",
+      "difficulty": "Hard"
+    }
+  ]
+}

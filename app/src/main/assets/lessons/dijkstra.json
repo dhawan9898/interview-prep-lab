@@ -1,0 +1,135 @@
+{
+  "summary": "Dijkstra's algorithm finds the shortest paths from one source vertex to every other vertex in a graph whose edge weights are non-negative. It repeatedly finalizes the closest unfinalized vertex and relaxes its outgoing edges.",
+  "sections": [
+    {
+      "heading": "Idea",
+      "body": "Keep a tentative distance dist[v] for every vertex, initially infinity except dist[source] = 0. At each step pick the unfinalized vertex u with the smallest dist, declare it final (its shortest path is now known), and try to improve its neighbours: if dist[u] + w(u, v) < dist[v], update dist[v]. This is the greedy choice: with non-negative weights no later path can reach u more cheaply."
+    },
+    {
+      "heading": "Array version, O(V²)",
+      "body": "Simple and best for dense graphs. A 0 in the matrix means no edge.",
+      "code": "void dijkstra(int V, int g[V][V], int src, int dist[]) {\n  int done[V];\n  for (int i = 0; i < V; i++) { dist[i] = INT_MAX; done[i] = 0; }\n  dist[src] = 0;\n  for (int c = 0; c < V; c++) {\n    int u = -1;\n    for (int v = 0; v < V; v++)\n      if (!done[v] && (u == -1 || dist[v] < dist[u])) u = v;\n    if (dist[u] == INT_MAX) break;      // rest unreachable\n    done[u] = 1;\n    for (int v = 0; v < V; v++)\n      if (g[u][v] && !done[v] && dist[u] + g[u][v] < dist[v])\n        dist[v] = dist[u] + g[u][v];\n  }\n}"
+    },
+    {
+      "heading": "Priority-queue version",
+      "body": "Store (distance, vertex) pairs in a min-heap. Pop the smallest; skip it if it is stale (larger than the current dist). Relax edges and push improved neighbours. With adjacency lists the total time is O((V + E) log V).",
+      "code": "push (0, src)\nwhile heap not empty:\n  (d, u) = pop_min\n  if d > dist[u]: continue          # stale entry\n  for (v, w) in adj[u]:\n    if d + w < dist[v]:\n      dist[v] = d + w; parent[v] = u\n      push (dist[v], v)"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Array: O(V²) time, O(V) extra space.",
+        "Binary heap + adjacency lists: O((V + E) log V).",
+        "Fibonacci heap: O(E + V log V) in theory.",
+        "Space: O(V + E) for the graph."
+      ]
+    },
+    {
+      "heading": "Negative edges",
+      "body": "Dijkstra's correctness relies on a finalized vertex never being improved later. A negative edge could make a path through an unfinalized vertex cheaper, so the answer would be wrong. Use Bellman-Ford (O(VE)) when negative weights exist."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Worked example",
+      "summary": "Source A.",
+      "sections": [
+        {
+          "body": "Edges: A-B 4, A-C 2, C-B 1, B-D 5, C-D 8. Start dist = {A:0}. Finalize A: B=4, C=2. Finalize C (2): B improves to 3, D=10. Finalize B (3): D improves to 8. Finalize D. Final: A0, C2, B3, D8; path to D is A -> C -> B -> D."
+        }
+      ]
+    },
+    {
+      "title": "Recovering the path",
+      "summary": "Parent pointers.",
+      "sections": [
+        {
+          "body": "Whenever you improve dist[v] through u, set parent[v] = u. After the run, follow parents from the target back to the source and reverse the list."
+        }
+      ]
+    },
+    {
+      "title": "Early exit and A*",
+      "summary": "Faster to one target.",
+      "sections": [
+        {
+          "body": "If you need only one destination, stop when it is popped. A* adds a heuristic estimate of remaining distance to the priority, expanding fewer vertices while staying optimal for admissible heuristics (used in maps and games)."
+        }
+      ]
+    },
+    {
+      "title": "Dijkstra versus BFS, Bellman-Ford, Floyd-Warshall",
+      "summary": "Choosing a shortest-path algorithm.",
+      "sections": [
+        {
+          "bullets": [
+            "BFS: unweighted graphs, O(V + E).",
+            "Dijkstra: weighted, non-negative, single source.",
+            "Bellman-Ford: negative edges and negative-cycle detection, O(VE).",
+            "Floyd-Warshall: all pairs, O(V³)."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Real uses",
+      "summary": "Where it runs.",
+      "sections": [
+        {
+          "bullets": [
+            "Route planning and navigation.",
+            "Network routing: OSPF runs Dijkstra on the link-state database.",
+            "Game pathfinding and robotics.",
+            "Minimum-cost flow subroutines."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Greedy: repeatedly finalize the closest unfinalized vertex and relax its edges.",
+    "O(V²) with arrays, O((V+E) log V) with a heap.",
+    "Requires non-negative weights.",
+    "Track parents to rebuild the actual path."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Dijkstra's shortest path (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Run Dijkstra by hand on a 6-vertex graph",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement the heap-based version with adjacency lists",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reconstruct the shortest path, not only the distance",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Network delay time (LeetCode-style)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Cheapest flights within K stops",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why a negative edge breaks Dijkstra with a counterexample",
+      "difficulty": "Easy"
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "summary": "Union-find (disjoint-set union) maintains a partition of elements into groups and supports two operations: find which group an element belongs to, and union two groups. With two simple optimizations, each operation takes nearly constant amortized time.",
+  "sections": [
+    {
+      "heading": "Representation",
+      "body": "Each set is a tree stored in a parent array. A root points to itself and acts as the set's representative. Two elements are in the same set iff they have the same root.",
+      "code": "int parent[N], rnk[N];\nvoid make_sets(int n) { for (int i = 0; i < n; i++) { parent[i] = i; rnk[i] = 0; } }"
+    },
+    {
+      "heading": "Find with path compression",
+      "body": "Walk up to the root, then point every visited node directly at it, flattening the tree for future queries.",
+      "code": "int find(int x) {\n  if (parent[x] != x) parent[x] = find(parent[x]);   // path compression\n  return parent[x];\n}"
+    },
+    {
+      "heading": "Union by rank",
+      "body": "Attach the shallower tree under the deeper one so trees stay short. Without it, a bad sequence of unions can create a chain with O(n) finds.",
+      "code": "void unite(int a, int b) {\n  a = find(a); b = find(b);\n  if (a == b) return;\n  if (rnk[a] < rnk[b]) { int t = a; a = b; b = t; }\n  parent[b] = a;\n  if (rnk[a] == rnk[b]) rnk[a]++;\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Naive: find O(n) worst case.",
+        "With union by rank and path compression: amortized O(α(n)) per operation, where α is the inverse Ackermann function (below 5 for any practical n).",
+        "Space: O(n)."
+      ]
+    },
+    {
+      "heading": "What it is used for",
+      "bullets": [
+        "Cycle detection in undirected graphs (an edge joining two nodes with the same root closes a cycle).",
+        "Kruskal's minimum spanning tree.",
+        "Connected components, including dynamic ones as edges arrive.",
+        "Percolation and image segmentation, equivalence classes, grouping accounts."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Walkthrough",
+      "summary": "Friend groups.",
+      "sections": [
+        {
+          "body": "Start with {a}, {b}, {c}, {d}. unite(a,b), unite(b,d) gives {a,b,d}, {c}. find(a) == find(d), so a and d are connected; find(a) != find(c)."
+        }
+      ]
+    },
+    {
+      "title": "Union by size",
+      "summary": "Alternative to rank.",
+      "sections": [
+        {
+          "body": "Attach the smaller set to the larger and track set sizes. It gives the same bounds and lets you query the size of a component for free."
+        }
+      ]
+    },
+    {
+      "title": "Counting components",
+      "summary": "A simple counter.",
+      "sections": [
+        {
+          "body": "Start with n components; each successful union (roots differ) reduces the count by one. At the end the counter holds the number of connected components."
+        }
+      ]
+    },
+    {
+      "title": "Iterative find",
+      "summary": "Avoiding deep recursion.",
+      "sections": [
+        {
+          "body": "On huge inputs the recursive find may overflow the stack. Do two loops: find the root, then walk again compressing the path.",
+          "code": "int find(int x) {\n  int r = x; while (parent[r] != r) r = parent[r];\n  while (parent[x] != r) { int nx = parent[x]; parent[x] = r; x = nx; }\n  return r;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Limits",
+      "summary": "What it cannot do.",
+      "sections": [
+        {
+          "body": "Standard union-find supports merging but not splitting a set. For deletions or undo you need a rollback variant (no path compression) or offline techniques."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Parent-array forests: find returns the root, union links roots.",
+    "Path compression + union by rank/size give near-O(1) amortized operations.",
+    "Core tool for Kruskal's MST and connected components.",
+    "It supports merges only, not splits."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Disjoint set (union-find) (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-disjoint-set-data-structure-or-union-find-algorithm/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement find and union with rank and path compression",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count connected components",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Detect a cycle in an undirected graph",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Number of provinces",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Accounts merge",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Redundant connection",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Satisfiability of equality equations",
+      "difficulty": "Medium"
+    }
+  ]
+}

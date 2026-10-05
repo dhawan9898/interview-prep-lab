@@ -1,0 +1,125 @@
+{
+  "summary": "A topological sort orders the vertices of a directed acyclic graph (DAG) so that every edge u -> v has u before v. It answers 'what order can I do things in, given prerequisites?', and exists only if the graph has no directed cycle.",
+  "sections": [
+    {
+      "heading": "Requirements",
+      "body": "Only DAGs have a topological order. A cycle makes the constraints contradictory (A before B before A), and undirected edges carry no direction. The order is usually not unique."
+    },
+    {
+      "heading": "Kahn's algorithm (BFS)",
+      "body": "Compute every vertex's in-degree. Put all vertices with in-degree 0 in a queue. Repeatedly remove one, append it to the output, and decrement the in-degree of its neighbours, enqueueing those that reach 0. If the output has fewer than V vertices, the graph has a cycle.",
+      "code": "int topo(int V, int adj[][MAXD], int deg_out[], int indeg[], int order[]) {\n  int q[V], head = 0, tail = 0, cnt = 0;\n  for (int v = 0; v < V; v++) if (indeg[v] == 0) q[tail++] = v;\n  while (head < tail) {\n    int u = q[head++]; order[cnt++] = u;\n    for (int i = 0; i < deg_out[u]; i++)\n      if (--indeg[adj[u][i]] == 0) q[tail++] = adj[u][i];\n  }\n  return cnt == V;   // 0 => cycle\n}"
+    },
+    {
+      "heading": "DFS-based algorithm",
+      "body": "Run DFS; when a vertex finishes (all neighbours explored), push it on a stack. Popping the stack gives a topological order, because every vertex finishes after everything reachable from it.",
+      "code": "dfs(u):\n  visited[u] = true\n  for v in adj[u]: if not visited[v]: dfs(v)\n  push u onto stack      # finish time\n# order = pop all of stack"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Both approaches: O(V + E) time.",
+        "Space: O(V) for the queue/stack and in-degree or visited arrays."
+      ]
+    },
+    {
+      "heading": "Applications",
+      "bullets": [
+        "Build systems: compile targets after their dependencies (make).",
+        "Course scheduling with prerequisites.",
+        "Task and job scheduling, spreadsheet cell evaluation order.",
+        "Package dependency installation.",
+        "Dynamic programming over DAGs, such as longest path."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Detecting cycles",
+      "summary": "Two ways.",
+      "sections": [
+        {
+          "body": "Kahn: if fewer than V vertices were output, a cycle remains. DFS: if you reach a vertex that is currently on the recursion stack (a back edge), there is a cycle. Use three states: unvisited, in progress, done."
+        }
+      ]
+    },
+    {
+      "title": "Walkthrough",
+      "summary": "Course prerequisites.",
+      "sections": [
+        {
+          "body": "Edges: 5->2, 5->0, 4->0, 4->1, 2->3, 3->1. In-degrees: 0:2, 1:2, 2:1, 3:1, 4:0, 5:0. Queue starts with 4 and 5. Output 4 (frees nothing yet), 5 (frees 0 and 2), 0, 2 (frees 3), 3 (frees 1), 1: order 4 5 0 2 3 1."
+        }
+      ]
+    },
+    {
+      "title": "Lexicographically smallest order",
+      "summary": "Use a min-heap.",
+      "sections": [
+        {
+          "body": "Replace Kahn's FIFO queue with a priority queue so the smallest available vertex is always taken. This yields the lexicographically smallest topological order."
+        }
+      ]
+    },
+    {
+      "title": "Longest path in a DAG",
+      "summary": "DP on a topological order.",
+      "sections": [
+        {
+          "body": "Process vertices in topological order, relaxing dist[v] = max(dist[v], dist[u] + w). Gives longest paths in O(V + E), unlike general graphs where longest path is NP-hard."
+        }
+      ]
+    },
+    {
+      "title": "Strongly connected components",
+      "summary": "Handling cycles.",
+      "sections": [
+        {
+          "body": "When cycles exist, compute SCCs (Tarjan or Kosaraju), contract each to a single node, and the result is a DAG you can topologically sort."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Order vertices so every edge points forward; only possible for DAGs.",
+    "Kahn's BFS uses in-degrees; the DFS version reverses finish order.",
+    "O(V + E); detects cycles as a by-product.",
+    "Used for builds, scheduling, and DP on DAGs."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Topological sorting (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/topological-sorting/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Course schedule: can all courses be finished?",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Course schedule II: return an order",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement both Kahn and DFS versions",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Alien dictionary",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Longest path in a DAG",
+      "difficulty": "Medium"
+    }
+  ]
+}

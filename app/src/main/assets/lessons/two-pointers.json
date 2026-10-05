@@ -1,0 +1,126 @@
+{
+  "summary": "The two-pointers technique walks two indices through an array or list, either from opposite ends or in the same direction, to replace nested loops with a single O(n) pass. A sliding window is the same idea applied to a contiguous range.",
+  "sections": [
+    {
+      "heading": "Opposite ends: pair sum on a sorted array",
+      "body": "Put one pointer at each end. If the sum is too small, the left value is too small to pair with anything remaining, so advance left; if too large, retreat right. Each step discards a candidate, so the whole scan is O(n) with O(1) space instead of O(n²).",
+      "code": "int pair_sum(const int a[], int n, int target, int *i, int *j) {\n  int l = 0, r = n - 1;\n  while (l < r) {\n    int s = a[l] + a[r];\n    if (s == target) { *i = l; *j = r; return 1; }\n    if (s < target) l++; else r--;\n  }\n  return 0;\n}"
+    },
+    {
+      "heading": "Same direction: fast and slow",
+      "body": "A slow pointer marks where the result so far ends and a fast pointer scans ahead. Remove duplicates from a sorted array in place:",
+      "code": "int dedupe(int a[], int n) {\n  if (!n) return 0;\n  int w = 1;\n  for (int r = 1; r < n; r++)\n    if (a[r] != a[w - 1]) a[w++] = a[r];\n  return w;\n}"
+    },
+    {
+      "heading": "Sliding window",
+      "body": "Keep a window [l, r] and move r forward each step, adjusting l to restore a condition. Fixed size: add the new element, drop the old one. Variable size: shrink while the window is invalid.",
+      "code": "/* longest substring without repeating characters */\nint seen[256] = {0}, best = 0;\nfor (int l = 0, r = 0; s[r]; r++) {\n  seen[(unsigned char)s[r]]++;\n  while (seen[(unsigned char)s[r]] > 1) seen[(unsigned char)s[l++]]--;\n  if (r - l + 1 > best) best = r - l + 1;\n}"
+    },
+    {
+      "heading": "Complexity and requirements",
+      "bullets": [
+        "Typically O(n) time, O(1) extra space.",
+        "Opposite-end version usually needs sorted input (or a monotonic property).",
+        "Each pointer only moves forward (or only inward), so total moves are O(n)."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Linked lists: fast and slow pointers",
+      "summary": "Floyd cycle detection.",
+      "sections": [
+        {
+          "body": "Slow moves one node, fast moves two. If there is a cycle they meet; otherwise fast hits NULL. When fast reaches the end, slow is at the middle. Both run in O(n) with O(1) space."
+        }
+      ]
+    },
+    {
+      "title": "Container with most water",
+      "summary": "Greedy pointer move.",
+      "sections": [
+        {
+          "body": "Start with the widest container. Move the pointer at the shorter line inward, because a narrower container can only be taller if the short side changes. O(n)."
+        }
+      ]
+    },
+    {
+      "title": "Three-sum",
+      "summary": "Sort, then pair-sum.",
+      "sections": [
+        {
+          "body": "Sort, fix the first element, and run opposite-end two pointers on the rest, skipping duplicates. O(n²) overall, versus O(n³) brute force."
+        }
+      ]
+    },
+    {
+      "title": "Merging and partitioning",
+      "summary": "Two input pointers.",
+      "sections": [
+        {
+          "body": "Merging two sorted arrays advances one pointer per input; the Dutch national flag uses three pointers (low, mid, high) to partition 0/1/2 in one pass."
+        }
+      ]
+    },
+    {
+      "title": "Choosing the pattern",
+      "summary": "Quick guide.",
+      "sections": [
+        {
+          "bullets": [
+            "Sorted + pair/triple: opposite ends.",
+            "In-place filtering or removal: slow/fast writer and reader.",
+            "Contiguous subarray/substring with a constraint: sliding window.",
+            "Cycle or middle of a list: fast/slow."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Two indices replace nested loops: O(n) time, O(1) space.",
+    "Opposite ends for sorted pair problems; same direction for in-place filtering.",
+    "Sliding windows handle contiguous-range constraints.",
+    "Each pointer moves monotonically, which bounds the work."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Two pointers technique (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Two sum on a sorted array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Remove duplicates from a sorted array in place",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Container with most water",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Three sum",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest substring without repeating characters",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Minimum window substring",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Trapping rain water",
+      "difficulty": "Hard"
+    }
+  ]
+}
