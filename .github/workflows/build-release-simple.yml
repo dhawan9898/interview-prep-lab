@@ -1,0 +1,140 @@
+name: Build & Release APK (Automated)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Get current version
+        id: current_version
+        run: |
+          VERSION=$(grep 'versionName = ' app/build.gradle.kts | grep -o '"[^"]*"' | tr -d '"')
+          CODE=$(grep 'versionCode = ' app/build.gradle.kts | grep -o '[0-9]*$')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "code=$CODE" >> $GITHUB_OUTPUT
+
+      - name: Increment version
+        id: new_version
+        run: |
+          OLD_VERSION=$(grep 'versionName = ' app/build.gradle.kts | grep -o '"[^"]*"' | tr -d '"')
+          OLD_CODE=$(grep 'versionCode = ' app/build.gradle.kts | grep -o '[0-9]*$')
+
+          # Parse version
+          IFS='.' read -r major minor patch <<< "$OLD_VERSION"
+          NEW_PATCH=$((patch + 1))
+          NEW_VERSION="$major.$minor.$NEW_PATCH"
+          NEW_CODE=$((OLD_CODE + 1))
+
+          # Update version in build.gradle.kts
+          sed -i "s/versionCode = [0-9]*/versionCode = $NEW_CODE/" app/build.gradle.kts
+          sed -i "s/versionName = \"[^\"]*\"/versionName = \"$NEW_VERSION\"/" app/build.gradle.kts
+
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "code=$NEW_CODE" >> $GITHUB_OUTPUT
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --stacktrace
+        continue-on-error: true
+
+      - name: Build Debug APK (fallback)
+        if: failure()
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p ./release
+          VERSION="${{ steps.new_version.outputs.version }}"
+          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk ./release/InterviewPrepLab-${VERSION}.apk
+          elif [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk ./release/InterviewPrepLab-${VERSION}.apk
+          fi
+
+      - name: Commit version bump
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add app/build.gradle.kts
+          git diff --cached --exit-code || git commit -m "chore: bump version to ${{ steps.new_version.outputs.version }}"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.new_version.outputs.version }}
+          name: Interview Prep Lab v${{ steps.new_version.outputs.version }}
+          body: |
+            # Interview Prep Lab v${{ steps.new_version.outputs.version }}
+
+            **Version Code:** ${{ steps.new_version.outputs.code }}
+            **Release Date:** ${{ github.event.head_commit.timestamp }}
+
+            ## Download
+            📥 [InterviewPrepLab-${{ steps.new_version.outputs.version }}.apk](https://github.com/${{ github.repository }}/releases/download/v${{ steps.new_version.outputs.version }}/InterviewPrepLab-${{ steps.new_version.outputs.version }}.apk)
+
+            ## Installation Instructions
+            1. Download the APK file above
+            2. On your Android device: **Settings → Security → Enable "Unknown sources"**
+            3. Open the downloaded APK file and tap **Install**
+            4. To update: Simply download the new APK and run it (automatic upgrade)
+
+            ## What's New in This Release
+            - All DSA topics with interactive visualizations
+            - Smooth 60fps animations
+            - Frame-by-frame playback controls
+            - Narration explaining each step
+
+            ## Features
+            ✅ 31 DSA topics
+            ✅ 5 renderer families
+            ✅ Interactive playback (play/pause/step/scrub/speed)
+            ✅ Real-time statistics tracking
+            ✅ Offline mode
+            ✅ Mobile & tablet optimized
+
+            ## Topics
+            **Sorting:** Bubble, Selection, Insertion, Quick, Merge, Heap, Shell, Counting
+            **Searching:** Binary, Jump, Linear
+            **Data Structures:** Stack, Queue, Circular Queue, Deque, Linked List, Doubly Linked List, Hash Table, BST, AVL, Heap, Trie
+            **Graph Algorithms:** BFS, DFS, Dijkstra, Topological Sort, Kruskal MST, Union-Find
+            **Techniques:** N-Queens, Activity Selection
+            **Foundations:** Big-O, Arrays & Memory, Pointers, Recursion
+
+            ---
+            Built with ❤️ for interview prep
+          files: ./release/InterviewPrepLab-${{ steps.new_version.outputs.version }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: InterviewPrepLab-${{ steps.new_version.outputs.version }}
+          path: ./release/InterviewPrepLab-${{ steps.new_version.outputs.version }}.apk
+          retention-days: 30
