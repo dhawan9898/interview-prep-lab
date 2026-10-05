@@ -113,8 +113,8 @@ class SRSAlgorithm @Inject constructor() {
      * High ease factor = well-learned, low ease factor = difficult
      */
     fun estimateRetentionRate(easeFactor: Double): Double {
-        // Simple estimation: ease factor maps to retention
-        // 2.5 = 80% (default), higher = higher retention
-        return ((easeFactor - 1.3) / (3.0 - 1.3) * 100).coerceIn(0.0, 100.0)
+        // Simple linear estimation: ease factor maps to retention
+        // 2.5 = 80% (default), 3.0 = 100%, higher = higher retention
+        return (80.0 + (easeFactor - DEFAULT_EASE_FACTOR) * 40.0).coerceIn(0.0, 100.0)
     }
 }

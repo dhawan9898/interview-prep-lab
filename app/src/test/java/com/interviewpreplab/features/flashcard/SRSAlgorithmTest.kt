@@ -50,7 +50,7 @@ class SRSAlgorithmTest {
     @Test
     fun `forgotten card resets to 1 day`() {
         val (interval, easeFactor) = srs.calculateNextReview(
-            quality = SRSAlgorithm.QUALITY_INCORRECT,
+            quality = QUALITY_INCOMPLETE,
             easeFactor = 3.0,
             interval = 10,
             repetitions = 5
