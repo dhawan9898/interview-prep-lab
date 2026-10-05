@@ -365,9 +365,7 @@ private fun FlashcardFlip(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    brush = androidx.compose.foundation.background(
-                        MaterialTheme.colorScheme.primaryContainer
-                    ),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(16.dp)
                 )
                 .padding(24.dp),
