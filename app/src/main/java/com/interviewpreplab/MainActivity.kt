@@ -38,17 +38,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.text.font.FontWeight
 import com.interviewpreplab.core.model.BarsScene
 import com.interviewpreplab.core.model.Frame
 import com.interviewpreplab.core.model.ListScene
+import com.interviewpreplab.core.model.MemoryScene
 import com.interviewpreplab.core.model.SlotsScene
 import com.interviewpreplab.core.player.PlayerViewModel
 import com.interviewpreplab.core.ui.BarsRenderer
 import com.interviewpreplab.core.ui.GraphRenderer
 import com.interviewpreplab.core.ui.ListRenderer
+import com.interviewpreplab.core.ui.MemoryRenderer
 import com.interviewpreplab.core.ui.PlayerControls
 import com.interviewpreplab.core.ui.SlotsRenderer
 import com.interviewpreplab.core.ui.TreeRenderer
+import com.interviewpreplab.features.c_programming.MemoryLayoutRunner
+import com.interviewpreplab.features.c_programming.PointersRunner
+import com.interviewpreplab.features.c_programming.StackVsHeapRunner
+import com.interviewpreplab.features.c_programming.PointerArithmeticRunner
+import com.interviewpreplab.features.c_programming.NullPointersRunner
+import com.interviewpreplab.features.c_programming.FunctionPointersRunner
+import com.interviewpreplab.features.c_programming.BufferOverflowRunner
+import com.interviewpreplab.features.c_programming.UseAfterFreeRunner
+import com.interviewpreplab.features.c_programming.MemoryLeaksRunner
+import com.interviewpreplab.features.c_programming.StructPaddingRunner
+import com.interviewpreplab.features.c_programming.EndiannessRunner
+import com.interviewpreplab.features.c_programming.UndefinedBehaviorRunner
 import com.interviewpreplab.features.data_structures.BSTRunner
 import com.interviewpreplab.features.progress.ProgressScreen
 import com.interviewpreplab.features.data_structures.CircularQueueRunner
@@ -92,6 +109,20 @@ data class Topic(
 )
 
 val topicList = listOf(
+    // C Programming
+    Topic("memory-layout", "Memory Layout", "C Programming", "Stack, Heap, Data, Code segments"),
+    Topic("pointers", "Pointers & Addresses", "C Programming", "Address-of, dereference operators"),
+    Topic("stack-vs-heap", "Stack vs Heap", "C Programming", "Automatic vs manual allocation"),
+    Topic("pointer-arithmetic", "Pointer Arithmetic", "C Programming", "Array indexing, offsets, loops"),
+    Topic("null-pointers", "Null Pointers", "C Programming", "NULL checks, segmentation faults"),
+    Topic("function-pointers", "Function Pointers", "C Programming", "Callbacks, dynamic dispatch"),
+    Topic("buffer-overflow", "Buffer Overflow", "C Programming", "Stack smashing, defenses"),
+    Topic("use-after-free", "Use-After-Free", "C Programming", "Dangling pointers, memory reuse"),
+    Topic("memory-leaks", "Memory Leaks", "C Programming", "Accumulation, Valgrind/ASan"),
+    Topic("struct-padding", "Struct Padding", "C Programming", "Alignment, optimization"),
+    Topic("endianness", "Endianness", "C Programming", "Big/little-endian, network order"),
+    Topic("undefined-behavior", "Undefined Behavior", "C Programming", "Signed overflow, race conditions"),
+
     // Sorting
     Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
     Topic("selection-sort", "Selection Sort", "Sorting", "Find minimum and swap"),
@@ -260,6 +291,18 @@ fun TopicDetailScreen(
                 ) {
                     if (state.currentFrame != null) {
                         when (topic.id) {
+                            // C Programming - Memory Visualization
+                            "memory-layout", "pointers", "stack-vs-heap", "pointer-arithmetic",
+                            "null-pointers", "function-pointers", "buffer-overflow", "use-after-free",
+                            "memory-leaks", "struct-padding", "endianness", "undefined-behavior" -> {
+                                val scene = state.currentFrame?.scene as? MemoryScene
+                                if (scene != null) {
+                                    MemoryRenderer(scene, modifier = Modifier.fillMaxWidth())
+                                } else {
+                                    Text("Loading visualization...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+
                             "bubble-sort", "selection-sort", "insertion-sort", "quick-sort" -> {
                                 val scene = state.currentFrame?.scene as? BarsScene
                                 if (scene != null) {
@@ -410,6 +453,20 @@ fun TopicDetailScreen(
 
 private fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
     val frames = when (topic.id) {
+        // C Programming Topics
+        "memory-layout" -> MemoryLayoutRunner.run()
+        "pointers" -> PointersRunner.run()
+        "stack-vs-heap" -> StackVsHeapRunner.run()
+        "pointer-arithmetic" -> PointerArithmeticRunner.run()
+        "null-pointers" -> NullPointersRunner.run()
+        "function-pointers" -> FunctionPointersRunner.run()
+        "buffer-overflow" -> BufferOverflowRunner.run()
+        "use-after-free" -> UseAfterFreeRunner.run()
+        "memory-leaks" -> MemoryLeaksRunner.run()
+        "struct-padding" -> StructPaddingRunner.run()
+        "endianness" -> EndiannessRunner.run()
+        "undefined-behavior" -> UndefinedBehaviorRunner.run()
+
         "bubble-sort" -> BubbleSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
         "selection-sort" -> SelectionSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
         "insertion-sort" -> InsertionSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
