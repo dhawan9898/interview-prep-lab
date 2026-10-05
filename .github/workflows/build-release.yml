@@ -15,11 +15,14 @@ permissions:
 
 concurrency:
   group: build-release-${{ github.ref }}
-  cancel-in-progress: false
+  # Never cancel release runs on main; on branches/PRs a newer push supersedes older runs.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pin the image the builds already use; ubuntu-latest is being moved to a newer image.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     env:
       IS_RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
