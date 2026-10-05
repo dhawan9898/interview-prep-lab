@@ -1,5 +1,7 @@
 package com.interviewpreplab.features.flashcard
 
+import javax.inject.Inject
+
 /**
  * SM-2 (SuperMemo 2) Spaced Repetition Algorithm
  *
@@ -8,7 +10,7 @@ package com.interviewpreplab.features.flashcard
  *
  * Based on: https://www.supermemo.com/en/archives1990-2015/english/ol/2sm2
  */
-class SRSAlgorithm {
+class SRSAlgorithm @Inject constructor() {
 
     companion object {
         const val MIN_EASE_FACTOR = 1.3
