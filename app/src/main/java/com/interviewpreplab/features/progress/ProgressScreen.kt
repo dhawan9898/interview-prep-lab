@@ -41,13 +41,14 @@ import com.interviewpreplab.core.database.entities.TopicProgressEntity
 @Composable
 fun ProgressScreen(
     viewModel: ProgressViewModel = hiltViewModel(),
-    onTopicClick: (topicId: String) -> Unit = {}
+    onTopicClick: (topicId: String) -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
