@@ -9,17 +9,26 @@ data class Topic(
 
 val topicList = listOf(
     // C Programming
-    Topic("memory-layout", "Memory Layout", "C Programming", "Stack, Heap, Data, Code segments"),
+    Topic("arrays", "Arrays", "C Programming", "Indexing, decay, 2D layout, bounds"),
+    Topic("strings", "Strings", "C Programming", "NUL-terminated arrays, string.h, safe input"),
     Topic("pointers", "Pointers & Addresses", "C Programming", "Address-of, dereference operators"),
-    Topic("stack-vs-heap", "Stack vs Heap", "C Programming", "Automatic vs manual allocation"),
     Topic("pointer-arithmetic", "Pointer Arithmetic", "C Programming", "Array indexing, offsets, loops"),
     Topic("null-pointers", "Null Pointers", "C Programming", "NULL checks, segmentation faults"),
+    Topic("dynamic-memory", "Dynamic Memory", "C Programming", "malloc, calloc, realloc, free"),
+    Topic("memory-layout", "Memory Layout", "C Programming", "Stack, Heap, Data, Code segments"),
+    Topic("stack-vs-heap", "Stack vs Heap", "C Programming", "Automatic vs manual allocation"),
+    Topic("storage-classes", "Storage Classes", "C Programming", "auto, static, extern, scope and linkage"),
+    Topic("structs-unions", "Structs, Unions & Enums", "C Programming", "Records, variants, tagged unions"),
+    Topic("struct-padding", "Struct Padding", "C Programming", "Alignment, optimization"),
+    Topic("bitwise", "Bitwise Operators", "C Programming", "Masks, shifts, flags, bit tricks"),
+    Topic("endianness", "Endianness", "C Programming", "Big/little-endian, network order"),
     Topic("function-pointers", "Function Pointers", "C Programming", "Callbacks, dynamic dispatch"),
+    Topic("qualifiers", "const, volatile, restrict", "C Programming", "Type qualifiers and const correctness"),
+    Topic("preprocessor", "Preprocessor & Macros", "C Programming", "include, define, conditional compilation"),
+    Topic("file-io", "File I/O", "C Programming", "fopen, fread/fwrite, fseek, buffering"),
     Topic("buffer-overflow", "Buffer Overflow", "C Programming", "Stack smashing, defenses"),
     Topic("use-after-free", "Use-After-Free", "C Programming", "Dangling pointers, memory reuse"),
     Topic("memory-leaks", "Memory Leaks", "C Programming", "Accumulation, Valgrind/ASan"),
-    Topic("struct-padding", "Struct Padding", "C Programming", "Alignment, optimization"),
-    Topic("endianness", "Endianness", "C Programming", "Big/little-endian, network order"),
     Topic("undefined-behavior", "Undefined Behavior", "C Programming", "Signed overflow, race conditions"),
 
     // Sorting

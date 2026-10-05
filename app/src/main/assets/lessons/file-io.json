@@ -1,0 +1,133 @@
+{
+  "summary": "C reads and writes files through the stdio library using a FILE * stream. You open a file with a mode, read or write with formatted, character, line, or binary functions, move the position indicator if needed, and close the stream.",
+  "sections": [
+    {
+      "heading": "Opening and closing",
+      "body": "`fopen(path, mode)` returns a FILE * or NULL on failure; always test it and report errors with `perror`. Close with `fclose` to flush buffers and release the descriptor.",
+      "code": "FILE *f = fopen(\"data.txt\", \"r\");\nif (!f) { perror(\"fopen\"); return 1; }\n/* ... */\nfclose(f);"
+    },
+    {
+      "heading": "Modes",
+      "bullets": [
+        "\"r\": read, file must exist.",
+        "\"w\": write, create or truncate.",
+        "\"a\": append, create if missing.",
+        "\"r+\", \"w+\", \"a+\": read and write variants.",
+        "Add \"b\" for binary (\"rb\", \"wb\"); it only matters on systems that translate newlines, like Windows."
+      ]
+    },
+    {
+      "heading": "Reading and writing text",
+      "bullets": [
+        "`fgetc` / `fputc`: one character.",
+        "`fgets(buf, n, f)` / `fputs`: a line.",
+        "`fscanf` / `fprintf`: formatted values.",
+        "Loop on the return value, not on `feof`: `while (fgets(line, sizeof line, f)) { ... }`."
+      ],
+      "code": "char line[256];\nwhile (fgets(line, sizeof line, f)) {\n  fputs(line, stdout);\n}"
+    },
+    {
+      "heading": "Binary I/O",
+      "body": "`fread(ptr, size, count, f)` and `fwrite(ptr, size, count, f)` move raw bytes and return the number of items transferred. Writing whole structs is quick but not portable across padding, endianness, or compilers.",
+      "code": "struct Rec { int id; double val; } r = {1, 2.5};\nFILE *b = fopen(\"rec.bin\", \"wb\");\nfwrite(&r, sizeof r, 1, b);\nfclose(b);"
+    },
+    {
+      "heading": "Positioning",
+      "bullets": [
+        "`ftell(f)`: current offset.",
+        "`fseek(f, offset, SEEK_SET | SEEK_CUR | SEEK_END)`: move.",
+        "`rewind(f)`: back to the start and clear error flags."
+      ],
+      "code": "fseek(f, 0, SEEK_END);\nlong size = ftell(f);\nrewind(f);"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Error handling",
+      "summary": "ferror, feof, errno.",
+      "sections": [
+        {
+          "body": "Functions return EOF or a short count on trouble. Distinguish end-of-file from error with `feof(f)` and `ferror(f)`, and inspect `errno` / `perror` for the reason. Check `fclose` and `fflush` results when writing important data, since buffered writes can fail late."
+        }
+      ]
+    },
+    {
+      "title": "Buffering",
+      "summary": "Why output sometimes appears late.",
+      "sections": [
+        {
+          "body": "stdio buffers output: line-buffered for terminals, fully buffered for files. `fflush(f)` forces a flush; `setvbuf` changes the mode. A crash before flush loses buffered data."
+        }
+      ]
+    },
+    {
+      "title": "Standard streams and redirection",
+      "summary": "stdin, stdout, stderr.",
+      "sections": [
+        {
+          "body": "Three streams are open at start. Errors belong on stderr (unbuffered) so they are visible even when stdout is redirected. `freopen` rebinds a stream to a file."
+        }
+      ]
+    },
+    {
+      "title": "Reading a whole file",
+      "summary": "A common helper.",
+      "sections": [
+        {
+          "code": "char *slurp(const char *path, size_t *n) {\n  FILE *f = fopen(path, \"rb\"); if (!f) return NULL;\n  fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);\n  char *buf = malloc(sz + 1);\n  if (buf && fread(buf, 1, sz, f) == (size_t)sz) { buf[sz] = 0; if (n) *n = sz; }\n  else { free(buf); buf = NULL; }\n  fclose(f); return buf;\n}"
+        }
+      ]
+    },
+    {
+      "title": "POSIX file descriptors",
+      "summary": "Lower-level alternative.",
+      "sections": [
+        {
+          "body": "`open`, `read`, `write`, `close` operate on integer descriptors with no stdio buffering and are used for sockets, pipes, and devices. `fileno(f)` and `fdopen(fd, mode)` convert between the two."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Open with fopen, always test for NULL, close with fclose.",
+    "Choose text functions (fgets, fprintf) or binary (fread, fwrite) deliberately.",
+    "Loop on read return values, not on feof.",
+    "Output is buffered; flush or close to persist it."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: File handling in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/basics-file-handling-c/"
+    },
+    {
+      "label": "Linux man-pages: fopen(3)",
+      "url": "https://man7.org/linux/man-pages/man3/fopen.3.html"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Copy one file to another in blocks",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count lines, words, and characters in a file",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Read records from a CSV into an array of structs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Store and retrieve structs with fwrite/fread and fseek",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement tail -n by seeking from the end",
+      "difficulty": "Hard"
+    }
+  ]
+}

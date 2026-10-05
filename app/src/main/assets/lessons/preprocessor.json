@@ -1,0 +1,132 @@
+{
+  "summary": "The C preprocessor is a text-substitution step that runs before compilation. It includes files, defines macros, and conditionally keeps or drops code. Because it works on tokens, not types or scopes, macros are powerful and easy to misuse.",
+  "sections": [
+    {
+      "heading": "#include",
+      "body": "`#include <file>` searches system directories; `#include \"file\"` searches the current directory first. The preprocessor pastes the file's contents in place.",
+      "code": "#include <stdio.h>\n#include \"mylib.h\""
+    },
+    {
+      "heading": "Object-like macros",
+      "body": "A name replaced by tokens, commonly for constants. Prefer `enum` or `const` for typed constants; use #define when you need a preprocessor-time value.",
+      "code": "#define BUFSIZE 1024\n#define PI 3.14159"
+    },
+    {
+      "heading": "Function-like macros",
+      "body": "Macros with parameters expand textually, so they must be parenthesized carefully; arguments with side effects can be evaluated more than once.",
+      "code": "#define SQR_BAD(x) x * x\n#define SQR(x)     ((x) * (x))\nSQR_BAD(1 + 2)   // 1 + 2 * 1 + 2 = 5, not 9\nSQR(i++)         // i incremented twice: undefined behavior"
+    },
+    {
+      "heading": "Conditional compilation",
+      "bullets": [
+        "`#ifdef NAME` / `#ifndef NAME` / `#if expr` / `#elif` / `#else` / `#endif` select code at build time.",
+        "Use for platform differences, debug builds, and feature flags.",
+        "`#if 0 ... #endif` temporarily disables a block."
+      ],
+      "code": "#ifdef DEBUG\n  #define LOG(msg) fprintf(stderr, \"%s:%d %s\\n\", __FILE__, __LINE__, msg)\n#else\n  #define LOG(msg) ((void)0)\n#endif"
+    },
+    {
+      "heading": "Include guards",
+      "body": "A header can be included twice through different paths, causing redefinition errors. Guard it so the body is seen once, or use the widely supported `#pragma once`.",
+      "code": "#ifndef MYLIB_H\n#define MYLIB_H\n/* declarations */\n#endif"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Stringification and token pasting",
+      "summary": "# and ##.",
+      "sections": [
+        {
+          "body": "`#x` turns a macro argument into a string literal; `a ## b` glues two tokens into one identifier.",
+          "code": "#define STR(x) #x\n#define CAT(a, b) a##b\nprintf(\"%s\\n\", STR(hello));   // hello\nint CAT(var, 1) = 5;            // int var1 = 5;"
+        }
+      ]
+    },
+    {
+      "title": "Predefined macros",
+      "summary": "Built-in context.",
+      "sections": [
+        {
+          "bullets": [
+            "`__FILE__`, `__LINE__`: current file and line.",
+            "`__func__`: current function name (C99, not a macro).",
+            "`__DATE__`, `__TIME__`: compile time.",
+            "`__STDC_VERSION__`: the C standard in use (e.g. 201112L).",
+            "`NDEBUG`: when defined, `assert` is disabled."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Safe multi-statement macros",
+      "summary": "do { } while (0).",
+      "sections": [
+        {
+          "body": "Wrap multi-statement macros so they behave as one statement and work after `if` without braces.",
+          "code": "#define SWAP(a, b) do { __typeof__(a) t = (a); (a) = (b); (b) = t; } while (0)"
+        }
+      ]
+    },
+    {
+      "title": "Macros versus inline functions",
+      "summary": "Prefer functions when you can.",
+      "sections": [
+        {
+          "body": "`static inline` functions are type-checked, evaluate arguments once, show up in debuggers, and are usually as fast. Use macros for things functions cannot do: conditional compilation, token pasting, `__FILE__`/`__LINE__` capture, and generic helpers."
+        }
+      ]
+    },
+    {
+      "title": "Inspecting expansion",
+      "summary": "See what the preprocessor did.",
+      "sections": [
+        {
+          "body": "`gcc -E file.c` prints the preprocessed output; `-D NAME=value` defines a macro from the command line; `-I dir` adds an include path.",
+          "code": "gcc -E -DDEBUG main.c | less"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "The preprocessor does text substitution before compilation.",
+    "Parenthesize macro parameters and the whole expansion; avoid arguments with side effects.",
+    "Use include guards or #pragma once in every header.",
+    "Prefer enum, const, and inline functions to macros where possible."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "GNU C Preprocessor manual",
+      "url": "https://gcc.gnu.org/onlinedocs/cpp/"
+    },
+    {
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Write MAX and MIN macros that avoid double evaluation",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Add include guards to a header and test double inclusion",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a debug-only logging macro with file and line",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Create an X-macro that defines an enum and its string table",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Show why #define SQR(x) x*x is wrong",
+      "difficulty": "Easy"
+    }
+  ]
+}

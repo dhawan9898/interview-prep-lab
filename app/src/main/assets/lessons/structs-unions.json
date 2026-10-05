@@ -1,0 +1,138 @@
+{
+  "summary": "A struct groups values of different types under one name, with each member in its own storage. A union overlays its members in the same storage so only one is meaningful at a time. An enum names a set of integer constants. Together they let you model records, variants, and states.",
+  "sections": [
+    {
+      "heading": "Structures",
+      "body": "Define a struct type, create variables, and access members with `.` (or `->` through a pointer). Initialize with a list or designated initializers; uninitialized automatic members hold garbage.",
+      "code": "struct Student { char name[32]; int age; float gpa; };\nstruct Student s = {\"Vikas\", 20, 3.7f};\nstruct Student t = { .age = 18, .name = \"Anu\" };\nstruct Student *p = &s;\nprintf(\"%s %d\\n\", p->name, (*p).age);"
+    },
+    {
+      "heading": "typedef, nesting, and self-reference",
+      "bullets": [
+        "`typedef struct {...} Student;` removes the need to write `struct` each time.",
+        "Nested structs: `emp.addr.city`.",
+        "A struct can hold a pointer to its own type, which is how linked lists and trees are built.",
+        "Struct assignment copies all members (a shallow copy: pointers are copied, not what they point to)."
+      ],
+      "code": "typedef struct Node { int val; struct Node *next; } Node;"
+    },
+    {
+      "heading": "Passing and returning structs",
+      "body": "Structs are passed by value, copying every byte, so pass a `const struct *` for large ones. Returning small structs by value is fine and common."
+    },
+    {
+      "heading": "Unions",
+      "body": "All members share one block whose size is the size of the largest member (plus any alignment padding). Writing one member overwrites the others. Reading a different member than was last written reinterprets the bytes (allowed for type punning in C, implementation-defined result).",
+      "code": "union Value { int i; float f; unsigned char b[4]; };\nunion Value v; v.f = 1.0f;\nprintf(\"%08x\\n\", (unsigned)v.i);   // bit pattern of 1.0f: 3f800000"
+    },
+    {
+      "heading": "Enumerations",
+      "body": "An enum defines named integer constants starting at 0 unless assigned. Use them in place of magic numbers, especially for states and error codes.",
+      "code": "enum State { IDLE, RUNNING = 5, STOPPED };   // 0, 5, 6\nenum State st = RUNNING;"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Tagged unions",
+      "summary": "A safe variant type.",
+      "sections": [
+        {
+          "body": "Pair a union with an enum tag that records which member is active, and switch on the tag before reading. This is how interpreters, protocol parsers, and many C APIs represent 'one of several types'.",
+          "code": "struct Val { enum { INT, FLT } kind; union { int i; float f; } u; };\nvoid print(struct Val v) { if (v.kind == INT) printf(\"%d\", v.u.i); else printf(\"%f\", v.u.f); }"
+        }
+      ]
+    },
+    {
+      "title": "Struct versus union",
+      "summary": "Quick comparison.",
+      "sections": [
+        {
+          "bullets": [
+            "Struct: size is at least the sum of members (plus padding); all members valid at once.",
+            "Union: size is the largest member; only one valid at once.",
+            "Both can be nested in each other.",
+            "Anonymous unions (C11) expose members without a union name."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Flexible array members",
+      "summary": "Variable-size structs (C99).",
+      "sections": [
+        {
+          "body": "A struct may end with an array of unspecified length, allocated together with its header, as used for packets and strings with a length prefix.",
+          "code": "struct Buf { size_t len; char data[]; };\nstruct Buf *b = malloc(sizeof *b + 100);\nb->len = 100;"
+        }
+      ]
+    },
+    {
+      "title": "Bit-fields",
+      "summary": "Packing flags in bits.",
+      "sections": [
+        {
+          "body": "`unsigned ready : 1;` allocates one bit. Layout and ordering are implementation-defined, so bit-fields are fine for compact in-memory flags but unreliable for wire formats or hardware registers across compilers."
+        }
+      ]
+    },
+    {
+      "title": "Deep versus shallow copy",
+      "summary": "Pointers inside structs.",
+      "sections": [
+        {
+          "body": "Copying a struct that contains a `char *name` duplicates only the pointer, so both copies refer to the same string and freeing one invalidates the other. Write a clone function that allocates and copies pointed-to data when you need independence."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Struct members have separate storage; union members overlap.",
+    "Use . for values and -> for pointers; pass big structs by const pointer.",
+    "Combine a union with an enum tag to build safe variants.",
+    "Struct copy is shallow; layout and padding follow alignment rules."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
+    },
+    {
+      "label": "Reference: Structures in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/structures-c/"
+    },
+    {
+      "label": "Reference: Union in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/union-c/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Define a Student struct and sort an array by GPA",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a tagged union calculator value",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Print the bytes of a float using a union",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Build a linked list of structs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a deep-copy function for a struct containing a string",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Use a flexible array member for a length-prefixed message",
+      "difficulty": "Hard"
+    }
+  ]
+}

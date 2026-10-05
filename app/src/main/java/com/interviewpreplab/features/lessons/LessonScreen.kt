@@ -136,44 +136,42 @@ fun LessonScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            item {
-                SectionCard(accent) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "FRAME ${player.frameIdx + 1} / ${player.frames.size}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontFamily = MonospaceFamily,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Column(Modifier.fillMaxWidth().height(300.dp)) {
-                            if (player.frames.isEmpty()) {
-                                Text("No visualization for this lesson yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
+            if (player.frames.isNotEmpty()) {
+                item {
+                    SectionCard(accent) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "FRAME ${player.frameIdx + 1} / ${player.frames.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = MonospaceFamily,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Column(Modifier.fillMaxWidth().height(300.dp)) {
                                 SceneRenderer(player.frames, player.frameIdx, topic.id in verticalSlotTopics)
                             }
                         }
                     }
                 }
-            }
-            player.currentFrame?.let { frame ->
-                item {
-                    SectionCard(accent) {
-                        Text(frame.phase.replace('_', ' ').uppercase(), style = MaterialTheme.typography.labelMedium, color = accent)
-                        Text(frame.narr, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 6.dp))
+                player.currentFrame?.let { frame ->
+                    item {
+                        SectionCard(accent) {
+                            Text(frame.phase.replace('_', ' ').uppercase(), style = MaterialTheme.typography.labelMedium, color = accent)
+                            Text(frame.narr, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 6.dp))
+                        }
                     }
                 }
-            }
-            item {
-                PlayerControls(
-                    state = player,
-                    onPlay = playerVM::play,
-                    onPause = playerVM::pause,
-                    onStepBack = playerVM::stepBack,
-                    onStepForward = playerVM::stepForward,
-                    onReset = playerVM::reset,
-                    onScrub = playerVM::scrubTo,
-                    onSpeedChange = playerVM::setSpeed
-                )
+                item {
+                    PlayerControls(
+                        state = player,
+                        onPlay = playerVM::play,
+                        onPause = playerVM::pause,
+                        onStepBack = playerVM::stepBack,
+                        onStepForward = playerVM::stepForward,
+                        onReset = playerVM::reset,
+                        onScrub = playerVM::scrubTo,
+                        onSpeedChange = playerVM::setSpeed
+                    )
+                }
             }
 
             val sections = lesson?.sections.orEmpty()
@@ -182,7 +180,7 @@ fun LessonScreen(
                     SectionCard(accent) {
                         Text("Notes", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            "Detailed notes for this lesson are not written yet. Use the visualization above.",
+                            "Detailed notes for this lesson are not written yet.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp)

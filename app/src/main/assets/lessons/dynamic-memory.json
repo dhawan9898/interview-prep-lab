@@ -1,0 +1,134 @@
+{
+  "summary": "Dynamic memory allocation lets a program request heap memory at run time, sized by data it only learns while running. C provides four functions in <stdlib.h>: malloc, calloc, realloc, and free. You must check every request and release every block exactly once.",
+  "sections": [
+    {
+      "heading": "malloc",
+      "body": "`void *malloc(size_t size)` returns a pointer to `size` uninitialized bytes, or NULL on failure. The idiom `sizeof *p` keeps the size correct if the type changes.",
+      "code": "int *p = malloc(10 * sizeof *p);\nif (p == NULL) { perror(\"malloc\"); return 1; }"
+    },
+    {
+      "heading": "calloc",
+      "body": "`void *calloc(size_t n, size_t size)` allocates n elements and sets all bytes to zero. It also detects overflow in n * size, which a hand-written multiplication for malloc would not.",
+      "code": "int *z = calloc(10, sizeof *z);   // all 0"
+    },
+    {
+      "heading": "realloc",
+      "body": "`void *realloc(void *p, size_t new_size)` resizes a block, preserving contents up to the smaller size. It may move the block, so the old pointer becomes invalid. On failure it returns NULL and leaves the original block untouched, so never write `p = realloc(p, n)` directly (you would leak p).",
+      "code": "int *tmp = realloc(p, 20 * sizeof *p);\nif (tmp == NULL) { /* p still valid: handle error */ }\nelse p = tmp;"
+    },
+    {
+      "heading": "free",
+      "body": "`free(p)` returns a block obtained from malloc, calloc, or realloc. `free(NULL)` is a safe no-op. Freeing twice or freeing a pointer that did not come from the allocator is undefined behavior. Set the pointer to NULL afterward.",
+      "code": "free(p);\np = NULL;"
+    },
+    {
+      "heading": "A growable array",
+      "body": "Doubling capacity when full gives amortized O(1) appends.",
+      "code": "typedef struct { int *data; size_t len, cap; } Vec;\nint push(Vec *v, int x) {\n  if (v->len == v->cap) {\n    size_t nc = v->cap ? v->cap * 2 : 4;\n    int *t = realloc(v->data, nc * sizeof *t);\n    if (!t) return -1;\n    v->data = t; v->cap = nc;\n  }\n  v->data[v->len++] = x; return 0;\n}"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Allocating 2D arrays",
+      "summary": "Three layouts.",
+      "sections": [
+        {
+          "bullets": [
+            "One block of rows*cols ints, index as m[i*cols + j]: best locality and a single free.",
+            "Array of row pointers, each malloc'd: flexible rows, many frees.",
+            "Pointer to array: `int (*m)[cols] = malloc(rows * sizeof *m);` gives m[i][j] syntax with one block."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Common errors",
+      "summary": "What goes wrong.",
+      "sections": [
+        {
+          "bullets": [
+            "Not checking for NULL.",
+            "Memory leak: lost pointer, missing free.",
+            "Use after free and double free.",
+            "Buffer overrun: writing past the requested size.",
+            "Wrong size such as `malloc(sizeof p)` for a pointer p (gives the pointer size).",
+            "Casting malloc's result in C (unnecessary; can hide a missing #include <stdlib.h>)."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "How the allocator works",
+      "summary": "Why free needs no size.",
+      "sections": [
+        {
+          "body": "The allocator stores a small header before each block with its size, and keeps free blocks in bins or lists. glibc's ptmalloc uses arenas, and large requests use mmap. Metadata next to your data is why heap overflows are dangerous."
+        }
+      ]
+    },
+    {
+      "title": "Alignment and special allocators",
+      "summary": "aligned_alloc and alloca.",
+      "sections": [
+        {
+          "body": "malloc returns memory aligned for any standard type. `aligned_alloc(alignment, size)` (C11) or `posix_memalign` provide stricter alignment (SIMD, page-aligned I/O). `alloca` allocates on the stack and is non-standard and risky."
+        }
+      ]
+    },
+    {
+      "title": "Debugging heap bugs",
+      "summary": "Tools.",
+      "sections": [
+        {
+          "body": "Compile with `-fsanitize=address -g` to catch overflows, use-after-free, and leaks; run under Valgrind for similar reports; `mtrace` and `MALLOC_CHECK_` are lightweight glibc aids."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "malloc: uninitialized; calloc: zeroed and overflow-safe; realloc: may move; free: once only.",
+    "Always check for NULL, and assign realloc to a temporary.",
+    "Use sizeof *p, set pointers to NULL after free.",
+    "Run sanitizers during testing."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Dynamic memory allocation in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/dynamic-memory-allocation-in-c-using-malloc-calloc-free-and-realloc/"
+    },
+    {
+      "label": "Linux man-pages: malloc(3)",
+      "url": "https://man7.org/linux/man-pages/man3/malloc.3.html"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Read n then allocate and sum n integers",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a growable vector with push and pop",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Fix a realloc that leaks on failure",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Allocate and free a rows x cols matrix in one block",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write strdup from scratch",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Build a memory pool that hands out fixed-size blocks",
+      "difficulty": "Hard"
+    }
+  ]
+}

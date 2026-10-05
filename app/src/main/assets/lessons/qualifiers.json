@@ -1,0 +1,130 @@
+{
+  "summary": "Type qualifiers add promises about how an object may be used. const says the program will not modify it, volatile says its value can change outside the program's control, and restrict says a pointer is the only way to reach the object. They help both the compiler and other programmers.",
+  "sections": [
+    {
+      "heading": "const",
+      "body": "A const object cannot be modified through its name; trying to is a compile error. For objects defined const, modifying them through a cast pointer is undefined behavior. const improves safety, documents intent, and lets the compiler place data in read-only memory.",
+      "code": "const int max = 100;\n// max = 200;          // error\nconst double pi = 3.14159;"
+    },
+    {
+      "heading": "const and pointers",
+      "body": "Read declarations right to left. Three forms:",
+      "bullets": [
+        "`const int *p` (pointer to const int): cannot modify *p; can re-point p.",
+        "`int *const p` (const pointer): can modify *p; cannot re-point p.",
+        "`const int *const p`: neither."
+      ],
+      "code": "int x = 1, y = 2;\nconst int *a = &x;  a = &y;   /* *a = 5; error */\nint *const b = &x;  *b = 5;    /* b = &y; error */"
+    },
+    {
+      "heading": "const correctness in APIs",
+      "body": "Mark parameters you do not modify as pointer-to-const. It documents the contract, lets callers pass const data, and prevents accidents. The standard library does this: `size_t strlen(const char *s)`.",
+      "code": "size_t count(const int *a, size_t n);   // promises not to write"
+    },
+    {
+      "heading": "volatile",
+      "body": "Tells the compiler the object may change unexpectedly or that accesses have side effects, so every read and write in the source must really happen, in order. Without it the compiler may cache the value in a register or delete a loop that polls it.",
+      "bullets": [
+        "Memory-mapped hardware registers.",
+        "Variables changed by a signal handler (use `volatile sig_atomic_t`).",
+        "Objects shared with setjmp/longjmp code."
+      ],
+      "code": "volatile int ready = 0;\nwhile (!ready) { /* wait: re-read each time */ }"
+    },
+    {
+      "heading": "restrict (C99)",
+      "body": "A promise that, for the lifetime of the pointer, the object it points to is accessed only through that pointer (or pointers derived from it). It lets the compiler optimize aggressively, as in `memcpy`, whose arguments must not overlap. Breaking the promise is undefined behavior.",
+      "code": "void *memcpy(void *restrict dst, const void *restrict src, size_t n);"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "const is not thread safety or immutability",
+      "summary": "Common misconceptions.",
+      "sections": [
+        {
+          "body": "A `const` view of data does not stop another pointer from modifying it, so it is not a synchronization tool. volatile is likewise not an atomic type: use `_Atomic` or mutexes for threads."
+        }
+      ]
+    },
+    {
+      "title": "Casting away const",
+      "summary": "Why not to.",
+      "sections": [
+        {
+          "body": "Casting const away and writing to a genuinely const object is undefined behavior. It is acceptable only when you know the underlying object was not defined const, such as the return type of `strchr(const char *, int)` returning `char *`."
+        }
+      ]
+    },
+    {
+      "title": "Combining qualifiers",
+      "summary": "const volatile.",
+      "sections": [
+        {
+          "body": "A read-only hardware status register is `const volatile uint32_t *`: your code must not write it, yet its value changes by itself.",
+          "code": "const volatile uint32_t *status = (const volatile uint32_t *)0x40000000;"
+        }
+      ]
+    },
+    {
+      "title": "Where const data lives",
+      "summary": "Storage.",
+      "sections": [
+        {
+          "body": "String literals and file-scope const data usually go in a read-only section (.rodata), shared between processes and protected by the MMU. Local const variables still live on the stack and can be changed by buggy code."
+        }
+      ]
+    },
+    {
+      "title": "Compiler warnings to enable",
+      "summary": "Catch qualifier misuse.",
+      "sections": [
+        {
+          "body": "`-Wall -Wextra -Wcast-qual -Wdiscarded-qualifiers` flag casts and assignments that drop const, protecting API contracts."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "const forbids modification; read pointer declarations right to left.",
+    "Use pointer-to-const for read-only parameters.",
+    "volatile forces real memory accesses for hardware, signals, and setjmp.",
+    "restrict promises no aliasing and enables optimization; violating it is UB."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: const qualifier in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/const-qualifier-in-c/"
+    },
+    {
+      "label": "cppreference: Type qualifiers (C)",
+      "url": "https://en.cppreference.com/w/c/language/declarations"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Explain the difference between three pointer-const declarations",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Add const correctness to a small string library",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why a polling loop needs volatile",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Declare a read-only memory-mapped status register",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Why must memcpy arguments use restrict and not overlap?",
+      "difficulty": "Hard"
+    }
+  ]
+}

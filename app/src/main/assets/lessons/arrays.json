@@ -1,0 +1,135 @@
+{
+  "summary": "An array is a fixed-size block of same-typed elements stored contiguously in memory and accessed by zero-based index. Because the layout is contiguous, indexing is O(1), and arrays are the foundation under strings, matrices, buffers, and most data structures.",
+  "sections": [
+    {
+      "heading": "Declaring and initializing",
+      "body": "The size is fixed at declaration (a constant expression, or a runtime value for a C99 variable-length array). Elements not covered by an initializer list are zero-filled; arrays with static storage duration are zero-initialized by default, while automatic arrays hold garbage.",
+      "code": "int a[5];                    // uninitialized (automatic)\nint b[5] = {2, 4, 8};        // 2 4 8 0 0\nint c[] = {1, 2, 3};         // size deduced: 3\nint d[6] = {[2] = 7, [5] = 9};  // designated (C99): 0 0 7 0 0 9\nstatic int e[100];           // all zero"
+    },
+    {
+      "heading": "Indexing and bounds",
+      "body": "Valid indices run from 0 to n-1. C never checks bounds: a[n] or a[-1] is undefined behavior and can silently corrupt neighbouring variables or crash. Looping with the wrong bound is the classic off-by-one bug.",
+      "code": "for (int i = 0; i < 5; i++) b[i] *= 2;   // < 5, never <= 5"
+    },
+    {
+      "heading": "Size of an array",
+      "body": "`sizeof` on a real array yields its total byte size, so the element count is `sizeof a / sizeof a[0]`. This only works where the array itself is in scope; once passed to a function it has decayed to a pointer and sizeof gives the pointer's size.",
+      "code": "int n = sizeof b / sizeof b[0];   // 5"
+    },
+    {
+      "heading": "Arrays and functions",
+      "body": "Arrays are passed by address: the name decays to a pointer to the first element, so the callee can modify the caller's elements but does not know the length. Always pass the length as a separate parameter.",
+      "code": "void fill(int *a, size_t n, int v) { for (size_t i = 0; i < n; i++) a[i] = v; }\nfill(b, 5, 0);"
+    },
+    {
+      "heading": "Multidimensional arrays",
+      "body": "A 2D array is an array of arrays laid out in row-major order: all of row 0, then row 1, and so on. When passing it, every dimension except the first must be given so the compiler can compute row strides.",
+      "code": "int m[2][3] = {{1,2,3},{4,5,6}};   // memory: 1 2 3 4 5 6\nvoid show(int r[][3], int rows);    // column count required\n// m[i][j] == *(*(m + i) + j)"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Array decay",
+      "summary": "When an array becomes a pointer.",
+      "sections": [
+        {
+          "body": "In most expressions an array name is converted to a pointer to its first element. Exceptions: operand of sizeof, operand of &, and a string literal initializing a char array. That is why `&a` has type `int (*)[5]` while `a` decays to `int *`.",
+          "code": "int a[5];\nint *p = a;          // &a[0]\nint (*pa)[5] = &a;   // pointer to the whole array\nprintf(\"%zu %zu\\n\", sizeof a, sizeof p);  // 20 8"
+        }
+      ]
+    },
+    {
+      "title": "Variable-length arrays",
+      "summary": "C99 VLAs and their risks.",
+      "sections": [
+        {
+          "body": "`int v[n];` allocates n elements on the stack at run time. It is convenient but a large or attacker-controlled n overflows the stack, and VLAs became optional in C11. Prefer malloc for sizes you do not control."
+        }
+      ]
+    },
+    {
+      "title": "Arrays versus pointers",
+      "summary": "They are not the same thing.",
+      "sections": [
+        {
+          "bullets": [
+            "An array owns storage; a pointer holds an address.",
+            "sizeof differs: whole array versus pointer size.",
+            "An array name is not assignable; a pointer is.",
+            "They convert freely in expressions, which hides the difference."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Common array algorithms",
+      "summary": "Patterns to know.",
+      "sections": [
+        {
+          "bullets": [
+            "Linear scan for sum, min, max.",
+            "Two pointers from both ends (reverse, palindrome).",
+            "In-place rotation by three reversals.",
+            "Prefix sums for fast range queries.",
+            "Sorting and binary searching."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Advantages and limits",
+      "summary": "When to choose an array.",
+      "sections": [
+        {
+          "body": "Strengths: O(1) random access, cache-friendly contiguous layout, no per-element overhead. Limits: fixed size, O(n) insertion and deletion in the middle, no bounds checking. For growth, use a heap block you realloc (a dynamic array)."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Contiguous, fixed-size, same-typed, zero-indexed.",
+    "No bounds checking: out-of-range access is undefined behavior.",
+    "Arrays decay to pointers when passed; pass the length separately.",
+    "2D arrays are row-major; callee needs all but the first dimension."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
+    },
+    {
+      "label": "Reference: Arrays in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/c-arrays/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Find the second largest element in one pass",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Rotate an array right by k using three reversals",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Merge two sorted arrays into a third",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Transpose a matrix stored as int m[3][3]",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Spiral-order traversal of a 2D array",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Pass a 2D array to a function three different ways",
+      "difficulty": "Medium"
+    }
+  ]
+}

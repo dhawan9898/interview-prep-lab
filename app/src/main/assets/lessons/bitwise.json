@@ -1,0 +1,135 @@
+{
+  "summary": "Bitwise operators work directly on the individual bits of integers. They are the toolkit for flags, masks, packing data, hardware registers, and fast arithmetic tricks, and they underlie protocol headers and permissions.",
+  "sections": [
+    {
+      "heading": "The six operators",
+      "code": "a = 0b0111 (7), b = 0b0100 (4)\na & b  = 0b0100 (4)   AND: 1 only if both bits are 1\na | b  = 0b0111 (7)   OR : 1 if either is 1\na ^ b  = 0b0011 (3)   XOR: 1 if bits differ\n~b     = ...11111011  NOT: flips every bit  (~4 == -5 in two's complement)\na << 2 = 0b11100 (28) shift left : multiply by 2^n\na >> 1 = 0b0011 (3)  shift right: divide by 2^n (unsigned / non-negative)"
+    },
+    {
+      "heading": "Shift rules",
+      "bullets": [
+        "Shifting by a negative amount or by >= the type's width is undefined behavior.",
+        "Left-shifting a negative value, or shifting a 1 into the sign bit of a signed type, is undefined or problematic.",
+        "Right shift of a negative signed value is implementation-defined (usually arithmetic, copying the sign bit).",
+        "Prefer unsigned types for bit manipulation; use `1u << n` rather than `1 << n`."
+      ]
+    },
+    {
+      "heading": "Core bit idioms",
+      "body": "With `n` the bit index (0 = least significant):",
+      "code": "x |=  (1u << n);    // set bit n\nx &= ~(1u << n);    // clear bit n\nx ^=  (1u << n);    // toggle bit n\nint on = (x >> n) & 1u;   // test bit n"
+    },
+    {
+      "heading": "Useful tricks",
+      "bullets": [
+        "Is power of two: `x && !(x & (x - 1))`.",
+        "Clear lowest set bit: `x & (x - 1)` (loop gives popcount, Kernighan's method).",
+        "Isolate lowest set bit: `x & -x`.",
+        "Even/odd: `x & 1`.",
+        "Swap without a temporary: `a ^= b; b ^= a; a ^= b;` (educational; fails if a and b alias).",
+        "Single unique number among pairs: XOR everything."
+      ],
+      "code": "int popcount(unsigned x) { int c = 0; while (x) { x &= x - 1; c++; } return c; }"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Masks and flags",
+      "summary": "Packing booleans into one integer.",
+      "sections": [
+        {
+          "body": "Define one bit per option and combine with OR; test with AND. This is how file permissions, socket options, and many APIs work.",
+          "code": "enum { F_READ = 1u << 0, F_WRITE = 1u << 1, F_EXEC = 1u << 2 };\nunsigned perm = F_READ | F_WRITE;\nif (perm & F_WRITE) puts(\"writable\");\nperm &= ~F_WRITE;   // drop write"
+        }
+      ]
+    },
+    {
+      "title": "Extracting fields",
+      "summary": "Shift then mask.",
+      "sections": [
+        {
+          "body": "To read an N-bit field starting at bit s: `(x >> s) & ((1u << N) - 1)`. Example: the IPv4 IHL is the low nibble of the first byte, `b & 0x0F`, and the version is `b >> 4`.",
+          "code": "uint8_t b = 0x45;\nunsigned version = b >> 4;      // 4\nunsigned ihl     = b & 0x0F;    // 5"
+        }
+      ]
+    },
+    {
+      "title": "Why signed bit ops are risky",
+      "summary": "Integer promotion.",
+      "sections": [
+        {
+          "body": "Operands narrower than int are promoted to int, so `~uint8_t_value` becomes a negative int and comparisons surprise you. Cast the result back: `(uint8_t)~b`. Prefer fixed-width unsigned types such as uint32_t."
+        }
+      ]
+    },
+    {
+      "title": "Bit manipulation in hardware",
+      "summary": "Registers and volatile.",
+      "sections": [
+        {
+          "body": "Memory-mapped registers are read, masked, modified, and written back. Mark them `volatile` so the compiler does not remove or merge accesses, and use read-modify-write only when the register allows it.",
+          "code": "#define REG (*(volatile uint32_t *)0x40021000)\nREG |= (1u << 5);"
+        }
+      ]
+    },
+    {
+      "title": "Endianness and byte extraction",
+      "summary": "Portable byte access.",
+      "sections": [
+        {
+          "body": "Extract bytes with shifts, `(x >> 8) & 0xFF`, rather than casting pointers, so the result does not depend on host byte order."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "& masks, | sets, ^ toggles, ~ inverts, << and >> scale by powers of two.",
+    "Use unsigned types and avoid out-of-range or signed shifts (UB).",
+    "Set, clear, toggle, test: |= 1<<n, &= ~(1<<n), ^= 1<<n, (x>>n)&1.",
+    "x & (x-1) clears the lowest set bit; this drives many tricks."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Bitwise operators in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/bitwise-operators-in-c-cpp/"
+    },
+    {
+      "label": "Bit Twiddling Hacks (Stanford)",
+      "url": "https://graphics.stanford.edu/~seander/bithacks.html"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Check whether a number is a power of two",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count set bits two ways",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the single non-repeating element with XOR",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse the bits of a 32-bit integer",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Swap odd and even bits",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Pack and unpack an RGB565 color",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the two missing numbers using XOR",
+      "difficulty": "Hard"
+    }
+  ]
+}

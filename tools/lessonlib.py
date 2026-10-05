@@ -9,6 +9,9 @@ def S(heading=None, body=None, bullets=None, code=None):
     return d
 def SUB(title, summary, *sections): return {'title': title, 'summary': summary, 'sections': list(sections)}
 def REF(label, url): return {'label': label, 'url': url}
-def write(tid, summary, sections, subtopics, takeaways, refs):
-    json.dump({'summary': summary, 'sections': sections, 'subtopics': subtopics, 'takeaways': takeaways, 'references': refs},
+def P(*items): return [{'title': t, 'difficulty': d} for t, d in items]
+def write(tid, summary, sections, subtopics, takeaways, refs, practice=None):
+    doc = {'summary': summary, 'sections': sections, 'subtopics': subtopics, 'takeaways': takeaways, 'references': refs}
+    if practice: doc['practice'] = practice
+    json.dump(doc,
               open(os.path.join(OUT, tid + '.json'), 'w'), indent=2, ensure_ascii=False)
