@@ -18,13 +18,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.interviewpreplab.core.model.BarsScene
+import com.interviewpreplab.core.model.Frame
 import com.interviewpreplab.core.model.ListScene
 import com.interviewpreplab.core.model.SlotsScene
 import com.interviewpreplab.core.player.PlayerViewModel
@@ -44,6 +50,7 @@ import com.interviewpreplab.core.ui.PlayerControls
 import com.interviewpreplab.core.ui.SlotsRenderer
 import com.interviewpreplab.core.ui.TreeRenderer
 import com.interviewpreplab.features.data_structures.BSTRunner
+import com.interviewpreplab.features.progress.ProgressScreen
 import com.interviewpreplab.features.data_structures.CircularQueueRunner
 import com.interviewpreplab.features.data_structures.GraphRunner
 import com.interviewpreplab.features.data_structures.HeapRunner
@@ -84,48 +91,81 @@ data class Topic(
     val description: String
 )
 
+val topicList = listOf(
+    // Sorting
+    Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
+    Topic("selection-sort", "Selection Sort", "Sorting", "Find minimum and swap"),
+    Topic("insertion-sort", "Insertion Sort", "Sorting", "Build sorted array incrementally"),
+    Topic("quick-sort", "Quick Sort", "Sorting", "Divide and conquer with pivot"),
+
+    // Searching
+    Topic("binary-search", "Binary Search", "Searching", "Halve search space each iteration"),
+
+    // Data Structures
+    Topic("stack", "Stack", "Data Structures", "LIFO data structure"),
+    Topic("queue", "Queue", "Data Structures", "FIFO data structure with dead space"),
+    Topic("circular-queue", "Circular Queue", "Data Structures", "FIFO with modulo wraparound"),
+    Topic("linked-list", "Singly Linked List", "Data Structures", "Dynamic list with pointers"),
+    Topic("bst", "Binary Search Tree", "Data Structures", "Ordered tree for efficient search"),
+    Topic("heap", "Min Heap", "Data Structures", "Priority queue with heap property"),
+    Topic("graph", "Graph (BFS/DFS)", "Data Structures", "Node and edge traversal"),
+)
+
 @Composable
 fun MainScreen(playerVM: PlayerViewModel) {
     var selectedTopic by remember { mutableStateOf<Topic?>(null) }
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Topics) }
 
-    if (selectedTopic == null) {
-        TopicListScreen(
-            onTopicSelected = { topic ->
-                selectedTopic = topic
-                loadTopicFrames(playerVM, topic)
-            }
-        )
-    } else {
+    if (selectedTopic != null) {
         TopicDetailScreen(
             topic = selectedTopic!!,
             playerVM = playerVM,
             onBack = { selectedTopic = null }
         )
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f)) {
+                when (currentScreen) {
+                    Screen.Topics -> TopicListScreen(
+                        onTopicSelected = { topic ->
+                            selectedTopic = topic
+                            loadTopicFrames(playerVM, topic)
+                        }
+                    )
+                    Screen.Progress -> ProgressScreen(
+                        onTopicClick = { topicId ->
+                            selectedTopic = topicList.find { it.id == topicId }
+                            selectedTopic?.let { loadTopicFrames(playerVM, it) }
+                        }
+                    )
+                }
+            }
+
+            NavigationBar {
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Home, contentDescription = "Topics") },
+                    label = { Text("Topics") },
+                    selected = currentScreen == Screen.Topics,
+                    onClick = { currentScreen = Screen.Topics }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.BarChart, contentDescription = "Progress") },
+                    label = { Text("Progress") },
+                    selected = currentScreen == Screen.Progress,
+                    onClick = { currentScreen = Screen.Progress }
+                )
+            }
+        }
     }
+}
+
+enum class Screen {
+    Topics,
+    Progress
 }
 
 @Composable
 fun TopicListScreen(onTopicSelected: (Topic) -> Unit) {
-    val topics = listOf(
-        // Sorting
-        Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
-        Topic("selection-sort", "Selection Sort", "Sorting", "Find minimum and swap"),
-        Topic("insertion-sort", "Insertion Sort", "Sorting", "Build sorted array incrementally"),
-        Topic("quick-sort", "Quick Sort", "Sorting", "Divide and conquer with pivot"),
-
-        // Searching
-        Topic("binary-search", "Binary Search", "Searching", "Halve search space each iteration"),
-
-        // Data Structures
-        Topic("stack", "Stack", "Data Structures", "LIFO data structure"),
-        Topic("queue", "Queue", "Data Structures", "FIFO data structure with dead space"),
-        Topic("circular-queue", "Circular Queue", "Data Structures", "FIFO with modulo wraparound"),
-        Topic("linked-list", "Singly Linked List", "Data Structures", "Dynamic list with pointers"),
-        Topic("bst", "Binary Search Tree", "Data Structures", "Ordered tree for efficient search"),
-        Topic("heap", "Min Heap", "Data Structures", "Priority queue with heap property"),
-        Topic("graph", "Graph (BFS/DFS)", "Data Structures", "Node and edge traversal"),
-    )
-
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = { Text("Interview Prep Lab") },
@@ -138,7 +178,7 @@ fun TopicListScreen(onTopicSelected: (Topic) -> Unit) {
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(topics) { topic ->
+            items(topicList) { topic ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
