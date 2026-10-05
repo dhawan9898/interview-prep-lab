@@ -95,7 +95,7 @@ private fun DrawScope.drawPacketFlow(
             style = TextStyle(fontSize = 10.sp)
         )
         drawText(
-            textLayout = textLayout,
+            textLayoutResult = textLayout,
             topLeft = Offset(xPos - textLayout.size.width / 2, padding + 20f)
         )
     }
@@ -131,7 +131,7 @@ private fun DrawScope.drawPacketFlow(
                 style = TextStyle(fontSize = 9.sp)
             )
             drawText(
-                textLayout = textLayout,
+                textLayoutResult = textLayout,
                 topLeft = Offset(midX - textLayout.size.width / 2, yPos - 12f)
             )
         }

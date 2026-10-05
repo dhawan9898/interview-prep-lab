@@ -113,7 +113,7 @@ private fun DrawScope.drawTopology(
             style = TextStyle(fontSize = 8.sp)
         )
         drawText(
-            textLayout = textLayout,
+            textLayoutResult = textLayout,
             topLeft = Offset(nodeX - textLayout.size.width / 2, nodeY + 15f)
         )
     }

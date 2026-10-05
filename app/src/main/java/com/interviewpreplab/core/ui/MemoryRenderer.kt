@@ -190,7 +190,7 @@ private fun DrawScope.drawMemorySection(
         )
     )
     drawText(
-        textLayout = textLayout,
+        textLayoutResult = textLayout,
         topLeft = Offset(padding + 8f, yOffset + (cellHeight - textLayout.size.height) / 2)
     )
 }
@@ -233,7 +233,7 @@ private fun DrawScope.drawMemoryCell(
         text = address,
         style = TextStyle(fontSize = textSize, color = textColor)
     )
-    drawText(textLayout = addressText, topLeft = Offset(textStartX, textStartY))
+    drawText(textLayoutResult = addressText, topLeft = Offset(textStartX, textStartY))
 
     // Value text
     val valueText = textMeasurer.measure(
@@ -241,7 +241,7 @@ private fun DrawScope.drawMemoryCell(
         style = TextStyle(fontSize = textSize, color = textColor)
     )
     drawText(
-        textLayout = valueText,
+        textLayoutResult = valueText,
         topLeft = Offset(textStartX + 70f, textStartY)
     )
 
@@ -251,7 +251,7 @@ private fun DrawScope.drawMemoryCell(
         style = TextStyle(fontSize = textSize, color = textColor)
     )
     drawText(
-        textLayout = labelText,
+        textLayoutResult = labelText,
         topLeft = Offset(textStartX, textStartY + cellHeight / 2)
     )
 }

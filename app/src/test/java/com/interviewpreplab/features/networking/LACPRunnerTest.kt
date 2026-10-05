@@ -15,7 +15,7 @@ class LACPRunnerTest {
     fun testFrameStructure() {
         val frames = LACPRunner.run()
         frames.forEach { frame ->
-            assertNotNull(frame.narration, "Frame narration should not be null")
+            assertNotNull(frame.narr, "Frame narration should not be null")
             assertNotNull(frame.phase, "Frame phase should not be null")
         }
     }

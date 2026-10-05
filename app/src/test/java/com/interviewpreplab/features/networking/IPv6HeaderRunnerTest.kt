@@ -15,7 +15,7 @@ class IPv6HeaderRunnerTest {
     fun testFrameStructure() {
         val frames = IPv6HeaderRunner.run()
         frames.forEach { frame ->
-            assertNotNull(frame.narration, "Frame narration should not be null")
+            assertNotNull(frame.narr, "Frame narration should not be null")
             assertNotNull(frame.phase, "Frame phase should not be null")
             assertNotNull(frame.scene, "Frame scene should not be null")
         }

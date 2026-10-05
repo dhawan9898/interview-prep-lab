@@ -10,7 +10,15 @@ data class Frame(
     val codeLine: CodeLine? = null,     // Optional: which line to highlight
     val stats: Map<String, String> = emptyMap(), // {comparisons: "5", swaps: "2"}
     val scene: Scene                    // Domain-specific scene data
-)
+) {
+    /** Compact form used by narration-driven runners: Frame(narr, phase, stats[, scene]). */
+    constructor(
+        narr: String,
+        phase: String,
+        stats: Map<String, String>,
+        scene: Scene = TextScene
+    ) : this(narr = narr, phase = phase, codeLine = null, stats = stats, scene = scene)
+}
 
 sealed class CodeLine {
     data class Single(val line: Int) : CodeLine()
@@ -19,6 +27,9 @@ sealed class CodeLine {
 
 /** Base for all scene types. Subclasses define what to draw on Canvas. */
 sealed interface Scene
+
+/** Narration-only frame: nothing to draw, the UI shows the narration text. */
+object TextScene : Scene
 
 data class BarsScene(
     val bars: List<Bar>,        // one per array slot
