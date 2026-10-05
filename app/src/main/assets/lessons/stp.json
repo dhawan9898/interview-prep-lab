@@ -1,0 +1,100 @@
+{
+  "summary": "Spanning Tree Protocol lets a switched network have redundant links without forwarding loops. Switches elect a root, compute loop-free paths toward it, and block the redundant ports.",
+  "sections": [
+    {
+      "heading": "The problem: Layer 2 loops",
+      "body": "Ethernet frames have no TTL. With redundant links, a broadcast can circulate forever and multiply (a broadcast storm), while MAC tables flap as the same source appears on multiple ports. STP prevents this by blocking some ports."
+    },
+    {
+      "heading": "Root bridge election",
+      "body": "Every switch has a Bridge ID: a 16-bit priority (default 32768, in steps of 4096) followed by its MAC address. The switch with the lowest Bridge ID becomes the root. Switches exchange BPDUs (every 2 seconds) announcing the root they believe in."
+    },
+    {
+      "heading": "Port roles",
+      "bullets": [
+        "Root port: each non-root switch's single best path toward the root (lowest cumulative cost, then lowest sender ID).",
+        "Designated port: on each segment, the port that offers the best path to the root; it forwards.",
+        "Blocked/alternate port: everything else; receives BPDUs but forwards no data."
+      ]
+    },
+    {
+      "heading": "Path cost",
+      "body": "Costs are summed along the path to the root. Typical IEEE short-method values: 10 Mb/s = 100, 100 Mb/s = 19, 1 Gb/s = 4, 10 Gb/s = 2. Lower total cost wins; ties are broken by sender bridge ID and port ID."
+    },
+    {
+      "heading": "Port states in classic STP",
+      "bullets": [
+        "Blocking: discards data, listens to BPDUs.",
+        "Listening: transitions, no learning yet (forward delay 15 s).",
+        "Learning: builds the MAC table, still no forwarding (15 s).",
+        "Forwarding: normal operation.",
+        "Disabled: administratively down.",
+        "Default timers: hello 2 s, forward delay 15 s, max age 20 s, so convergence takes 30-50 seconds."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Rapid STP (802.1w)",
+      "summary": "Faster convergence.",
+      "sections": [
+        {
+          "body": "RSTP collapses states into discarding, learning, and forwarding and adds a proposal/agreement handshake so point-to-point links can move to forwarding in a second or less. It adds alternate and backup port roles that are ready to take over immediately."
+        }
+      ]
+    },
+    {
+      "title": "PortFast and BPDU guard",
+      "summary": "Edge ports.",
+      "sections": [
+        {
+          "body": "Ports to end hosts should skip the delay (PortFast / edge port). BPDU Guard shuts such a port down if it ever receives a BPDU, preventing someone from attaching a switch and changing the topology."
+        }
+      ]
+    },
+    {
+      "title": "Per-VLAN and multiple spanning trees",
+      "summary": "PVST+, MSTP.",
+      "sections": [
+        {
+          "body": "PVST+ (Cisco) runs one tree per VLAN, enabling load balancing by choosing a different root per VLAN. MSTP (802.1s) maps groups of VLANs to a few instances, scaling better."
+        }
+      ]
+    },
+    {
+      "title": "Protecting the root",
+      "summary": "Guard features.",
+      "sections": [
+        {
+          "body": "Root Guard stops a port from accepting a superior BPDU that would move the root. Loop Guard prevents a port from becoming designated if BPDUs stop arriving. Set priorities deliberately so the root is a core switch, not an arbitrary old one."
+        }
+      ]
+    },
+    {
+      "title": "Diagnosing",
+      "summary": "Commands.",
+      "sections": [
+        {
+          "body": "`show spanning-tree` lists the root, port roles, and states per VLAN; unexpected root bridges and flapping topology-change counters point to problems.",
+          "code": "Switch# show spanning-tree vlan 10\n  Root ID  Priority 24586  Address 0011.2233.4455\n  Gi0/1  Root FWD 4  128.1  P2p"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "STP elects the lowest Bridge ID as root, then keeps only the best loop-free paths.",
+    "Roles: root, designated, blocked; costs sum toward the root.",
+    "Classic STP converges in 30-50 s; RSTP in about a second.",
+    "Use PortFast + BPDU Guard on edge ports and set the root deliberately."
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Reference: Spanning Tree Protocol (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Spanning_Tree_Protocol"
+    }
+  ]
+}

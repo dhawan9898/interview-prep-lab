@@ -1,0 +1,94 @@
+{
+  "summary": "NAT rewrites IP addresses (and usually ports) as packets cross a router so many hosts on a private network can share one public address. It conserves IPv4 addresses but breaks the end-to-end model.",
+  "sections": [
+    {
+      "heading": "Basic NAT versus NAPT",
+      "body": "RFC 3022 defines two traditional forms.",
+      "bullets": [
+        "Basic NAT: one-to-one mapping of private to public addresses; each internal host needs its own public address while it is active.",
+        "NAPT (PAT, 'NAT overload'): maps (private IP, port) to (public IP, assigned port), so thousands of hosts share one public address, distinguished by port."
+      ]
+    },
+    {
+      "heading": "Outbound translation",
+      "body": "When an internal host opens a connection, the NAT creates a binding and rewrites the source.",
+      "code": "inside host      NAT                      outside server\n10.0.0.5:51000 -> [203.0.113.1:62001]   -> 198.51.100.7:443\n   table: 10.0.0.5:51000 <-> 203.0.113.1:62001 (TCP)"
+    },
+    {
+      "heading": "Inbound translation",
+      "body": "A reply to 203.0.113.1:62001 matches the binding, so the NAT rewrites the destination back to 10.0.0.5:51000 and forwards it. Packets with no matching binding are dropped, which is why NAT acts as an accidental inbound firewall."
+    },
+    {
+      "heading": "Checksums",
+      "body": "TCP and UDP checksums include a pseudo-header with the IP addresses, so the NAT must adjust them. RFC 3022 explains an incremental update using the arithmetic difference of the old and new values rather than recomputing from scratch."
+    },
+    {
+      "heading": "Limitations",
+      "bullets": [
+        "Protocols that embed addresses in the payload (FTP active mode, SIP, H.323) need an ALG to fix the payload and sequence numbers.",
+        "ICMP errors contain an embedded header that must also be translated.",
+        "Fragments after the first lack ports, so mapping fails without reassembly.",
+        "Inbound connections need port forwarding or traversal tricks.",
+        "Bindings expire after idle time; long-lived idle connections need keepalives."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Port forwarding and DNAT",
+      "summary": "Reaching an inside server.",
+      "sections": [
+        {
+          "body": "A static binding maps public IP:port to an internal IP:port so outside clients can reach a server. Linux: `iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 10.0.0.5:80`."
+        }
+      ]
+    },
+    {
+      "title": "Source NAT on Linux",
+      "summary": "MASQUERADE.",
+      "sections": [
+        {
+          "body": "`iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE` rewrites the source of outgoing packets to the interface's address and tracks connections in conntrack."
+        }
+      ]
+    },
+    {
+      "title": "NAT types and traversal",
+      "summary": "Peer-to-peer problems.",
+      "sections": [
+        {
+          "body": "Full cone, restricted cone, port-restricted cone, and symmetric NATs differ in who may use a mapping. VoIP and games use STUN, TURN, and ICE (RFC 8445) to punch through or relay; symmetric NAT is the hardest."
+        }
+      ]
+    },
+    {
+      "title": "CGNAT and IPv6",
+      "summary": "Scaling and the way out.",
+      "sections": [
+        {
+          "body": "Carrier-grade NAT (100.64.0.0/10, RFC 6598) shares one address across many customers. IPv6 restores end-to-end addressing and removes the need for NAT, using firewalls for protection instead."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "NAT rewrites addresses; NAPT also rewrites ports to share one public IP.",
+    "A translation table binds inside and outside tuples and expires idle entries.",
+    "Checksums must be adjusted; embedded addresses need ALGs.",
+    "NAT breaks inbound reachability; IPv6 removes the need for it."
+  ],
+  "references": [
+    {
+      "label": "RFC 3022: Traditional IP Network Address Translator",
+      "url": "https://www.rfc-editor.org/rfc/rfc3022"
+    },
+    {
+      "label": "RFC 4787: NAT Behavioral Requirements for UDP",
+      "url": "https://www.rfc-editor.org/rfc/rfc4787"
+    },
+    {
+      "label": "RFC 5382: NAT Behavioral Requirements for TCP",
+      "url": "https://www.rfc-editor.org/rfc/rfc5382"
+    }
+  ]
+}

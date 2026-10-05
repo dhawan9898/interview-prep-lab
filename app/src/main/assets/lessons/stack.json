@@ -1,0 +1,90 @@
+{
+  "summary": "A stack is a linear collection with LIFO (last in, first out) access: only the top is accessible. Push adds to the top, pop removes from it, all in O(1).",
+  "sections": [
+    {
+      "heading": "Operations",
+      "bullets": [
+        "push(x): add x on top. O(1).",
+        "pop(): remove and return the top. O(1).",
+        "peek()/top(): read the top without removing. O(1).",
+        "isEmpty(), size(). O(1).",
+        "Overflow: push onto a full fixed-size stack. Underflow: pop from an empty one."
+      ]
+    },
+    {
+      "heading": "Array implementation",
+      "body": "Keep an array and an index `top` (-1 when empty). Push increments top then stores; pop reads then decrements. Fixed capacity unless you grow the array (amortized O(1) push).",
+      "code": "typedef struct { int data[100]; int top; } Stack;\nvoid init(Stack *s) { s->top = -1; }\nint push(Stack *s, int x) { if (s->top == 99) return -1; s->data[++s->top] = x; return 0; }\nint pop(Stack *s, int *out) { if (s->top < 0) return -1; *out = s->data[s->top--]; return 0; }"
+    },
+    {
+      "heading": "Linked-list implementation",
+      "body": "Push and pop at the head of a singly linked list. No capacity limit, but each element carries a pointer and a malloc."
+    },
+    {
+      "heading": "Applications",
+      "bullets": [
+        "Function calls: the call stack stores frames and return addresses.",
+        "Undo/redo and browser history.",
+        "Balanced parentheses and syntax checking.",
+        "Expression evaluation and infix-to-postfix conversion.",
+        "Depth-first search and backtracking.",
+        "Monotonic stack problems (next greater element, largest rectangle)."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Balanced parentheses",
+      "summary": "The canonical stack problem.",
+      "sections": [
+        {
+          "body": "Push each opening bracket; on a closing bracket pop and check that it matches. The string is balanced if every pop matches and the stack ends empty.",
+          "code": "for each c in s:\n  if c in '([{': push(c)\n  else: if empty or not match(pop(), c): return false\nreturn empty"
+        }
+      ]
+    },
+    {
+      "title": "Postfix evaluation",
+      "summary": "No parentheses needed.",
+      "sections": [
+        {
+          "body": "Scan tokens: push numbers; on an operator pop two operands, apply, push the result. `3 4 + 2 *` gives 14. Dijkstra's shunting-yard algorithm converts infix to postfix using an operator stack."
+        }
+      ]
+    },
+    {
+      "title": "Call stack and recursion",
+      "summary": "Hidden stack.",
+      "sections": [
+        {
+          "body": "Every recursive call pushes a frame. Deep recursion can overflow the stack; any recursion can be converted to iteration with an explicit stack, which is how iterative DFS works."
+        }
+      ]
+    },
+    {
+      "title": "Monotonic stack",
+      "summary": "Next greater element in O(n).",
+      "sections": [
+        {
+          "body": "Keep a stack of indices with decreasing values. When a larger value arrives, pop and resolve each smaller one. Each element is pushed and popped once, so total O(n)."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "LIFO: only the top is accessible; push/pop/peek are O(1).",
+    "Implement with an array (fast, bounded) or a linked list (unbounded).",
+    "Powers recursion, undo, parsing, and DFS.",
+    "Watch for overflow and underflow."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Stack data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/stack-data-structure/"
+    }
+  ]
+}

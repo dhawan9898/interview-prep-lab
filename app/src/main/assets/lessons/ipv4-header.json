@@ -1,0 +1,99 @@
+{
+  "summary": "The IPv4 header carries the fields routers need to forward a datagram: addresses, length, fragmentation controls, time to live, the upper-layer protocol, and a header checksum. It is 20 bytes plus up to 40 bytes of options.",
+  "sections": [
+    {
+      "heading": "Header layout (RFC 791)",
+      "code": " 0       4       8              16   19                 31\n+-------+-------+---------------+------+------------------+\n|Version|  IHL  | Type of Svc   |     Total Length         |\n+-------+-------+---------------+------+------------------+\n|      Identification           |Flags | Fragment Offset  |\n+-------------------------------+------+------------------+\n|   TTL         |   Protocol    |     Header Checksum      |\n+---------------+---------------+--------------------------+\n|                  Source Address                          |\n+----------------------------------------------------------+\n|                Destination Address                       |\n+----------------------------------------------------------+\n|                Options (0-40 bytes)                      |"
+    },
+    {
+      "heading": "Fields",
+      "bullets": [
+        "Version (4 bits): 4.",
+        "IHL (4 bits): header length in 32-bit words; minimum 5 (20 bytes), maximum 15 (60 bytes).",
+        "Type of Service / DSCP+ECN (8 bits): QoS marking and congestion notification.",
+        "Total Length (16 bits): header plus data in bytes; maximum 65,535.",
+        "Identification (16): shared by all fragments of one datagram.",
+        "Flags (3): reserved, DF (Don't Fragment), MF (More Fragments).",
+        "Fragment Offset (13): position of this fragment in 8-byte units.",
+        "TTL (8): decremented at each router; at zero the packet is dropped and ICMP Time Exceeded is sent.",
+        "Protocol (8): payload type, e.g. 1 ICMP, 6 TCP, 17 UDP.",
+        "Header Checksum (16): covers the header only.",
+        "Source and Destination addresses (32 each)."
+      ]
+    },
+    {
+      "heading": "Header checksum",
+      "body": "The checksum is the 16-bit one's complement of the one's complement sum of all 16-bit header words, computed with the checksum field set to zero. Because TTL changes at every hop, each router recomputes it (usually incrementally).",
+      "code": "sum = 0\nfor each 16-bit word w in header: sum += w\nwhile (sum >> 16): sum = (sum & 0xffff) + (sum >> 16)\nchecksum = ~sum & 0xffff"
+    },
+    {
+      "heading": "Fragmentation",
+      "body": "If a datagram exceeds the next link's MTU and DF is clear, a router splits it. Each fragment repeats the header, sets MF on all but the last, and stores its byte offset divided by 8 in the offset field. The destination, not routers, reassembles using source, destination, protocol, and Identification.",
+      "code": "MTU 1500, payload 4000 bytes (header 20):\n  frag 1: offset 0,   1480 bytes, MF=1\n  frag 2: offset 185, 1480 bytes, MF=1   (1480/8 = 185)\n  frag 3: offset 370, 1040 bytes, MF=0"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Path MTU discovery",
+      "summary": "Avoiding fragmentation.",
+      "sections": [
+        {
+          "body": "Senders set DF and shrink packets when a router answers ICMP 'Fragmentation needed' (type 3, code 4). Blocking that ICMP message creates black holes where large packets vanish but small ones work."
+        }
+      ]
+    },
+    {
+      "title": "Address classes versus CIDR",
+      "summary": "History.",
+      "sections": [
+        {
+          "body": "RFC 791 defined classes A (/8), B (/16), and C (/24) by leading bits. Classless addressing (CIDR, RFC 4632) replaced them so any prefix length can be used and routes can be aggregated."
+        }
+      ]
+    },
+    {
+      "title": "Options",
+      "summary": "Rarely used.",
+      "sections": [
+        {
+          "body": "Record Route, Timestamp, and Source Route options exist but are often dropped by routers for security and performance, which is one reason IPv6 removed them from the base header."
+        }
+      ]
+    },
+    {
+      "title": "Special addresses",
+      "summary": "Know these.",
+      "sections": [
+        {
+          "bullets": [
+            "127.0.0.0/8 loopback.",
+            "10/8, 172.16/12, 192.168/16 private (RFC 1918).",
+            "169.254/16 link-local.",
+            "224.0.0.0/4 multicast.",
+            "255.255.255.255 limited broadcast."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "20-byte base header; IHL tells you where options end.",
+    "TTL prevents loops; Protocol selects TCP, UDP, or ICMP.",
+    "Fragmentation uses ID, MF, DF, and an offset in 8-byte units.",
+    "The checksum covers the header only and is recomputed per hop."
+  ],
+  "references": [
+    {
+      "label": "RFC 791: Internet Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc791"
+    },
+    {
+      "label": "RFC 1071: Computing the Internet Checksum",
+      "url": "https://www.rfc-editor.org/rfc/rfc1071"
+    },
+    {
+      "label": "RFC 1191: Path MTU Discovery",
+      "url": "https://www.rfc-editor.org/rfc/rfc1191"
+    }
+  ]
+}

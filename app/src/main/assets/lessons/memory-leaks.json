@@ -1,0 +1,104 @@
+{
+  "summary": "A memory leak is heap memory that is no longer reachable by the program but was never freed. It cannot be reused, so long-running programs slowly consume all available memory.",
+  "sections": [
+    {
+      "heading": "What a leak is",
+      "body": "You allocate with `malloc`, lose every pointer to the block (or forget `free`), and the allocator still considers it in use. The block stays reserved until the process exits.",
+      "code": "int *p = malloc(5 * sizeof *p);\np[0] = 10;\nreturn 0;   // missing free(p)"
+    },
+    {
+      "heading": "Common causes",
+      "bullets": [
+        "Forgetting `free` on some path, especially early returns and error paths.",
+        "Overwriting the only pointer: `p = malloc(...)` twice without freeing the first.",
+        "Losing the pointer when it goes out of scope.",
+        "Freeing a container but not the elements it owns."
+      ]
+    },
+    {
+      "heading": "Consequences",
+      "bullets": [
+        "Gradual growth in memory use.",
+        "Slowdown from paging and cache pressure.",
+        "Out-of-memory failures; the OOM killer may terminate the process.",
+        "Worst in servers and daemons that run for weeks."
+      ]
+    },
+    {
+      "heading": "Prevention",
+      "bullets": [
+        "Pair every allocation with exactly one free in a clear owner.",
+        "Use a single cleanup label (`goto cleanup`) so every error path frees resources.",
+        "Do not overwrite a pointer before freeing it.",
+        "Wrap resources in create/destroy function pairs."
+      ],
+      "code": "int run(void) {\n  char *a = NULL, *b = NULL; int rc = -1;\n  a = malloc(100); if (!a) goto out;\n  b = malloc(200); if (!b) goto out;\n  /* work */ rc = 0;\nout:\n  free(b); free(a);\n  return rc;\n}"
+    },
+    {
+      "heading": "Finding leaks",
+      "bullets": [
+        "Valgrind: `valgrind --leak-check=full ./prog` lists lost blocks with allocation stacks.",
+        "AddressSanitizer's LeakSanitizer: `-fsanitize=address` reports leaks at exit.",
+        "Static analysis (clang-tidy, cppcheck) flags obvious missing frees."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Leak categories",
+      "summary": "Definitely, indirectly, possibly lost.",
+      "sections": [
+        {
+          "body": "Valgrind distinguishes 'definitely lost' (no pointer remains), 'indirectly lost' (reachable only through a leaked block), 'possibly lost' (only interior pointers remain), and 'still reachable' (pointer exists at exit, often intentional globals)."
+        }
+      ]
+    },
+    {
+      "title": "Leaks vs dangling pointers",
+      "summary": "Opposite mistakes.",
+      "sections": [
+        {
+          "body": "A leak is forgetting to free; a dangling pointer is using memory after freeing. Over-correcting one tends to cause the other, so ownership rules matter more than reflexes."
+        }
+      ]
+    },
+    {
+      "title": "Arena (region) allocation",
+      "summary": "Free in bulk.",
+      "sections": [
+        {
+          "body": "Allocate many short-lived objects from one arena and release the whole arena at once. It removes per-object lifetime tracking, eliminates most leaks, and is fast. Compilers and request handlers commonly use it."
+        }
+      ]
+    },
+    {
+      "title": "Resource leaks beyond memory",
+      "summary": "File descriptors and locks.",
+      "sections": [
+        {
+          "body": "The same discipline applies to `fopen`/`fclose`, sockets, and mutexes. Leaking descriptors hits the per-process limit long before RAM runs out."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Leak = allocated, unreachable, never freed.",
+    "Check every exit path, especially error returns.",
+    "Use Valgrind or ASan/LSan in testing.",
+    "Consider arenas or clear ownership to simplify cleanup."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Memory leak in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/what-is-memory-leak-how-can-we-avoid/"
+    },
+    {
+      "label": "Valgrind manual: Memcheck",
+      "url": "https://valgrind.org/docs/manual/mc-manual.html"
+    }
+  ]
+}

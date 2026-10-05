@@ -1,0 +1,98 @@
+{
+  "summary": "A use-after-free bug reads or writes memory through a pointer after that memory has been released. The pointer is dangling: it still holds the old address, but the storage may now belong to something else.",
+  "sections": [
+    {
+      "heading": "How a pointer dangles",
+      "bullets": [
+        "Heap block freed while another pointer still references it.",
+        "A function returns the address of a local variable.",
+        "A pointer outlives the block-scoped variable it points to."
+      ]
+    },
+    {
+      "heading": "Heap example",
+      "code": "int *p = malloc(sizeof *p);\n*p = 10;\nfree(p);        // p is now dangling\n*p = 20;        // use-after-free: undefined behavior\n\nfree(p);\np = NULL;       // defensive: later checks and double free are safe"
+    },
+    {
+      "heading": "Stack examples",
+      "code": "int *f(void) {\n  int x = 5;\n  return &x;        // x dies at return\n}\n\nint *p;\n{ int a = 10; p = &a; }   // a out of scope\nprintf(\"%d\", *p);         // undefined"
+    },
+    {
+      "heading": "Why it is dangerous",
+      "body": "The allocator may hand the freed block to a new allocation, so the stale pointer now aliases unrelated data. Attackers exploit this by getting a controlled object placed in the freed slot, turning a dangling write into corruption or code execution."
+    },
+    {
+      "heading": "How to avoid it",
+      "bullets": [
+        "Set pointers to NULL immediately after `free`.",
+        "Never return the address of a local; use `static`, heap memory, or an out-parameter.",
+        "Give each allocation a single clear owner responsible for freeing.",
+        "Test with AddressSanitizer, which poisons freed memory and reports the access."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Double free",
+      "summary": "Freeing the same block twice.",
+      "sections": [
+        {
+          "body": "A second `free` on the same pointer corrupts allocator bookkeeping and is exploitable. Nulling after free turns it into the harmless `free(NULL)`."
+        }
+      ]
+    },
+    {
+      "title": "Wild, dangling, null, void recap",
+      "summary": "Four pointer states to tell apart.",
+      "sections": [
+        {
+          "bullets": [
+            "Wild: never initialized.",
+            "Dangling: initialized, then target released.",
+            "NULL: intentionally empty.",
+            "void*: generic type, not a state."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Ownership patterns",
+      "summary": "Prevent aliasing bugs by design.",
+      "sections": [
+        {
+          "body": "Document who owns each pointer. Prefer APIs where the callee takes ownership or the caller keeps it, never both. Reference counting or arenas (free everything at once) reduce per-object lifetime errors."
+        }
+      ]
+    },
+    {
+      "title": "Detecting with ASan and Valgrind",
+      "summary": "See the bug, not just the crash.",
+      "sections": [
+        {
+          "body": "Compile with `-fsanitize=address -g` and run; the report shows the free site, the bad access, and the allocation site. Valgrind's memcheck gives similar traces without recompiling.",
+          "code": "gcc -g -fsanitize=address uaf.c && ./a.out"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "A dangling pointer outlives its target; using it is undefined behavior.",
+    "Null pointers after free; never return addresses of locals.",
+    "Freed memory can be reused, so bugs can be silent and exploitable.",
+    "Use sanitizers to catch these early."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Dangling, void, null and wild pointers (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/dangling-void-null-wild-pointers/"
+    },
+    {
+      "label": "CWE-416: Use After Free",
+      "url": "https://cwe.mitre.org/data/definitions/416.html"
+    }
+  ]
+}

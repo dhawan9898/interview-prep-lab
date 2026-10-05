@@ -1,0 +1,103 @@
+{
+  "summary": "Quick sort is a divide-and-conquer sort: pick a pivot, partition the array so smaller values are on its left and larger on its right, then recursively sort both sides. Average O(n log n) with excellent cache behaviour makes it the default in many standard libraries.",
+  "sections": [
+    {
+      "heading": "The idea",
+      "bullets": [
+        "Choose a pivot element.",
+        "Partition: rearrange so elements < pivot come before it and elements > pivot after it. The pivot is now in its final position.",
+        "Recurse on the left and right parts.",
+        "Base case: a part with 0 or 1 element is already sorted."
+      ]
+    },
+    {
+      "heading": "Lomuto partition",
+      "body": "Scan left to right keeping `i` as the boundary of the 'smaller than pivot' region. Simple to write, a few more swaps than Hoare.",
+      "code": "int partition(int a[], int lo, int hi) {\n  int pivot = a[hi], i = lo - 1;\n  for (int j = lo; j < hi; j++)\n    if (a[j] <= pivot) { i++; int t = a[i]; a[i] = a[j]; a[j] = t; }\n  int t = a[i + 1]; a[i + 1] = a[hi]; a[hi] = t;\n  return i + 1;\n}\nvoid quick_sort(int a[], int lo, int hi) {\n  if (lo < hi) { int p = partition(a, lo, hi);\n    quick_sort(a, lo, p - 1); quick_sort(a, p + 1, hi); }\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Best and average: O(n log n) with balanced splits.",
+        "Worst: O(n²) when partitions are maximally lopsided (e.g. last-element pivot on sorted input).",
+        "Space: O(log n) stack on average, O(n) worst; recurse into the smaller side first to bound it to O(log n).",
+        "Not stable; in place."
+      ]
+    },
+    {
+      "heading": "Choosing the pivot",
+      "bullets": [
+        "First or last element: simple, but quadratic on sorted input.",
+        "Random element: makes the worst case extremely unlikely.",
+        "Median of three (first, middle, last): cheap and robust against sorted input.",
+        "True median (e.g. median of medians): guaranteed O(n log n) but slower constant."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Hoare partition",
+      "summary": "Two pointers from both ends.",
+      "sections": [
+        {
+          "body": "Pointers move inward and swap out-of-place pairs. It does about three times fewer swaps than Lomuto and handles many equal keys better, but the returned index is a split point, not the pivot's final position."
+        }
+      ]
+    },
+    {
+      "title": "Many duplicates: 3-way partition",
+      "summary": "Dutch national flag.",
+      "sections": [
+        {
+          "body": "Partition into <, =, > regions so all pivot-equal keys are finished at once. This turns the O(n²) behaviour on all-equal input into O(n), and is the basis of Java's dual-pivot quicksort and many library variants."
+        }
+      ]
+    },
+    {
+      "title": "Quickselect",
+      "summary": "k-th smallest in O(n) average.",
+      "sections": [
+        {
+          "body": "After partitioning, recurse only into the side that contains index k. Expected O(n), worst O(n²). Used for medians and top-k."
+        }
+      ]
+    },
+    {
+      "title": "Introsort",
+      "summary": "Quick sort with a safety net.",
+      "sections": [
+        {
+          "body": "Start with quick sort, switch to heap sort if recursion depth exceeds about 2 log n, and use insertion sort for tiny ranges. This guarantees O(n log n) worst case; C++ `std::sort` is typically introsort."
+        }
+      ]
+    },
+    {
+      "title": "Quick sort vs merge sort",
+      "summary": "Trade-offs.",
+      "sections": [
+        {
+          "bullets": [
+            "Quick: in place, cache friendly, not stable, O(n²) worst.",
+            "Merge: O(n log n) always, stable, needs O(n) extra space, good for linked lists and external sorting."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Pick a pivot, partition, recurse; the pivot lands in its final place.",
+    "Average O(n log n); worst O(n²) with bad pivots, so randomize or use median-of-three.",
+    "In place and cache friendly, but not stable.",
+    "Use introsort-style safeguards in real code."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Quick sort algorithm (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    }
+  ]
+}

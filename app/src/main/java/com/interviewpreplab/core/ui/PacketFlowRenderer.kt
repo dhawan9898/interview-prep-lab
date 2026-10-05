@@ -127,7 +127,7 @@ private fun DrawScope.drawPacketFlow(
             // Packet label
             val midX = (fromX + toX) / 2
             val textLayout = textMeasurer.measure(
-                text = packet.protocol,
+                text = if (packet.details.isNotBlank()) "${packet.protocol} ${packet.details}" else packet.protocol,
                 style = TextStyle(fontSize = 9.sp)
             )
             drawText(

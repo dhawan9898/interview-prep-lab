@@ -1,0 +1,112 @@
+{
+  "summary": "BGP-4 is the path-vector protocol that connects autonomous systems and glues the Internet together. Instead of shortest paths it applies policy: each AS decides which routes to accept, prefer, and advertise.",
+  "sections": [
+    {
+      "heading": "Autonomous systems and peering",
+      "body": "An autonomous system (AS) is a set of routers under one administration with a number (ASN). Routers in different ASes peer via eBGP; routers in the same AS exchange routes via iBGP. BGP runs over TCP port 179 (RFC 4271), so it relies on TCP for reliability and has no routing-update retransmission of its own."
+    },
+    {
+      "heading": "Message types",
+      "bullets": [
+        "OPEN: starts a session; carries ASN, hold time, BGP identifier, capabilities.",
+        "KEEPALIVE: proves the peer is alive (typically sent at one third of the hold time).",
+        "UPDATE: advertises new routes (NLRI + path attributes) or withdraws old ones.",
+        "NOTIFICATION: reports an error and closes the session."
+      ]
+    },
+    {
+      "heading": "Session state machine",
+      "body": "Idle, Connect, Active, OpenSent, OpenConfirm, Established. Routes are exchanged only in Established. A session stuck in Active usually means the TCP connection cannot be made (wrong neighbour address, firewall, or missing route)."
+    },
+    {
+      "heading": "Path attributes",
+      "bullets": [
+        "AS_PATH: the list of ASes the route traversed; each AS prepends its own number when advertising to an eBGP peer. Also used for loop prevention: a router rejects a route containing its own ASN.",
+        "NEXT_HOP: the address to forward to.",
+        "ORIGIN: how the route entered BGP (IGP, EGP, incomplete).",
+        "LOCAL_PREF: preference inside an AS; higher is better; not sent to other ASes.",
+        "MED: hint to a neighbour AS about the preferred entry point; lower is better."
+      ]
+    },
+    {
+      "heading": "Best-path selection",
+      "body": "When several routes to the same prefix exist, BGP picks one in a fixed order (RFC 4271 section 9.1):",
+      "bullets": [
+        "Highest LOCAL_PREF.",
+        "Shortest AS_PATH.",
+        "Lowest ORIGIN (IGP < EGP < incomplete).",
+        "Lowest MED (among routes from the same neighbouring AS).",
+        "Prefer eBGP over iBGP.",
+        "Lowest IGP cost to the NEXT_HOP.",
+        "Lowest BGP identifier (final tie-breaker)."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Policy and business relationships",
+      "summary": "Customer, peer, provider.",
+      "sections": [
+        {
+          "body": "ASes prefer routes from customers (they pay) over peers (settlement-free) over providers (cost money), by setting LOCAL_PREF. They filter exports so they do not give free transit: customer routes go to everyone, peer and provider routes go only to customers."
+        }
+      ]
+    },
+    {
+      "title": "iBGP rules",
+      "summary": "Full mesh, route reflectors, confederations.",
+      "sections": [
+        {
+          "body": "A router does not re-advertise a route learned from one iBGP peer to another iBGP peer, to avoid loops. So iBGP needs a full mesh, or route reflectors (RFC 4456) or confederations to scale."
+        }
+      ]
+    },
+    {
+      "title": "Why BGP converges slowly",
+      "summary": "Path exploration.",
+      "sections": [
+        {
+          "body": "A withdrawn route may trigger a sequence of progressively longer alternative paths before settling. Timers such as MRAI (minimum route advertisement interval) and route-flap damping add delay, so global convergence can take minutes."
+        }
+      ]
+    },
+    {
+      "title": "Prefix hijacks and RPKI",
+      "summary": "Security gaps.",
+      "sections": [
+        {
+          "body": "BGP trusts what neighbours announce. A mistaken or malicious announcement of someone else's prefix can attract traffic. RPKI route-origin validation (ROV) and prefix filtering reduce this; BGPsec adds path validation but is rarely deployed."
+        }
+      ]
+    },
+    {
+      "title": "Communities",
+      "summary": "Tagging routes.",
+      "sections": [
+        {
+          "body": "Communities (RFC 1997) are 32-bit tags attached to routes, such as 'do not export' or 'set local preference 80', letting neighbours signal policy without per-route configuration."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "BGP is a path-vector protocol between ASes over TCP port 179.",
+    "AS_PATH carries the route history and prevents loops.",
+    "Best path: LOCAL_PREF, then shortest AS_PATH, then origin, MED, eBGP over iBGP, IGP cost, router ID.",
+    "Policy, not speed, drives BGP; security relies on filtering and RPKI."
+  ],
+  "references": [
+    {
+      "label": "RFC 4271: A Border Gateway Protocol 4 (BGP-4)",
+      "url": "https://www.rfc-editor.org/rfc/rfc4271"
+    },
+    {
+      "label": "RFC 1997: BGP Communities Attribute",
+      "url": "https://www.rfc-editor.org/rfc/rfc1997"
+    },
+    {
+      "label": "RFC 6811: BGP Prefix Origin Validation",
+      "url": "https://www.rfc-editor.org/rfc/rfc6811"
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "summary": "A running C program's memory is split into segments: text, initialized data, BSS, heap, and stack. Knowing which variable lands where explains lifetimes, crashes, and security bugs.",
+  "sections": [
+    {
+      "heading": "The big picture",
+      "body": "From low to high addresses: text, initialized data, BSS, heap (grows up), a large gap, then the stack (grows down). When the two growing regions collide, memory is exhausted. Exact placement is randomized on modern systems (ASLR) but the ordering idea holds.",
+      "code": "low addresses\n+---------------------+\n| text (code)         |  read-only, executable\n| initialized data    |  globals/statics with values\n| BSS                 |  zero-initialized globals/statics\n| heap  ->            |  malloc / calloc / realloc\n|        ...          |\n|            <-  stack|  locals, args, return addresses\n+---------------------+\nhigh addresses"
+    },
+    {
+      "heading": "Text segment",
+      "bullets": [
+        "Holds the compiled machine instructions.",
+        "Marked read-only so a stray write faults instead of corrupting code.",
+        "Shared between processes running the same program."
+      ]
+    },
+    {
+      "heading": "Initialized data segment",
+      "bullets": [
+        "Global and static variables that have a non-zero initial value.",
+        "Stored in the executable file and loaded at start-up.",
+        "Lives for the whole program run."
+      ],
+      "code": "int g = 10;            // initialized data\nstatic int s = 20;     // initialized data"
+    },
+    {
+      "heading": "BSS segment",
+      "body": "BSS holds global and static variables with no initializer (or initialized to zero). The loader zero-fills it, so the executable only records its size, not its contents, which keeps binaries small.",
+      "code": "int counter;           // BSS\nstatic char buf[4096]; // BSS"
+    },
+    {
+      "heading": "Heap",
+      "bullets": [
+        "Dynamic storage obtained with `malloc`, `calloc`, `realloc` and released with `free`.",
+        "Grows toward higher addresses.",
+        "Lifetime is controlled by the programmer, not by scope."
+      ]
+    },
+    {
+      "heading": "Stack",
+      "bullets": [
+        "Each function call pushes a stack frame: arguments, return address, saved registers, and locals.",
+        "Frames are popped automatically on return.",
+        "Grows toward lower addresses on common architectures.",
+        "Deep recursion or huge local arrays cause stack overflow."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Seeing the layout yourself",
+      "summary": "Use `size` and print addresses.",
+      "sections": [
+        {
+          "body": "The `size` tool reports text, data, and bss sizes of an executable. Adding an initialized global grows `data`; adding an uninitialized one grows `bss` only. Printing the address of a function, a global, a malloc result, and a local shows the ordering.",
+          "code": "int g_init = 1; int g_bss;\nint main(void) {\n  int local; void *h = malloc(8);\n  printf(\"text %p data %p bss %p heap %p stack %p\\n\",\n         (void *)main, (void *)&g_init, (void *)&g_bss, h, (void *)&local);\n}"
+        }
+      ]
+    },
+    {
+      "title": "Where do string literals and constants go?",
+      "summary": "Read-only data.",
+      "sections": [
+        {
+          "body": "String literals typically live in a read-only data section, so writing through `char *s = \"hi\"; s[0] = 'H';` is undefined behavior. Use `char s[] = \"hi\";` to get a modifiable copy on the stack."
+        }
+      ]
+    },
+    {
+      "title": "Virtual memory view",
+      "summary": "Why addresses look the same in every process.",
+      "sections": [
+        {
+          "body": "Each process sees its own virtual address space; the OS and MMU map pages to physical frames. Segments are just regions of that virtual space with different permissions (r-x for text, rw- for data, heap, stack)."
+        }
+      ]
+    },
+    {
+      "title": "ELF sections vs runtime segments",
+      "summary": "Linker view and loader view.",
+      "sections": [
+        {
+          "body": "On Linux the object file groups bytes into sections (.text, .data, .bss, .rodata). The loader maps them into segments with permissions. `readelf -S` shows sections and `readelf -l` shows segments."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Text is code (read-only); data/BSS hold globals; heap is manual; stack is automatic.",
+    "BSS costs no file space; it is zeroed at load.",
+    "Stack grows down, heap grows up on common platforms.",
+    "String literals are read-only: do not modify them."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Memory layout of C programs (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/memory-layout-of-c-program/"
+    },
+    {
+      "label": "Linux man-pages: elf(5)",
+      "url": "https://man7.org/linux/man-pages/man5/elf.5.html"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "summary": "Stack memory is automatic, fast, and tied to function scope. Heap memory is manual, larger, and lives until you free it. Choosing correctly decides performance and bug surface.",
+  "sections": [
+    {
+      "heading": "Stack allocation",
+      "bullets": [
+        "Locals and parameters are placed in a frame created on call and destroyed on return.",
+        "Allocation is just moving the stack pointer, so it is very fast.",
+        "Size is limited (often 8 MB on Linux by default).",
+        "Data cannot outlive the function that created it."
+      ],
+      "code": "void f(void) {\n  int x = 5;        // stack\n  char buf[64];     // stack\n}                   // both gone here"
+    },
+    {
+      "heading": "Heap allocation",
+      "bullets": [
+        "`malloc`/`calloc`/`realloc` request memory from the allocator; `free` returns it.",
+        "Lifetime is whatever you decide, independent of scope.",
+        "Much larger than the stack, but allocation has bookkeeping cost.",
+        "You must free exactly once and never use it afterward."
+      ],
+      "code": "int *p = malloc(100 * sizeof *p);   // heap\nif (!p) return -1;\n/* use p */\nfree(p);\np = NULL;"
+    },
+    {
+      "heading": "Comparison",
+      "bullets": [
+        "Management: automatic (stack) vs explicit (heap).",
+        "Speed: stack is faster; heap pays allocator overhead.",
+        "Size: stack small, heap large.",
+        "Lifetime: scope-bound vs programmer-controlled.",
+        "Typical failure: stack overflow vs leaks, dangling pointers, fragmentation."
+      ]
+    },
+    {
+      "heading": "Pointers connect them",
+      "body": "A very common pattern is a pointer variable on the stack that refers to a block on the heap. When the function returns the pointer vanishes; if you did not free the block (or hand the pointer on), it leaks."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Stack overflow",
+      "summary": "Runaway recursion and huge locals.",
+      "sections": [
+        {
+          "body": "Each recursive call adds a frame. Missing base cases, or locals like `char big[10*1024*1024]`, exhaust the stack and the process is killed by SIGSEGV. Fix by bounding recursion, iterating, or moving large buffers to the heap."
+        }
+      ]
+    },
+    {
+      "title": "Heap fragmentation",
+      "summary": "Free memory that is unusable.",
+      "sections": [
+        {
+          "body": "Repeated allocate/free of different sizes leaves small holes. Total free memory may be large yet no single hole fits a request. Allocators mitigate with size classes and coalescing."
+        }
+      ]
+    },
+    {
+      "title": "Returning pointers to locals",
+      "summary": "A classic bug.",
+      "sections": [
+        {
+          "body": "Returning `&local` hands back stack memory that is already invalid. Return a heap pointer, a `static`, or fill a caller-provided buffer.",
+          "code": "int *bad(void)  { int x = 1; return &x; }          // dangling\nint *good(void) { int *p = malloc(sizeof *p); *p = 1; return p; }"
+        }
+      ]
+    },
+    {
+      "title": "Heap data structure vs heap memory",
+      "summary": "Same word, different things.",
+      "sections": [
+        {
+          "body": "The 'heap' in priority queues is a tree-shaped data structure. The 'heap' here is the process memory region used for dynamic allocation. They are unrelated."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Stack: automatic, fast, scoped, small. Heap: manual, flexible, large, slower.",
+    "Never return the address of a local variable.",
+    "Every malloc needs exactly one free.",
+    "Use the stack by default; use the heap when size or lifetime demands it."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Stack vs Heap memory allocation (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/stack-vs-heap-memory-allocation/"
+    }
+  ]
+}

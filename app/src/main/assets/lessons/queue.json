@@ -1,0 +1,86 @@
+{
+  "summary": "A queue is a linear collection with FIFO (first in, first out) access: items leave in the order they arrived. Enqueue adds at the rear and dequeue removes from the front.",
+  "sections": [
+    {
+      "heading": "Operations",
+      "bullets": [
+        "enqueue(x): add at the rear. O(1).",
+        "dequeue(): remove and return the front. O(1) with the right implementation.",
+        "front()/peek(): read the front element.",
+        "isEmpty(), isFull(), size()."
+      ]
+    },
+    {
+      "heading": "Simple array queue and the dead-space problem",
+      "body": "With `front` and `rear` indices that only move forward, slots before `front` are never reused. After several dequeues the queue reports full even though it has free space at the start. Shifting everything left on each dequeue fixes it but costs O(n). The circular queue is the clean fix.",
+      "code": "enqueue: a[++rear] = x;\ndequeue: return a[front++];\n// slots [0 .. front-1] are wasted"
+    },
+    {
+      "heading": "Linked-list queue",
+      "body": "Keep head (front) and tail (rear) pointers. Enqueue appends at the tail, dequeue removes at the head, both O(1) with no capacity limit."
+    },
+    {
+      "heading": "Applications",
+      "bullets": [
+        "CPU and disk scheduling (round-robin ready queue).",
+        "Buffering between producer and consumer: keyboard, network packets, print jobs.",
+        "Breadth-first search and level-order tree traversal.",
+        "Message queues and task pipelines."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Deque (double-ended queue)",
+      "summary": "Insert and remove at both ends.",
+      "sections": [
+        {
+          "body": "A deque supports push/pop at front and back in O(1). It generalizes both stack and queue and enables sliding-window maximum with a monotonic deque."
+        }
+      ]
+    },
+    {
+      "title": "Priority queue",
+      "summary": "Order by priority, not arrival.",
+      "sections": [
+        {
+          "body": "Dequeue returns the highest-priority item. A binary heap gives O(log n) insert and extract. Used for scheduling, Dijkstra, and event simulation."
+        }
+      ]
+    },
+    {
+      "title": "Producer-consumer queues",
+      "summary": "Thread-safe buffers.",
+      "sections": [
+        {
+          "body": "A bounded blocking queue lets producers wait when full and consumers wait when empty, decoupling speeds. Lock-free ring buffers are used in networking drivers and audio."
+        }
+      ]
+    },
+    {
+      "title": "Queue using two stacks",
+      "summary": "A classic interview problem.",
+      "sections": [
+        {
+          "body": "Push onto an `in` stack; when `out` is empty, pop everything from `in` onto `out`. Each element moves at most once, so amortized O(1) per operation."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "FIFO: enqueue at rear, dequeue at front.",
+    "A naive array queue wastes space; use a circular buffer or linked list.",
+    "Queues drive BFS, scheduling, and buffering.",
+    "Know deque and priority queue as variants."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Queue data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/queue-data-structure/"
+    }
+  ]
+}

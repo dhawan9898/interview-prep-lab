@@ -6,7 +6,7 @@ import com.interviewpreplab.core.model.FlowPacket
 import com.interviewpreplab.core.model.PacketFlowScene
 
 object TLSHandshakeRunner {
-    fun run(): List<Frame> = listOf(
+    private fun baseFrames(): List<Frame> = listOf(
         Frame("TLS (Transport Layer Security): encrypts data between client and server. Uses certificates + key exchange.", "intro",
             mapOf("layer" to "5 (application)", "security" to "encryption + authentication")),
 
@@ -33,5 +33,23 @@ object TLSHandshakeRunner {
 
         Frame("Result: both have shared secret. Derive encryption keys (symmetric cipher), MAC key, IV. Switch to encrypted tunnel.", "summary",
             mapOf("encryption" to "symmetric (AES)", "speed" to "fast (after handshake)"))
+    )
+
+    private val nodes = listOf(
+        FlowNode("client", "Client", "host"),
+        FlowNode("server", "Server", "server")
+    )
+
+    fun run(): List<Frame> = baseFrames().withFlow(
+        nodes = nodes,
+        stages = mapOf(
+            2 to stage(FlowStep("client", "server", "TLS", "ClientHello")),
+            3 to stage(FlowStep("server", "client", "TLS", "ServerHello")),
+            4 to stage(FlowStep("server", "client", "TLS", "Certificate")),
+            5 to stage(FlowStep("server", "client", "TLS", "ServerKeyExchange")),
+            6 to stage(FlowStep("client", "server", "TLS", "ClientKeyExchange")),
+            7 to stage(FlowStep("client", "server", "TLS", "Finished"), FlowStep("server", "client", "TLS", "Finished"))
+        ),
+        description = "TLS handshake messages"
     )
 }

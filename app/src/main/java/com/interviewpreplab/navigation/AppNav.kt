@@ -36,7 +36,7 @@ import com.interviewpreplab.features.labs.LabsScreen
 import com.interviewpreplab.features.profile.ProfileScreen
 import com.interviewpreplab.features.syllabus.SyllabusScreen
 import com.interviewpreplab.features.topics.Topic
-import com.interviewpreplab.features.topics.TopicDetailScreen
+import com.interviewpreplab.features.lessons.LessonScreen
 import com.interviewpreplab.features.topics.loadTopicFrames
 import com.interviewpreplab.features.topics.topicList
 import com.interviewpreplab.ui.components.FloatingNavBar
@@ -58,6 +58,12 @@ fun AppNav(playerVM: PlayerViewModel, nav: NavHostController = rememberNavContro
     fun openTopic(topic: Topic) {
         loadTopicFrames(playerVM, topic)
         nav.navigate("topic/${topic.id}")
+    }
+
+    // Prev/Next replaces the current lesson so Back returns to the list, not through every lesson.
+    fun switchTopic(topic: Topic) {
+        loadTopicFrames(playerVM, topic)
+        nav.navigate("topic/${topic.id}") { popUpTo(ROUTE_TOPIC) { inclusive = true } }
     }
 
     NavHost(
@@ -82,7 +88,7 @@ fun AppNav(playerVM: PlayerViewModel, nav: NavHostController = rememberNavContro
                 androidx.compose.runtime.LaunchedEffect(topic.id) {
                     if (playerVM.state.value.frames.isEmpty()) loadTopicFrames(playerVM, topic)
                 }
-                TopicDetailScreen(topic = topic, playerVM = playerVM, onBack = { nav.popBackStack() })
+                LessonScreen(topic = topic, playerVM = playerVM, onBack = { nav.popBackStack() }, onOpenTopic = ::switchTopic)
             }
         }
         composable(ROUTE_FLASHCARDS) { entry ->

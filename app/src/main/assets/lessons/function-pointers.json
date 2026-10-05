@@ -1,0 +1,90 @@
+{
+  "summary": "A function pointer stores the address of code instead of data. It lets you choose which function runs at run time, enabling callbacks, jump tables, and plug-in style designs in plain C.",
+  "sections": [
+    {
+      "heading": "Declaration and call",
+      "body": "Parentheses around `*name` are mandatory; without them you declare a function returning a pointer. The pointer's return and parameter types must match the target function.",
+      "code": "int add(int a, int b) { return a + b; }\n\nint (*fp)(int, int);   // pointer to function(int,int) -> int\nfp = add;              // or &add\nprintf(\"%d\\n\", fp(10, 5));   // 15"
+    },
+    {
+      "heading": "Properties",
+      "bullets": [
+        "Points to code, not data.",
+        "Signature must match exactly.",
+        "No arithmetic (no `fp++`).",
+        "Can be stored in variables, arrays, structs, and passed or returned."
+      ]
+    },
+    {
+      "heading": "Callbacks",
+      "body": "Passing a function pointer lets a generic routine call back into your code. The standard `qsort` and `bsearch` work this way.",
+      "code": "void apply(int a, int b, int (*op)(int, int)) {\n  printf(\"%d\\n\", op(a, b));\n}\napply(10, 5, add);\napply(10, 5, sub);"
+    },
+    {
+      "heading": "Arrays of function pointers",
+      "body": "A table of functions gives a fast dispatch without a long if/else chain.",
+      "code": "int (*ops[])(int, int) = { add, sub, mul, div_ };\nint r = ops[1](10, 5);   // calls sub"
+    },
+    {
+      "heading": "Structs with function pointers",
+      "body": "Putting function pointers in a struct emulates methods and is how the Linux kernel builds interfaces such as `file_operations`.",
+      "code": "struct shape {\n  double (*area)(const struct shape *);\n  void   (*draw)(const struct shape *);\n};"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Cleaner syntax with typedef",
+      "summary": "Make signatures readable.",
+      "sections": [
+        {
+          "body": "Function-pointer syntax is hard to read. Give the type a name once and reuse it.",
+          "code": "typedef int (*binop_t)(int, int);\nbinop_t table[] = { add, sub };\nbinop_t pick(char c);"
+        }
+      ]
+    },
+    {
+      "title": "qsort comparator walkthrough",
+      "summary": "The most common real-world callback.",
+      "sections": [
+        {
+          "body": "`qsort` sorts any array by calling your comparator with pointers to two elements. Return negative, zero, or positive. Avoid `a - b` for ints because it can overflow.",
+          "code": "int cmp(const void *a, const void *b) {\n  int x = *(const int *)a, y = *(const int *)b;\n  return (x > y) - (x < y);\n}\nqsort(arr, n, sizeof arr[0], cmp);"
+        }
+      ]
+    },
+    {
+      "title": "State machines and jump tables",
+      "summary": "Dispatch on an index.",
+      "sections": [
+        {
+          "body": "Interrupt vectors, VM opcodes, and protocol handlers are often arrays of function pointers indexed by an event or opcode, replacing a switch with a single indirect call."
+        }
+      ]
+    },
+    {
+      "title": "Security note",
+      "summary": "Overwritten function pointers are an attack target.",
+      "sections": [
+        {
+          "body": "If a buffer overflow overwrites a function pointer, the attacker controls where the next indirect call goes. Mitigations include bounds checking, read-only relocations, and control-flow integrity."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Syntax: `ret (*name)(params)`; parentheses matter.",
+    "Use for callbacks, dispatch tables, and struct-based interfaces.",
+    "typedef the pointer type for readability.",
+    "Check function pointers for NULL before calling."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Function pointer in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/function-pointer-in-c/"
+    }
+  ]
+}

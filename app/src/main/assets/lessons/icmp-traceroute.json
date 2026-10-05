@@ -1,0 +1,114 @@
+{
+  "summary": "ICMP is IP's control and error-reporting protocol. Traceroute turns one ICMP error, Time Exceeded, into a tool for discovering every router on a path by sending probes with increasing TTL.",
+  "sections": [
+    {
+      "heading": "ICMP basics",
+      "body": "ICMP messages ride inside IP packets (protocol 1). Each has a Type, a Code, a checksum, and message-specific data. ICMP reports problems; it does not make IP reliable.",
+      "bullets": [
+        "Type 8 / 0: Echo Request / Echo Reply (ping).",
+        "Type 3: Destination Unreachable (code 0 net, 1 host, 2 protocol, 3 port, 4 fragmentation needed and DF set).",
+        "Type 11: Time Exceeded (code 0 TTL expired in transit, code 1 reassembly time).",
+        "Type 5: Redirect.",
+        "Type 4: Source Quench (obsolete)."
+      ]
+    },
+    {
+      "heading": "How traceroute works",
+      "bullets": [
+        "Send a probe with TTL = 1. The first router decrements it to 0, drops it, and returns ICMP Time Exceeded, revealing its address.",
+        "Send TTL = 2: the second router replies, and so on.",
+        "When the probe finally reaches the destination, it answers differently: ICMP Port Unreachable for UDP probes, or Echo Reply for ICMP probes.",
+        "Three probes per hop are sent; the round-trip times appear on each line."
+      ],
+      "code": "$ traceroute example.com\n 1  192.168.1.1   1.2 ms  1.0 ms  1.1 ms\n 2  10.0.0.1      8.4 ms  8.1 ms  8.6 ms\n 3  * * *                       <- no reply (filtered)\n 4  93.184.216.34 20.3 ms ..."
+    },
+    {
+      "heading": "Probe types",
+      "bullets": [
+        "Linux/Unix traceroute: UDP to high ports (33434 upward) by default; ICMP and TCP modes available.",
+        "Windows tracert: ICMP Echo Requests.",
+        "TCP traceroute (e.g. to port 443) passes firewalls that block UDP/ICMP."
+      ]
+    },
+    {
+      "heading": "Reading the output",
+      "bullets": [
+        "An asterisk means no reply within the timeout: the router may rate-limit or block ICMP, not necessarily drop traffic.",
+        "A sudden latency jump that continues to later hops signals a slow link; a spike on one hop only is often just ICMP deprioritization.",
+        "Different probes can take different paths because of load balancing."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Ping and RTT",
+      "summary": "Echo in practice.",
+      "sections": [
+        {
+          "body": "`ping` sends Echo Requests with identifier and sequence numbers so replies can be matched; it reports round-trip time and loss. Use `ping -M do -s 1472` to test the path MTU with DF set."
+        }
+      ]
+    },
+    {
+      "title": "Path MTU discovery depends on ICMP",
+      "summary": "Why blanket blocking hurts.",
+      "sections": [
+        {
+          "body": "ICMP type 3 code 4 tells senders to shrink packets. Filtering all ICMP causes PMTU black holes where TCP connections hang once large packets are sent."
+        }
+      ]
+    },
+    {
+      "title": "Traceroute limitations",
+      "summary": "What it cannot see.",
+      "sections": [
+        {
+          "bullets": [
+            "Load-balanced paths show an inconsistent route.",
+            "Return paths may differ (asymmetric routing), so per-hop RTT is misleading.",
+            "MPLS hops may be hidden.",
+            "Firewalls may block probes or replies."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "MTR and paris-traceroute",
+      "summary": "Better tools.",
+      "sections": [
+        {
+          "body": "MTR runs continuous traceroute with per-hop loss and latency statistics. Paris-traceroute keeps flow identifiers constant so probes follow one load-balanced path."
+        }
+      ]
+    },
+    {
+      "title": "ICMPv6",
+      "summary": "Essential in IPv6.",
+      "sections": [
+        {
+          "body": "ICMPv6 (RFC 4443) also carries Neighbor Discovery and Packet Too Big, so it must not be blocked as casually as ICMPv4."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "ICMP reports errors and diagnostics; Type 11 Time Exceeded enables traceroute.",
+    "Traceroute increases TTL by one each probe and records who replies.",
+    "The destination replies with Port Unreachable (UDP) or Echo Reply (ICMP).",
+    "Asterisks and latency spikes need careful interpretation."
+  ],
+  "references": [
+    {
+      "label": "RFC 792: Internet Control Message Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc792"
+    },
+    {
+      "label": "RFC 4443: ICMPv6",
+      "url": "https://www.rfc-editor.org/rfc/rfc4443"
+    },
+    {
+      "label": "Reference: Traceroute (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Traceroute"
+    }
+  ]
+}

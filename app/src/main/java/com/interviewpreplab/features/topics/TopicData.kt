@@ -51,6 +51,7 @@ val topicList = listOf(
     Topic("nat", "NAT", "Networking", "Private-to-public translation"),
     Topic("ospf", "OSPF Routing", "Networking", "Link-state routing, SPF algorithm"),
     Topic("bgp", "BGP Routing", "Networking", "Interdomain routing, AS paths"),
+    Topic("tcp-handshake", "TCP 3-Way Handshake", "Networking", "SYN, SYN-ACK, ACK, connection setup"),
     Topic("tcp-teardown", "TCP Teardown", "Networking", "FIN-ACK handshake, graceful close"),
     Topic("dns-resolution", "DNS Resolution", "Networking", "Domain-to-IP lookup, hierarchy"),
     Topic("dhcp-lease", "DHCP Lease", "Networking", "Dynamic IP assignment, lease management"),
@@ -80,3 +81,5 @@ val courses = listOf(
     Course("kernel", "Linux Kernel Internals", "Scheduler, syscalls, VFS, eBPF", emptyList(), CourseAccent.Kernel),
     Course("dsa", "DSA Foundations", "Sorting, searching, data structures", listOf("Sorting", "Searching", "Data Structures"), CourseAccent.Stack),
 )
+
+fun courseOf(topic: Topic): Course? = courses.firstOrNull { topic.category in it.categories }

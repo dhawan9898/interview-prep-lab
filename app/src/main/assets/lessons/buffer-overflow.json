@@ -1,0 +1,101 @@
+{
+  "summary": "A buffer overflow happens when a program writes more data into a fixed-size buffer than it can hold, spilling into adjacent memory. On the stack this can overwrite saved registers and the return address, handing control to an attacker.",
+  "sections": [
+    {
+      "heading": "What goes wrong",
+      "body": "C does no bounds checking. Writing past the end of an array silently corrupts whatever sits next to it: other locals, a saved frame pointer, or the return address.",
+      "code": "void vuln(const char *s) {\n  char buf[8];\n  strcpy(buf, s);   // no length check\n}"
+    },
+    {
+      "heading": "Stack-based vs heap-based",
+      "bullets": [
+        "Stack-based: overflow a local buffer to reach the return address or function pointers. Most common and best understood.",
+        "Heap-based: overflow a heap block to corrupt allocator metadata or neighbouring objects. Harder, but real."
+      ]
+    },
+    {
+      "heading": "How stack smashing works",
+      "bullets": [
+        "A call pushes the return address; the callee allocates locals below it.",
+        "Input longer than the buffer climbs upward over saved registers.",
+        "The attacker chooses bytes that overwrite the return address.",
+        "On `ret`, the CPU jumps to the attacker's chosen address."
+      ]
+    },
+    {
+      "heading": "Dangerous functions",
+      "bullets": [
+        "`gets` (removed from C11), `strcpy`, `strcat`, `sprintf`, `scanf(\"%s\")` do no length checking.",
+        "Safer: `fgets`, `snprintf`, `strncpy`/`strlcpy` (mind termination), `memcpy` with a verified length."
+      ]
+    },
+    {
+      "heading": "Defences",
+      "bullets": [
+        "Stack canaries: a secret value before the return address, checked on return (`-fstack-protector`).",
+        "NX / DEP: stack and heap pages are not executable.",
+        "ASLR: randomize addresses so exploits cannot hard-code targets.",
+        "Bounds-safe code, fortify (`-D_FORTIFY_SOURCE=2`), and sanitizers (`-fsanitize=address`)."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Worked example: 5-byte buffer",
+      "summary": "Why 9 bytes can crash and 8 may not.",
+      "sections": [
+        {
+          "body": "Compilers pad stack buffers to the machine word. A `char buf[5]` may occupy 8 bytes, so 8 input bytes can seem fine while 9 clobber adjacent data and fault. The absence of a crash is not proof of safety; it is undefined behavior either way."
+        }
+      ]
+    },
+    {
+      "title": "Return-oriented programming",
+      "summary": "Beating NX.",
+      "sections": [
+        {
+          "body": "When the stack is non-executable, attackers chain short existing code snippets ('gadgets') ending in `ret`, built by controlling the stack. ASLR and CFI make this harder."
+        }
+      ]
+    },
+    {
+      "title": "Off-by-one and format-string bugs",
+      "summary": "Related memory-safety classes.",
+      "sections": [
+        {
+          "body": "Writing `buf[n]` for a size-`n` array, or `printf(user_input)`, can be as exploitable as a large overflow. Always pass a constant format string.",
+          "code": "printf(\"%s\", user);   // good\nprintf(user);          // bad"
+        }
+      ]
+    },
+    {
+      "title": "Detecting overflows",
+      "summary": "Tools you should use.",
+      "sections": [
+        {
+          "body": "AddressSanitizer reports stack and heap overflows at run time with a precise location. Valgrind finds heap overruns. Static analyzers and compiler warnings (`-Wall -Wextra -Warray-bounds`) catch many at build time."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "C will not stop you writing past a buffer; you must bound every copy.",
+    "Stack overflows can overwrite the return address and redirect execution.",
+    "Prefer length-aware APIs and verify sizes.",
+    "Layer defences: canaries, NX, ASLR, sanitizers."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Buffer overflow attack with example (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/buffer-overflow-attack-with-example/"
+    },
+    {
+      "label": "CWE-121: Stack-based Buffer Overflow",
+      "url": "https://cwe.mitre.org/data/definitions/121.html"
+    }
+  ]
+}

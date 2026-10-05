@@ -1,0 +1,92 @@
+{
+  "summary": "Insertion sort builds a sorted prefix one element at a time, like sorting playing cards in your hand: take the next card and slide it left into its place. It is fast on small or nearly sorted input.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Treat a[0] as a sorted prefix of length 1.",
+        "Take key = a[i] for i from 1 to n-1.",
+        "Shift every larger element in the prefix one slot right.",
+        "Drop the key into the gap."
+      ],
+      "code": "void insertion_sort(int a[], int n) {\n  for (int i = 1; i < n; i++) {\n    int key = a[i], j = i - 1;\n    while (j >= 0 && a[j] > key) { a[j + 1] = a[j]; j--; }\n    a[j + 1] = key;\n  }\n}"
+    },
+    {
+      "heading": "Walkthrough",
+      "body": "On [5, 2, 4, 1]: key 2 shifts 5 giving [2, 5, 4, 1]; key 4 shifts 5 giving [2, 4, 5, 1]; key 1 shifts 5, 4, 2 giving [1, 2, 4, 5]."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Best (already sorted): O(n), one comparison per element.",
+        "Average and worst (reverse sorted): O(n²).",
+        "Space: O(1).",
+        "Stable (stop shifting on equal values, i.e. use `>`).",
+        "Adaptive: runs in O(n + d) where d is the number of inversions.",
+        "Online: can sort elements as they arrive."
+      ]
+    },
+    {
+      "heading": "Why it matters in practice",
+      "body": "For small n the low overhead beats O(n log n) algorithms, so production sorts use it as a base case: Timsort and introsort switch to insertion sort on short runs (around 16-32 elements)."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Binary insertion sort",
+      "summary": "Fewer comparisons.",
+      "sections": [
+        {
+          "body": "Find the insertion point with binary search in O(log i) comparisons, then shift. Comparisons drop to O(n log n), but shifting still costs O(n²) moves, so total time stays O(n²)."
+        }
+      ]
+    },
+    {
+      "title": "Shell sort",
+      "summary": "Insertion sort with gaps.",
+      "sections": [
+        {
+          "body": "Run insertion sort on elements h apart for a decreasing sequence of h values, ending with h = 1. Far elements move quickly, and the final pass is nearly sorted. Typical running time is between O(n log² n) and O(n^1.5) depending on the gap sequence."
+        }
+      ]
+    },
+    {
+      "title": "Linked-list insertion sort",
+      "summary": "No shifting needed.",
+      "sections": [
+        {
+          "body": "On a linked list the 'shift' becomes a pointer splice, so each insertion needs no moves, but locating the position is still a linear scan, keeping O(n²)."
+        }
+      ]
+    },
+    {
+      "title": "Insertion vs bubble vs selection",
+      "summary": "How the three O(n²) sorts compare.",
+      "sections": [
+        {
+          "bullets": [
+            "Insertion: best on nearly sorted data, stable, adaptive.",
+            "Bubble: stable and adaptive, but many more swaps.",
+            "Selection: fewest swaps, not adaptive, not stable."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Insert each element into the sorted prefix by shifting larger ones right.",
+    "O(n) best, O(n²) worst, O(1) space, stable and adaptive.",
+    "Best simple sort for small or nearly sorted arrays.",
+    "Used inside hybrid sorts like Timsort."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Insertion sort algorithm (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    }
+  ]
+}

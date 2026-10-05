@@ -1,0 +1,114 @@
+{
+  "summary": "IPv6 uses a fixed 40-byte header with 128-bit addresses. It drops the header checksum and in-network fragmentation and moves optional features into extension headers, making forwarding simpler.",
+  "sections": [
+    {
+      "heading": "Header layout (RFC 8200)",
+      "code": "+-------+---------------+--------------------------+\n|Ver(4) | Traffic Class | Flow Label (20)          |\n+-------+---------------+--------------+-----------+\n| Payload Length (16)   | Next Header  | Hop Limit |\n+-----------------------+--------------+-----------+\n| Source Address (128)                             |\n+--------------------------------------------------+\n| Destination Address (128)                        |\n+--------------------------------------------------+"
+    },
+    {
+      "heading": "Fields",
+      "bullets": [
+        "Version (4 bits): 6.",
+        "Traffic Class (8): DSCP and ECN.",
+        "Flow Label (20): lets routers keep packets of one flow together (e.g. for load balancing).",
+        "Payload Length (16): bytes after the 40-byte header, including extension headers.",
+        "Next Header (8): the next header type (6 TCP, 17 UDP, 58 ICMPv6, or an extension header).",
+        "Hop Limit (8): replaces TTL.",
+        "Source and Destination: 128 bits each."
+      ]
+    },
+    {
+      "heading": "Differences from IPv4",
+      "bullets": [
+        "Fixed 40-byte header: faster to parse in hardware.",
+        "No header checksum: link layer and transport checksums protect data; saves per-hop recomputation.",
+        "Routers never fragment; only the source does, using the Fragment extension header.",
+        "No IPv4-style options; extensions chain via Next Header.",
+        "UDP checksum becomes mandatory.",
+        "No broadcast; multicast and anycast replace it."
+      ]
+    },
+    {
+      "heading": "Extension headers",
+      "body": "Optional headers sit between the base header and the upper-layer payload. RFC 8200 recommends this order: Hop-by-Hop Options, Destination Options (for intermediate destinations), Routing, Fragment, Authentication, ESP, Destination Options (final), then the upper-layer header. Each should appear at most once (Destination Options at most twice).",
+      "bullets": [
+        "Only Hop-by-Hop Options must be processed by every router.",
+        "Fragment header: 13-bit offset in 8-byte units, M flag, 32-bit Identification.",
+        "Everything up to the upper-layer header must be in the first fragment."
+      ]
+    },
+    {
+      "heading": "MTU rules",
+      "body": "Every IPv6 link must support an MTU of at least 1280 bytes. Hosts should use Path MTU Discovery (RFC 8201); routers drop oversized packets and return ICMPv6 Packet Too Big."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Address notation",
+      "summary": "Writing 128 bits.",
+      "sections": [
+        {
+          "body": "Eight groups of four hex digits, with leading zeros droppable and one run of zero groups replaced by `::`. Example: 2001:0db8:0000:0000:0000:0000:0000:0001 is 2001:db8::1.",
+          "bullets": [
+            "::1 loopback.",
+            "fe80::/10 link-local.",
+            "fc00::/7 unique local (private).",
+            "2000::/3 global unicast.",
+            "ff00::/8 multicast."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SLAAC and Neighbor Discovery",
+      "summary": "Autoconfiguration.",
+      "sections": [
+        {
+          "body": "A host builds a link-local address, learns the prefix from Router Advertisements, and forms its own global address (RFC 4862), using ICMPv6 Neighbor Discovery in place of ARP and parts of DHCP."
+        }
+      ]
+    },
+    {
+      "title": "Transition mechanisms",
+      "summary": "Living with IPv4.",
+      "sections": [
+        {
+          "bullets": [
+            "Dual stack: run both protocols.",
+            "Tunnelling (6in4, 6rd).",
+            "NAT64/DNS64: IPv6-only clients reach IPv4 servers."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Why no checksum is fine",
+      "summary": "Reasoning.",
+      "sections": [
+        {
+          "body": "Link-layer CRCs catch most bit errors and transport protocols checksum the data plus a pseudo-header of the addresses, so an IP header checksum duplicates work and costs time at every hop."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Fixed 40-byte header, 128-bit addresses, Hop Limit instead of TTL.",
+    "No header checksum and no router fragmentation.",
+    "Extension headers chain through Next Header in a recommended order.",
+    "Minimum MTU is 1280; Path MTU Discovery is essential."
+  ],
+  "references": [
+    {
+      "label": "RFC 8200: Internet Protocol, Version 6 (IPv6) Specification",
+      "url": "https://www.rfc-editor.org/rfc/rfc8200"
+    },
+    {
+      "label": "RFC 4291: IPv6 Addressing Architecture",
+      "url": "https://www.rfc-editor.org/rfc/rfc4291"
+    },
+    {
+      "label": "RFC 8201: Path MTU Discovery for IPv6",
+      "url": "https://www.rfc-editor.org/rfc/rfc8201"
+    }
+  ]
+}

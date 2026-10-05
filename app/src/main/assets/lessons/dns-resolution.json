@@ -1,0 +1,107 @@
+{
+  "summary": "DNS translates names such as www.example.com into IP addresses through a hierarchy of servers. A stub resolver asks a recursive resolver, which walks the hierarchy from the root down and caches the answers.",
+  "sections": [
+    {
+      "heading": "The hierarchy",
+      "body": "Names are read right to left: root (.), top-level domain (com), second-level (example), host (www). Each level is a zone served by authoritative name servers that delegate to the next level with NS records (RFC 1035)."
+    },
+    {
+      "heading": "Resolution walk",
+      "body": "For a cold cache the recursive resolver performs iterative queries:",
+      "code": "1. Client -> recursive resolver: www.example.com A?\n2. Resolver -> root server: referral to .com TLD servers\n3. Resolver -> .com TLD server: referral to example.com name servers\n4. Resolver -> example.com authoritative: A 93.184.216.34, TTL 3600\n5. Resolver caches it and answers the client"
+    },
+    {
+      "heading": "Message format",
+      "body": "A DNS message has a 12-byte header (ID, flags, and four counts) followed by Question, Answer, Authority, and Additional sections. Flags include QR (query/response), AA (authoritative), TC (truncated), RD (recursion desired), RA (recursion available), and RCODE.",
+      "bullets": [
+        "The ID matches responses to queries.",
+        "Names are sequences of length-prefixed labels, and may be compressed with 2-byte pointers to earlier occurrences.",
+        "Resource records have NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA."
+      ]
+    },
+    {
+      "heading": "Record types",
+      "bullets": [
+        "A / AAAA: IPv4 / IPv6 address.",
+        "NS: authoritative name server for a zone.",
+        "CNAME: alias to a canonical name.",
+        "MX: mail exchanger with a preference.",
+        "PTR: reverse lookup from address to name.",
+        "TXT: free text (SPF, DKIM, verification).",
+        "SOA: zone authority and timers."
+      ]
+    },
+    {
+      "heading": "Transport",
+      "body": "DNS uses UDP port 53 for normal queries and TCP port 53 for zone transfers and when responses are truncated (TC bit). The original UDP limit was 512 bytes; EDNS0 (RFC 6891) lets clients advertise larger buffers."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Caching and TTL",
+      "summary": "Why DNS scales.",
+      "sections": [
+        {
+          "body": "Every record carries a TTL telling resolvers how long to cache it. Caching, including negative caching of NXDOMAIN (RFC 2308), absorbs most queries; lowering a TTL before a migration speeds failover."
+        }
+      ]
+    },
+    {
+      "title": "Recursive versus iterative",
+      "summary": "Who does the work.",
+      "sections": [
+        {
+          "body": "A stub resolver asks for a complete answer (recursive query). The resolver then queries servers iteratively, following referrals. Authoritative servers normally do not recurse for outsiders."
+        }
+      ]
+    },
+    {
+      "title": "DNSSEC",
+      "summary": "Authenticating answers.",
+      "sections": [
+        {
+          "body": "DNSSEC signs records (RRSIG), publishes keys (DNSKEY), and chains trust from the root through DS records, letting validators detect forged answers. It authenticates data but does not encrypt queries."
+        }
+      ]
+    },
+    {
+      "title": "Encrypted DNS",
+      "summary": "DoT and DoH.",
+      "sections": [
+        {
+          "body": "DNS over TLS (RFC 7858, port 853) and DNS over HTTPS (RFC 8484) hide queries from on-path observers."
+        }
+      ]
+    },
+    {
+      "title": "Debugging with dig",
+      "summary": "Common commands.",
+      "sections": [
+        {
+          "body": "`dig +trace example.com` shows the delegation walk; `dig @8.8.8.8 example.com MX` queries a specific server; `dig -x 8.8.8.8` does a reverse lookup.",
+          "code": "$ dig +short example.com A\n93.184.216.34"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "DNS is a hierarchy: root, TLD, domain, host; NS records delegate.",
+    "Resolvers cache by TTL; a cold lookup walks root -> TLD -> authoritative.",
+    "UDP/53 normally, TCP/53 for large responses and zone transfers.",
+    "DNSSEC authenticates; DoT/DoH encrypt."
+  ],
+  "references": [
+    {
+      "label": "RFC 1035: Domain Names - Implementation and Specification",
+      "url": "https://www.rfc-editor.org/rfc/rfc1035"
+    },
+    {
+      "label": "RFC 1034: Domain Names - Concepts and Facilities",
+      "url": "https://www.rfc-editor.org/rfc/rfc1034"
+    },
+    {
+      "label": "RFC 4033: DNS Security Introduction and Requirements",
+      "url": "https://www.rfc-editor.org/rfc/rfc4033"
+    }
+  ]
+}

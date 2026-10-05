@@ -1,0 +1,102 @@
+{
+  "summary": "A graph is a set of vertices connected by edges. Breadth-first search (BFS) explores it level by level using a queue; depth-first search (DFS) follows one path as deep as possible using a stack or recursion. Both run in O(V + E).",
+  "sections": [
+    {
+      "heading": "Representations",
+      "bullets": [
+        "Adjacency list: for each vertex, a list of neighbours. Space O(V + E); best for sparse graphs.",
+        "Adjacency matrix: V×V table of 0/1 (or weights). Space O(V²); O(1) edge lookup; best for dense graphs.",
+        "Edge list: simple list of pairs; used by Kruskal's algorithm."
+      ]
+    },
+    {
+      "heading": "Breadth-first search",
+      "body": "Visit the start, then all vertices at distance 1, then distance 2, and so on. Mark vertices when enqueued so none is queued twice. In an unweighted graph BFS finds shortest paths by edge count.",
+      "code": "BFS(G, s):\n  mark s; enqueue s; dist[s] = 0\n  while queue not empty:\n    u = dequeue\n    for v in adj[u]:\n      if not marked v: mark v; dist[v] = dist[u] + 1; enqueue v"
+    },
+    {
+      "heading": "Depth-first search",
+      "body": "Go as deep as possible along one branch, then backtrack. Implemented recursively or with an explicit stack. Records discovery and finish times used by several algorithms.",
+      "code": "DFS(u):\n  mark u\n  for v in adj[u]:\n    if not marked v: DFS(v)"
+    },
+    {
+      "heading": "BFS vs DFS",
+      "bullets": [
+        "BFS: queue, level order, shortest path in unweighted graphs, more memory on wide graphs.",
+        "DFS: stack/recursion, less memory on wide graphs, natural for cycle detection, topological sort, and connected components.",
+        "Both: O(V + E) time."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Cycle detection",
+      "summary": "Undirected and directed.",
+      "sections": [
+        {
+          "body": "Undirected: DFS finding a visited neighbour that is not the parent. Directed: DFS finding an edge to a vertex currently on the recursion stack (a 'back edge')."
+        }
+      ]
+    },
+    {
+      "title": "Topological sort",
+      "summary": "Ordering a DAG.",
+      "sections": [
+        {
+          "body": "Order vertices so every edge goes forward: reverse DFS finish order, or Kahn's algorithm that repeatedly removes vertices with in-degree 0. Used for build systems and task scheduling."
+        }
+      ]
+    },
+    {
+      "title": "Connected components",
+      "summary": "Group reachable vertices.",
+      "sections": [
+        {
+          "body": "Run BFS/DFS from each unvisited vertex; each run discovers one component. Union-find solves the same problem incrementally."
+        }
+      ]
+    },
+    {
+      "title": "Shortest paths beyond BFS",
+      "summary": "Weighted graphs.",
+      "sections": [
+        {
+          "bullets": [
+            "Dijkstra: non-negative weights, heap-based, O((V+E) log V).",
+            "Bellman-Ford: negative weights allowed, O(VE).",
+            "Floyd-Warshall: all pairs, O(V³)."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Bipartite check",
+      "summary": "Two-coloring with BFS.",
+      "sections": [
+        {
+          "body": "Color start vertex 0 and alternate colors across edges; a conflict means an odd cycle, so the graph is not bipartite."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Adjacency lists for sparse graphs, matrices for dense ones.",
+    "BFS = queue, level order, shortest unweighted paths; DFS = stack/recursion, deep first.",
+    "Both are O(V + E); mark visited to avoid revisiting.",
+    "DFS underlies cycle detection, topological sort, and components."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Graph and its representations (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/graph-and-its-representations/"
+    },
+    {
+      "label": "Reference: BFS vs DFS (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/bfs-vs-dfs-binary-tree/"
+    }
+  ]
+}

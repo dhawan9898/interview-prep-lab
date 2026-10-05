@@ -1,0 +1,96 @@
+{
+  "summary": "A TCP connection is closed independently in each direction using FIN segments, so a full close normally takes four segments. The side that closes first lingers in TIME-WAIT to make sure the final ACK arrives and old segments die out.",
+  "sections": [
+    {
+      "heading": "Normal close (RFC 9293, section 3.6)",
+      "code": "Active closer                    Passive closer\nESTABLISHED                      ESTABLISHED\n  --- FIN seq=x ------------->\nFIN-WAIT-1                       CLOSE-WAIT\n  <-- ACK ack=x+1 -----------\nFIN-WAIT-2\n                                 (app calls close)\n  <-- FIN seq=y ------------\n                                 LAST-ACK\n  --- ACK ack=y+1 ---------->\nTIME-WAIT (2 x MSL)              CLOSED\nCLOSED"
+    },
+    {
+      "heading": "State meanings",
+      "bullets": [
+        "FIN-WAIT-1: our FIN sent, waiting for its ACK.",
+        "FIN-WAIT-2: our FIN acknowledged, waiting for the peer's FIN.",
+        "CLOSE-WAIT: peer's FIN received; waiting for our application to close.",
+        "LAST-ACK: our FIN sent after CLOSE-WAIT; waiting for the final ACK.",
+        "TIME-WAIT: waiting before deleting the connection record.",
+        "CLOSING: both sides sent FIN simultaneously."
+      ]
+    },
+    {
+      "heading": "Why four segments",
+      "body": "Each direction is closed separately. The peer may still have data to send after receiving our FIN (a half-close), so its ACK and its own FIN can be separated in time. If it has nothing more to send they can be combined, giving three segments."
+    },
+    {
+      "heading": "TIME-WAIT",
+      "body": "The active closer must remain in TIME-WAIT for 2 x MSL (RFC 9293 requires 2 x the maximum segment lifetime; MSL is commonly assumed 60 s on Linux, giving a 60 s wait in practice). It guarantees the last ACK can be retransmitted if lost and prevents delayed segments from a previous connection being mistaken for a new one using the same 4-tuple."
+    },
+    {
+      "heading": "Abortive close",
+      "body": "A RST ends a connection immediately with no handshake. It is sent for segments to a non-existent connection and when SO_LINGER with zero timeout is used. Pending data is discarded."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Half-close",
+      "summary": "shutdown(SHUT_WR).",
+      "sections": [
+        {
+          "body": "An application can send a FIN yet keep reading, as in HTTP clients that signal 'request done' while waiting for the response. shutdown(fd, SHUT_WR) does this; close() ends both directions."
+        }
+      ]
+    },
+    {
+      "title": "Too many TIME-WAIT sockets",
+      "summary": "High-rate clients.",
+      "sections": [
+        {
+          "body": "Servers that actively close thousands of connections per second accumulate TIME-WAIT entries and may exhaust ephemeral ports. Remedies: let the client close first, reuse connections (keep-alive), and use SO_REUSEADDR or tcp_tw_reuse for outgoing connections."
+        }
+      ]
+    },
+    {
+      "title": "Too many CLOSE-WAIT sockets",
+      "summary": "A program bug.",
+      "sections": [
+        {
+          "body": "CLOSE-WAIT piling up means the peer closed but the local application never called close(), a classic file-descriptor leak. TIME-WAIT is normal; CLOSE-WAIT growth is not."
+        }
+      ]
+    },
+    {
+      "title": "Simultaneous close",
+      "summary": "Both ends send FIN together.",
+      "sections": [
+        {
+          "body": "Both go FIN-WAIT-1 -> CLOSING -> TIME-WAIT after exchanging FINs and ACKs; each side waits 2 x MSL."
+        }
+      ]
+    },
+    {
+      "title": "Inspecting states",
+      "summary": "Tools.",
+      "sections": [
+        {
+          "body": "`ss -tan state time-wait | wc -l` counts TIME-WAIT sockets; `ss -tan` lists all TCP states.",
+          "code": "$ ss -tan | awk '{print $1}' | sort | uniq -c"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Each direction closes with its own FIN and ACK, usually four segments.",
+    "The active closer ends in TIME-WAIT for 2 x MSL.",
+    "CLOSE-WAIT buildup indicates an application not closing sockets.",
+    "RST aborts a connection immediately."
+  ],
+  "references": [
+    {
+      "label": "RFC 9293: Transmission Control Protocol (TCP)",
+      "url": "https://www.rfc-editor.org/rfc/rfc9293"
+    },
+    {
+      "label": "RFC 1337: TIME-WAIT Assassination Hazards in TCP",
+      "url": "https://www.rfc-editor.org/rfc/rfc1337"
+    }
+  ]
+}

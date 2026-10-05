@@ -6,7 +6,7 @@ import com.interviewpreplab.core.model.FlowPacket
 import com.interviewpreplab.core.model.PacketFlowScene
 
 object DHCPLeaseRunner {
-    fun run(): List<Frame> = listOf(
+    private fun baseFrames(): List<Frame> = listOf(
         Frame("DHCP (Dynamic Host Configuration Protocol): assigns IP addresses, gateways, DNS servers to hosts automatically.", "intro",
             mapOf("layer" to "application/transport", "goal" to "dynamic addressing")),
 
@@ -33,5 +33,22 @@ object DHCPLeaseRunner {
 
         Frame("DHCP enables plug-and-play networking. No manual IP assignment. Essential for mobile devices, hotels, coffee shops.", "summary",
             mapOf("convenience" to "high", "scale" to "millions of devices"))
+    )
+
+    private val nodes = listOf(
+        FlowNode("client", "Client", "host"),
+        FlowNode("server", "DHCP Server", "server")
+    )
+
+    fun run(): List<Frame> = baseFrames().withFlow(
+        nodes = nodes,
+        stages = mapOf(
+            1 to stage(FlowStep("client", "server", "DHCP", "DISCOVER (broadcast)")),
+            2 to stage(FlowStep("server", "client", "DHCP", "OFFER 192.168.1.100")),
+            3 to stage(FlowStep("client", "server", "DHCP", "REQUEST 192.168.1.100")),
+            4 to stage(FlowStep("server", "client", "DHCP", "ACK lease 24h")),
+            7 to stage(FlowStep("client", "server", "DHCP", "RELEASE"))
+        ),
+        description = "DHCP DORA exchange"
     )
 }

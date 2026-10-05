@@ -1,0 +1,95 @@
+{
+  "summary": "Binary search finds a target in a sorted array by repeatedly halving the search range. Each comparison discards half of the remaining elements, giving O(log n) time.",
+  "sections": [
+    {
+      "heading": "Preconditions",
+      "bullets": [
+        "Data must be sorted (or the predicate must be monotonic).",
+        "Random access in O(1), such as an array; on a linked list it loses its advantage."
+      ]
+    },
+    {
+      "heading": "Iterative algorithm",
+      "bullets": [
+        "Maintain lo and hi, the inclusive bounds of the candidate range.",
+        "mid = lo + (hi - lo) / 2.",
+        "If a[mid] == target, return mid.",
+        "If a[mid] < target, set lo = mid + 1; otherwise hi = mid - 1.",
+        "If lo > hi, the target is absent."
+      ],
+      "code": "int bsearch(const int a[], int n, int target) {\n  int lo = 0, hi = n - 1;\n  while (lo <= hi) {\n    int mid = lo + (hi - lo) / 2;   // avoids (lo + hi) overflow\n    if (a[mid] == target) return mid;\n    if (a[mid] < target) lo = mid + 1; else hi = mid - 1;\n  }\n  return -1;\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Time: O(log n); about log2(n) + 1 comparisons.",
+        "Best case O(1) when the middle element matches.",
+        "Space: O(1) iterative; O(log n) recursive because of the call stack."
+      ]
+    },
+    {
+      "heading": "The overflow bug",
+      "body": "Writing `(lo + hi) / 2` overflows when lo + hi exceeds INT_MAX. This bug lived in the JDK's binary search for years. `lo + (hi - lo) / 2` is always safe."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Lower and upper bound",
+      "summary": "First/last occurrence and insertion points.",
+      "sections": [
+        {
+          "body": "lower_bound returns the first index with a[i] >= target; upper_bound the first with a[i] > target. Their difference counts duplicates, and lower_bound is where to insert to stay sorted.",
+          "code": "int lower_bound(const int a[], int n, int x) {\n  int lo = 0, hi = n;          // half-open [lo, hi)\n  while (lo < hi) { int m = lo + (hi - lo) / 2;\n    if (a[m] < x) lo = m + 1; else hi = m; }\n  return lo;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Binary search on the answer",
+      "summary": "Search a monotonic predicate.",
+      "sections": [
+        {
+          "body": "When a yes/no property is monotonic in a numeric parameter (e.g. 'can we ship within D days with capacity C?'), binary search the smallest C that works, even though there is no array. Common in interview problems."
+        }
+      ]
+    },
+    {
+      "title": "Rotated sorted arrays",
+      "summary": "Still O(log n).",
+      "sections": [
+        {
+          "body": "At each step one half is guaranteed sorted. Check whether the target lies in that sorted half and discard the other. Handles searching and finding the minimum."
+        }
+      ]
+    },
+    {
+      "title": "Where binary search shows up",
+      "summary": "Real systems.",
+      "sections": [
+        {
+          "bullets": [
+            "Database and B-tree indexes.",
+            "git bisect to find the commit that introduced a bug.",
+            "Routing-table and IP range lookups.",
+            "Library functions: `bsearch`, `std::lower_bound`, `Arrays.binarySearch`."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Requires sorted data and O(1) access.",
+    "O(log n) time, O(1) space iteratively.",
+    "Use `lo + (hi - lo)/2` to avoid overflow.",
+    "Learn lower/upper bound and binary search on the answer."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Binary search (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/binary-search/"
+    }
+  ]
+}

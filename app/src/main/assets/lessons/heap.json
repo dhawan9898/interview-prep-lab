@@ -1,0 +1,98 @@
+{
+  "summary": "A binary heap is a complete binary tree stored in an array that satisfies the heap property: in a min-heap every parent is less than or equal to its children, so the minimum is always at the root. It is the standard implementation of a priority queue.",
+  "sections": [
+    {
+      "heading": "Structure",
+      "bullets": [
+        "Complete binary tree: every level is full except possibly the last, filled left to right.",
+        "Stored in an array with no pointers.",
+        "Min-heap: parent <= children. Max-heap: parent >= children.",
+        "Not fully sorted: siblings have no ordering."
+      ]
+    },
+    {
+      "heading": "Array index formulas",
+      "body": "For 0-based index i:",
+      "code": "parent(i) = (i - 1) / 2\nleft(i)   = 2*i + 1\nright(i)  = 2*i + 2"
+    },
+    {
+      "heading": "Insert (sift up)",
+      "body": "Append at the end, then swap with the parent while the new value is smaller. O(log n).",
+      "code": "void push(int h[], int *n, int v) {\n  int i = (*n)++; h[i] = v;\n  while (i > 0 && h[(i-1)/2] > h[i]) { swap(&h[i], &h[(i-1)/2]); i = (i-1)/2; }\n}"
+    },
+    {
+      "heading": "Extract-min (sift down)",
+      "body": "Take the root, move the last element to the root, then swap it with the smaller child until the property holds. O(log n)."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "peek min: O(1).",
+        "insert: O(log n).",
+        "extract-min: O(log n).",
+        "build-heap from n items: O(n) by sifting down from the last parent.",
+        "Heap sort: O(n log n), in place, not stable."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Why build-heap is O(n)",
+      "summary": "Most nodes are near the bottom.",
+      "sections": [
+        {
+          "body": "Half the nodes are leaves needing no work, a quarter move at most one level, and so on. The sum n/2·0 + n/4·1 + n/8·2 + ... converges to O(n), better than n inserts at O(n log n)."
+        }
+      ]
+    },
+    {
+      "title": "Heap sort",
+      "summary": "Selection sort with a heap.",
+      "sections": [
+        {
+          "body": "Build a max-heap, then repeatedly swap the root with the last element and sift down on a shrinking heap. O(n log n) worst case and O(1) space, but poor cache behaviour makes it slower than quick sort in practice."
+        }
+      ]
+    },
+    {
+      "title": "Priority queue applications",
+      "summary": "Where heaps are used.",
+      "sections": [
+        {
+          "bullets": [
+            "Dijkstra's and Prim's algorithms.",
+            "Task and event scheduling.",
+            "K largest/smallest elements with a size-k heap.",
+            "Median of a stream with a max-heap and a min-heap.",
+            "Huffman coding."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Heap memory vs heap data structure",
+      "summary": "Unrelated meanings of heap.",
+      "sections": [
+        {
+          "body": "The process heap used by malloc has nothing to do with this tree-shaped structure beyond the shared name."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Complete binary tree in an array; root is the min (or max).",
+    "Insert and extract are O(log n); peek is O(1); build-heap is O(n).",
+    "Index math: parent (i-1)/2, children 2i+1 and 2i+2.",
+    "Basis of priority queues and heap sort."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Heap data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/heap-data-structure/"
+    }
+  ]
+}

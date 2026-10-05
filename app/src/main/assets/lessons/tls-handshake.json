@@ -1,0 +1,102 @@
+{
+  "summary": "The TLS handshake lets a client and server agree on protocol parameters, authenticate the server (and optionally the client), and derive shared secret keys. In TLS 1.3 this takes one round trip, and everything after ServerHello is encrypted.",
+  "sections": [
+    {
+      "heading": "TLS 1.3 full handshake (RFC 8446)",
+      "code": "Client                                   Server\n ClientHello  (+key_share, supported_versions,\n               signature_algorithms) ------->\n                                      ServerHello (+key_share)\n                                     {EncryptedExtensions}\n                                     {Certificate}\n                                     {CertificateVerify}\n                          <-------   {Finished}\n {Finished} ------------------------>\n [Application Data] <--------------> [Application Data]\n  ({ } = encrypted with handshake keys)"
+    },
+    {
+      "heading": "What each message does",
+      "bullets": [
+        "ClientHello: random nonce, supported versions and cipher suites, and key shares for (EC)DHE.",
+        "ServerHello: chosen cipher suite and the server's key share; both sides can now derive handshake keys.",
+        "EncryptedExtensions: remaining extension responses.",
+        "Certificate: the server's certificate chain.",
+        "CertificateVerify: a signature over the transcript proving possession of the private key.",
+        "Finished: a MAC over the whole handshake confirming nothing was altered."
+      ]
+    },
+    {
+      "heading": "Key exchange and forward secrecy",
+      "body": "Both sides exchange ephemeral Diffie-Hellman shares (X25519 or P-256) and compute the same shared secret. The keys are fed through HKDF in a key schedule to produce handshake and application traffic keys. Because the DH keys are discarded after use, recording traffic and later stealing the server's long-term key does not reveal past sessions: forward secrecy. TLS 1.3 removed static RSA and static DH key exchange."
+    },
+    {
+      "heading": "Authentication",
+      "body": "The client validates the certificate chain up to a trusted root, checks the hostname against the certificate's subject alternative names, validity dates, and revocation status. CertificateVerify proves the server actually holds the key."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "What changed from TLS 1.2",
+      "summary": "Fewer round trips, fewer algorithms.",
+      "sections": [
+        {
+          "bullets": [
+            "1-RTT instead of 2-RTT for a full handshake.",
+            "Only AEAD ciphers (AES-GCM, ChaCha20-Poly1305).",
+            "Handshake messages after ServerHello are encrypted.",
+            "Static RSA and DH, RC4, CBC, and compression removed.",
+            "Versions negotiated via the supported_versions extension."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Session resumption and 0-RTT",
+      "summary": "Faster reconnects.",
+      "sections": [
+        {
+          "body": "A server can issue a ticket derived from a previous session; the client sends a pre-shared key identity and can include early data in its first flight (0-RTT). Early data is not forward secret and can be replayed, so use it only for idempotent requests."
+        }
+      ]
+    },
+    {
+      "title": "SNI and ALPN",
+      "summary": "Extensions you meet daily.",
+      "sections": [
+        {
+          "body": "Server Name Indication tells the server which hostname the client wants so one IP can host many certificates. ALPN negotiates the application protocol such as h2 or http/1.1. Encrypted Client Hello hides SNI."
+        }
+      ]
+    },
+    {
+      "title": "Record layer",
+      "summary": "Protecting application data.",
+      "sections": [
+        {
+          "body": "Data is split into records, encrypted and authenticated with AEAD using per-record nonces, and padded optionally. The TCP segment sizes then reveal little about the content."
+        }
+      ]
+    },
+    {
+      "title": "Inspecting a handshake",
+      "summary": "OpenSSL.",
+      "sections": [
+        {
+          "body": "`openssl s_client -connect example.com:443 -tls1_3` prints the negotiated version, cipher, and certificate chain; Wireshark shows the ClientHello fields until encryption begins.",
+          "code": "$ openssl s_client -connect example.com:443 -tls1_3 </dev/null"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Client and server exchange ephemeral key shares to derive shared secrets.",
+    "TLS 1.3 handshakes in 1 RTT and encrypts everything after ServerHello.",
+    "Certificate + CertificateVerify + Finished authenticate the server and the transcript.",
+    "Forward secrecy is mandatory; 0-RTT trades safety for speed."
+  ],
+  "references": [
+    {
+      "label": "RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc8446"
+    },
+    {
+      "label": "RFC 5280: Internet X.509 PKI Certificate and CRL Profile",
+      "url": "https://www.rfc-editor.org/rfc/rfc5280"
+    },
+    {
+      "label": "RFC 7301: TLS ALPN Extension",
+      "url": "https://www.rfc-editor.org/rfc/rfc7301"
+    }
+  ]
+}

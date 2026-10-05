@@ -1,0 +1,92 @@
+{
+  "summary": "A Layer 2 switch builds its forwarding table automatically by watching source MAC addresses. It then forwards frames only to the port where the destination lives and floods when it does not know.",
+  "sections": [
+    {
+      "heading": "Learning from the source address",
+      "body": "For every frame that arrives, the switch records (source MAC, ingress port, VLAN) in its MAC address table (often kept in CAM hardware). This is how it discovers where each device is, with no configuration."
+    },
+    {
+      "heading": "Forwarding decision",
+      "body": "The switch then looks up the destination MAC:",
+      "bullets": [
+        "Known unicast: forward out the single learned port.",
+        "Destination on the same port it arrived: filter (drop), no need to forward.",
+        "Unknown unicast: flood out all ports in the VLAN except the ingress port.",
+        "Broadcast (ff:ff:ff:ff:ff:ff): flood.",
+        "Multicast: flood unless IGMP/MLD snooping limits it."
+      ]
+    },
+    {
+      "heading": "Worked example",
+      "code": "Switch with hosts A (port 1), B (port 2), C (port 3); table empty.\n1. A -> B: learn A=port1. B unknown -> flood to ports 2,3.\n2. B -> A: learn B=port2. A known -> forward only to port 1.\n3. A -> B again: B known -> forward only to port 2. C no longer sees it."
+    },
+    {
+      "heading": "Aging",
+      "body": "Entries are removed after an idle aging time (commonly 300 seconds) so the table does not fill with stale devices and moved hosts are relearned. If a MAC appears on a different port, the entry is updated; that is how a laptop moving between ports is tracked."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Collision and broadcast domains",
+      "summary": "What a switch separates.",
+      "sections": [
+        {
+          "body": "Each switch port is its own collision domain, but all ports in a VLAN share one broadcast domain. Routers or Layer 3 switches separate broadcast domains."
+        }
+      ]
+    },
+    {
+      "title": "Store-and-forward vs cut-through",
+      "summary": "Switching modes.",
+      "sections": [
+        {
+          "body": "Store-and-forward receives the whole frame and checks the FCS before forwarding, discarding bad frames. Cut-through starts forwarding once the destination MAC is read, lowering latency but passing errors along."
+        }
+      ]
+    },
+    {
+      "title": "MAC flooding attack",
+      "summary": "Overflowing the table.",
+      "sections": [
+        {
+          "body": "An attacker sends frames with thousands of fake source MACs until the table is full; the switch then floods unknown unicast like a hub, letting the attacker sniff. Port security (limit MACs per port) and dynamic ARP inspection mitigate it."
+        }
+      ]
+    },
+    {
+      "title": "MAC flapping",
+      "summary": "A symptom of a loop.",
+      "sections": [
+        {
+          "body": "If the same MAC keeps jumping between ports, there is usually a Layer 2 loop or a duplicate MAC. Logs show 'MAC flapping'; check spanning tree."
+        }
+      ]
+    },
+    {
+      "title": "Viewing the table",
+      "summary": "Commands.",
+      "sections": [
+        {
+          "body": "Cisco: `show mac address-table`. Linux bridge: `bridge fdb show`. Both list MAC, VLAN, port, and whether it is dynamic or static.",
+          "code": "Switch# show mac address-table\nVlan  Mac Address       Type     Ports\n   1  aaaa.bbbb.0001    DYNAMIC  Gi0/1"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Switches learn source MAC to port mappings automatically.",
+    "Known unicast goes out one port; unknown unicast and broadcast are flooded.",
+    "Entries age out (about 300 s) and update when a host moves.",
+    "A full MAC table makes a switch behave like a hub; limit it with port security."
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.1D MAC Bridges",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Reference: Network switch (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Network_switch"
+    }
+  ]
+}

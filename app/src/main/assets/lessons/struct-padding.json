@@ -1,0 +1,97 @@
+{
+  "summary": "Compilers insert unused bytes inside and at the end of structs so every member sits at an address that suits the CPU. This padding makes struct sizes larger than the sum of their fields and depends on member order.",
+  "sections": [
+    {
+      "heading": "Why alignment exists",
+      "body": "Processors fetch memory most efficiently when a value of size N sits at an address divisible by N. Misaligned access may need two memory operations, be slower, or fault on some architectures. So each type has a natural alignment.",
+      "bullets": [
+        "char: 1",
+        "short: 2",
+        "int / float: 4",
+        "double / pointer (64-bit): 8"
+      ]
+    },
+    {
+      "heading": "The padding rules",
+      "bullets": [
+        "Each member is placed at the next offset that is a multiple of its alignment.",
+        "The struct's alignment is the largest member alignment.",
+        "The total size is rounded up to a multiple of the struct's alignment (tail padding), so arrays of structs stay aligned."
+      ]
+    },
+    {
+      "heading": "Worked examples (x86-64)",
+      "code": "struct A { char c; short s; };            // 1 + pad1 + 2          = 4\nstruct B { short s; char c; int i; };      // 2 + 1 + pad1 + 4      = 8\nstruct C { char c; double d; int i; };     // 1 + pad7 + 8 + 4 + pad4 = 24\nstruct D { double d; int i; char c; };     // 8 + 4 + 1 + pad3      = 16"
+    },
+    {
+      "heading": "Reducing padding",
+      "body": "Order members from largest alignment to smallest. Struct C and D hold the same fields, yet reordering shrinks 24 bytes to 16, which matters for large arrays and cache use.",
+      "bullets": [
+        "Group same-size fields together.",
+        "Do not put small fields between large ones.",
+        "Check with `sizeof` and `offsetof` rather than guessing."
+      ]
+    },
+    {
+      "heading": "Packing",
+      "body": "Packing removes padding so the struct matches an external layout. It is used for network headers, file formats, and hardware registers.",
+      "code": "#pragma pack(push, 1)\nstruct hdr { char c; short s; };   // size 3\n#pragma pack(pop)\n\nstruct hdr2 { char c; short s; } __attribute__((packed));"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "offsetof and alignof",
+      "summary": "Measure instead of assume.",
+      "sections": [
+        {
+          "body": "`offsetof(struct, member)` from `<stddef.h>` gives a member's byte offset; `_Alignof(type)` (C11) gives its alignment. Print both to see exactly where padding sits.",
+          "code": "printf(\"%zu %zu\\n\", offsetof(struct C, d), _Alignof(double));"
+        }
+      ]
+    },
+    {
+      "title": "Costs of packed structs",
+      "summary": "Why not pack everything.",
+      "sections": [
+        {
+          "body": "Taking the address of a packed member can yield a misaligned pointer, which is slower on x86 and can crash on stricter CPUs. Pack only when an external format demands it, and read fields with `memcpy`."
+        }
+      ]
+    },
+    {
+      "title": "Padding and security",
+      "summary": "Uninitialized padding bytes leak data.",
+      "sections": [
+        {
+          "body": "Padding bytes hold whatever was in memory. Copying a struct to a socket or file can leak stack contents, and comparing structs with `memcmp` can give false mismatches. Zero the struct first with `memset` or `= {0}`."
+        }
+      ]
+    },
+    {
+      "title": "Bit-fields",
+      "summary": "Packing flags inside an int.",
+      "sections": [
+        {
+          "body": "`unsigned a : 3;` stores a member in 3 bits. Layout, ordering, and straddling are implementation-defined, so bit-fields are unreliable for portable wire formats.",
+          "code": "struct flags { unsigned ready : 1; unsigned mode : 3; };"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Each member is aligned to its own size; the struct is padded to its largest alignment.",
+    "Order members large to small to minimize padding.",
+    "Use packing only for external layouts, and beware misaligned access.",
+    "Zero structs before sending or hashing them."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Structure member alignment, padding and data packing (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/structure-member-alignment-padding-and-data-packing/"
+    }
+  ]
+}

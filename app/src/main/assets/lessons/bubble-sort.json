@@ -1,0 +1,86 @@
+{
+  "summary": "Bubble sort repeatedly compares adjacent elements and swaps them when they are out of order, so the largest remaining value 'bubbles' to the end on every pass. It is the simplest comparison sort and a good vehicle for learning loop invariants.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Compare `a[j]` with `a[j+1]`; swap if `a[j] > a[j+1]`.",
+        "One pass moves the largest unsorted value to its final position.",
+        "After pass k, the last k elements are sorted, so each pass can stop one earlier.",
+        "If a full pass makes no swap, the array is sorted: stop."
+      ],
+      "code": "void bubble_sort(int a[], int n) {\n  for (int i = 0; i < n - 1; i++) {\n    int swapped = 0;\n    for (int j = 0; j < n - 1 - i; j++) {\n      if (a[j] > a[j + 1]) { int t = a[j]; a[j] = a[j + 1]; a[j + 1] = t; swapped = 1; }\n    }\n    if (!swapped) break;\n  }\n}"
+    },
+    {
+      "heading": "Walkthrough",
+      "body": "On [5, 2, 8, 1]: pass 1 compares (5,2) swap, (5,8) keep, (8,1) swap, giving [2, 5, 1, 8]; pass 2 gives [2, 1, 5, 8]; pass 3 gives [1, 2, 5, 8]; the next pass has no swaps and stops."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Best case (already sorted, with early exit): O(n).",
+        "Average and worst case: O(n²) comparisons.",
+        "Worst case swaps: O(n²) (reverse-sorted input).",
+        "Space: O(1), in place.",
+        "Stable: equal elements are never swapped."
+      ]
+    },
+    {
+      "heading": "When to use it",
+      "body": "Almost never in production: insertion sort has the same worst case with fewer writes. It is useful for teaching, for tiny inputs, and for detecting that data is already sorted."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Loop invariant",
+      "summary": "Why it is correct.",
+      "sections": [
+        {
+          "body": "Invariant: after pass i, the last i elements are the i largest values in sorted order. Each pass preserves it by carrying the current maximum of the unsorted prefix to the boundary. When i reaches n-1 the whole array is sorted."
+        }
+      ]
+    },
+    {
+      "title": "Early-exit optimization",
+      "summary": "Best case O(n).",
+      "sections": [
+        {
+          "body": "A `swapped` flag records whether any swap happened. A pass with no swaps proves every adjacent pair is ordered, hence the array is non-decreasing. Without the flag, bubble sort always does about n²/2 comparisons."
+        }
+      ]
+    },
+    {
+      "title": "Cocktail shaker sort",
+      "summary": "Bubble in both directions.",
+      "sections": [
+        {
+          "body": "Alternate left-to-right and right-to-left passes. Small values at the end move forward faster ('turtles' problem). Still O(n²) but fewer passes on some inputs."
+        }
+      ]
+    },
+    {
+      "title": "Counting inversions",
+      "summary": "What the swaps mean.",
+      "sections": [
+        {
+          "body": "Each adjacent swap removes exactly one inversion (a pair out of order). So the number of swaps equals the inversion count, which ranges from 0 (sorted) to n(n-1)/2 (reversed). A merge-sort variant counts inversions in O(n log n)."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Adjacent compare-and-swap; largest value settles at the end each pass.",
+    "O(n²) time, O(1) space, stable, adaptive with an early-exit flag.",
+    "Educational; prefer insertion sort for small inputs and O(n log n) sorts otherwise."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Bubble sort algorithm (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/bubble-sort-algorithm/"
+    }
+  ]
+}

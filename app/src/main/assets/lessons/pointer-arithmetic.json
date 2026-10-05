@@ -1,0 +1,93 @@
+{
+  "summary": "Pointer arithmetic moves a pointer by whole elements, not bytes. The compiler multiplies by the pointed-to type's size, which is what makes array traversal with pointers work.",
+  "sections": [
+    {
+      "heading": "The scaling rule",
+      "body": "Adding `n` to a pointer advances it by `n * sizeof(*p)` bytes. For an `int *` at address 1000 with 4-byte ints, `p + 1` is 1004 and `p - 1` is 996.",
+      "code": "new_address = old_address ± (n × sizeof(type))"
+    },
+    {
+      "heading": "Valid operations",
+      "bullets": [
+        "Increment/decrement: `p++`, `p--`.",
+        "Add or subtract an integer: `p + n`, `p - n`.",
+        "Subtract two pointers of the same type into the same array: gives the element count (type `ptrdiff_t`).",
+        "Compare pointers: `<`, `<=`, `>`, `>=`, `==`, `!=`.",
+        "Compare to NULL."
+      ]
+    },
+    {
+      "heading": "Invalid operations",
+      "bullets": [
+        "Adding two pointers has no meaning and does not compile.",
+        "Multiplying or dividing pointers.",
+        "Arithmetic on `void *` (unknown element size; GCC allows it as an extension, standard C does not).",
+        "Arithmetic on function pointers."
+      ]
+    },
+    {
+      "heading": "Walking an array",
+      "code": "int a[] = {1, 2, 3, 4, 5};\nint *p = a;\nfor (int i = 0; i < 5; i++) {\n  printf(\"%d \", *p);\n  p++;               // moves 4 bytes each step\n}\n// 1 2 3 4 5"
+    },
+    {
+      "heading": "Subtracting pointers",
+      "body": "The result is a count of elements, not bytes.",
+      "code": "int a[10];\nint *p = &a[2], *q = &a[7];\nptrdiff_t n = q - p;   // 5"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Array indexing is pointer arithmetic",
+      "summary": "`a[i]` equals `*(a + i)`.",
+      "sections": [
+        {
+          "body": "Because addition is commutative, `i[a]` is even legal, though you should never write it. Indexing and pointer walking compile to the same machine code in most cases."
+        }
+      ]
+    },
+    {
+      "title": "Staying inside bounds",
+      "summary": "What the standard allows.",
+      "sections": [
+        {
+          "body": "Forming a pointer is only defined within an array object or one element past its end. Dereferencing the one-past-end pointer, or going further, is undefined behavior even if it appears to work."
+        }
+      ]
+    },
+    {
+      "title": "char* vs int* stepping",
+      "summary": "Why byte pointers are special.",
+      "sections": [
+        {
+          "body": "`unsigned char *` moves one byte at a time, so it is used to inspect raw object representation. Casting `int *` to `char *` lets you view each byte of an int.",
+          "code": "int x = 0x01020304;\nunsigned char *b = (unsigned char *)&x;\nfor (int i = 0; i < 4; i++) printf(\"%02x \", b[i]);"
+        }
+      ]
+    },
+    {
+      "title": "Pointers and 2D arrays",
+      "summary": "Row stride is part of the type.",
+      "sections": [
+        {
+          "body": "For `int m[3][4]`, `m + 1` skips a whole row (16 bytes) because its type is `int (*)[4]`. This is why multidimensional array parameters need the inner dimensions."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Arithmetic is scaled by the element size.",
+    "Pointer minus pointer yields elements, not bytes.",
+    "Stay within an array (or one past its end).",
+    "Never add two pointers."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Pointer arithmetic in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/pointer-arithmetics-in-c-with-examples/"
+    }
+  ]
+}

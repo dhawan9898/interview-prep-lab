@@ -6,7 +6,7 @@ import com.interviewpreplab.core.model.FlowPacket
 import com.interviewpreplab.core.model.PacketFlowScene
 
 object NATRunner {
-    fun run(): List<Frame> = listOf(
+    private fun baseFrames(): List<Frame> = listOf(
         Frame("NAT (Network Address Translation): router translates private IPs to public IP. Enables LAN without public IPs.", "intro",
             mapOf("private_ips" to "many", "public_ips" to "1")),
 
@@ -33,5 +33,20 @@ object NATRunner {
 
         Frame("NAT enables millions of devices on private networks to share limited public IPv4 space. Bridge until IPv6 adoption.", "summary",
             mapOf("scaling" to "high", "duration" to "decades"))
+    )
+
+    private val nodes = listOf(
+        FlowNode("host", "192.168.1.100", "host"),
+        FlowNode("nat", "NAT router", "router"),
+        FlowNode("server", "8.8.8.8", "server")
+    )
+
+    fun run(): List<Frame> = baseFrames().withFlow(
+        nodes = nodes,
+        stages = mapOf(
+            2 to stage(FlowStep("host", "nat", "TCP", "src 192.168.1.100:5000"), FlowStep("nat", "server", "TCP", "src 203.0.113.5:12345")),
+            4 to stage(FlowStep("server", "nat", "TCP", "dst 203.0.113.5:12345"), FlowStep("nat", "host", "TCP", "dst 192.168.1.100:5000"))
+        ),
+        description = "NAT translation"
     )
 }

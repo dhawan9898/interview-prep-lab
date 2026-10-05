@@ -1,0 +1,104 @@
+{
+  "summary": "A binary search tree keeps values ordered: every key in a node's left subtree is smaller and every key in its right subtree is larger. That ordering makes search, insert, and delete take time proportional to the tree's height.",
+  "sections": [
+    {
+      "heading": "The BST property",
+      "bullets": [
+        "left subtree keys < node key < right subtree keys, recursively.",
+        "In-order traversal (left, node, right) visits keys in sorted order.",
+        "Duplicates need a policy: reject, count, or place consistently on one side."
+      ]
+    },
+    {
+      "heading": "Search",
+      "body": "Compare with the node: go left if smaller, right if larger, stop when equal or NULL. O(h).",
+      "code": "struct T *find(struct T *t, int k) {\n  while (t && t->key != k) t = (k < t->key) ? t->left : t->right;\n  return t;\n}"
+    },
+    {
+      "heading": "Insert",
+      "body": "Search for the key's position; attach a new leaf where the search ends. O(h).",
+      "code": "struct T *insert(struct T *t, int k) {\n  if (!t) return new_node(k);\n  if (k < t->key) t->left = insert(t->left, k);\n  else if (k > t->key) t->right = insert(t->right, k);\n  return t;\n}"
+    },
+    {
+      "heading": "Delete: three cases",
+      "bullets": [
+        "Leaf: remove it.",
+        "One child: replace the node with its child.",
+        "Two children: copy the in-order successor (minimum of the right subtree) into the node, then delete that successor."
+      ]
+    },
+    {
+      "heading": "Complexity and shape",
+      "body": "Height h is between log2(n) (balanced) and n (degenerate). Inserting sorted keys 1, 2, 3, ... builds a linked list and makes every operation O(n). Self-balancing trees keep h = O(log n)."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Traversals",
+      "summary": "Inorder, preorder, postorder, level-order.",
+      "sections": [
+        {
+          "bullets": [
+            "Inorder: sorted output; also used to validate a BST.",
+            "Preorder: root first; used to copy or serialize a tree.",
+            "Postorder: children first; used to delete or evaluate.",
+            "Level-order: BFS with a queue."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Min, max, floor, ceiling, successor",
+      "summary": "Order queries.",
+      "sections": [
+        {
+          "body": "Min is the leftmost node, max the rightmost. Successor is the minimum of the right subtree, or else the nearest ancestor reached from a left child. Floor and ceiling find the closest key at or below or above x."
+        }
+      ]
+    },
+    {
+      "title": "Self-balancing trees",
+      "summary": "AVL and red-black.",
+      "sections": [
+        {
+          "body": "AVL trees keep subtree heights within 1 using rotations; red-black trees use color rules for looser balance with fewer rotations. Both guarantee O(log n). Standard maps (`std::map`, `TreeMap`) use red-black trees."
+        }
+      ]
+    },
+    {
+      "title": "Validating a BST",
+      "summary": "A common interview trap.",
+      "sections": [
+        {
+          "body": "Checking only each node against its immediate children is wrong. Pass down allowed (min, max) bounds, or verify that an in-order traversal is strictly increasing.",
+          "code": "bool ok(T *t, long lo, long hi) {\n  return !t || (t->key > lo && t->key < hi && ok(t->left, lo, t->key) && ok(t->right, t->key, hi));\n}"
+        }
+      ]
+    },
+    {
+      "title": "BST vs hash table",
+      "summary": "When ordering matters.",
+      "sections": [
+        {
+          "body": "Hash tables give O(1) average lookup but no ordering. BSTs give O(log n) with range queries, sorted iteration, and nearest-key lookup."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Left < node < right, at every node.",
+    "Search/insert/delete are O(h): O(log n) balanced, O(n) skewed.",
+    "Inorder traversal yields sorted order.",
+    "Use AVL/red-black trees to guarantee balance."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Binary search tree (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/binary-search-tree-data-structure/"
+    }
+  ]
+}

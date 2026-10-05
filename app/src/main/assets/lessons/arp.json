@@ -1,0 +1,102 @@
+{
+  "summary": "ARP (Address Resolution Protocol) maps a known IPv4 address to the MAC address needed to deliver a frame on the local network segment. It is a broadcast request answered by a unicast reply, cached for reuse.",
+  "sections": [
+    {
+      "heading": "Why ARP exists",
+      "body": "IP chooses a next-hop IP address, but an Ethernet switch delivers by MAC address. Before sending, a host must learn the MAC that corresponds to the next hop's IP. For off-subnet destinations the next hop is the default gateway, so ARP resolves the gateway, not the final server."
+    },
+    {
+      "heading": "How resolution works",
+      "bullets": [
+        "The host checks its ARP cache for the target IP.",
+        "On a miss it broadcasts an ARP Request to ff:ff:ff:ff:ff:ff: 'Who has 192.168.1.1? Tell 192.168.1.10'.",
+        "Every host on the segment sees it; only the owner of that IP replies.",
+        "The owner sends a unicast ARP Reply containing its MAC.",
+        "The requester caches the mapping with a timeout and sends the queued packet."
+      ]
+    },
+    {
+      "heading": "Packet format (RFC 826)",
+      "bullets": [
+        "Hardware type (2 bytes): 1 for Ethernet.",
+        "Protocol type (2): 0x0800 for IPv4.",
+        "Hardware address length (1): 6; protocol address length (1): 4.",
+        "Operation (2): 1 = request, 2 = reply.",
+        "Sender hardware address and sender protocol address.",
+        "Target hardware address (zero in a request) and target protocol address."
+      ]
+    },
+    {
+      "heading": "Receiving algorithm",
+      "body": "On any ARP packet the receiver first updates an existing cache entry for the sender if one exists. If the packet targets this host it also adds the sender to its cache, and, if it is a request, swaps the fields and unicasts a reply. This is why a request also teaches the target about the requester, saving a second ARP exchange."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Gratuitous ARP",
+      "summary": "A host announcing itself.",
+      "sections": [
+        {
+          "body": "A host sends an ARP request (or unsolicited reply) for its own IP. It detects duplicate addresses and updates neighbours' caches after a failover, NIC change, or virtual IP move, as used by VRRP/HSRP."
+        }
+      ]
+    },
+    {
+      "title": "Proxy ARP",
+      "summary": "One device answers for another.",
+      "sections": [
+        {
+          "body": "A router answers ARP requests for hosts behind it so devices without a gateway configured still reach them. It hides topology but enlarges ARP tables and broadcast domains, so it is mostly legacy."
+        }
+      ]
+    },
+    {
+      "title": "ARP spoofing and defences",
+      "summary": "No authentication.",
+      "sections": [
+        {
+          "body": "Any host can send a forged reply, poisoning caches so traffic flows through an attacker (man in the middle). Defences: Dynamic ARP Inspection on switches (validates against DHCP snooping bindings), static entries for critical hosts, and end-to-end encryption such as TLS."
+        }
+      ]
+    },
+    {
+      "title": "IPv6 equivalent",
+      "summary": "Neighbor Discovery.",
+      "sections": [
+        {
+          "body": "IPv6 has no ARP. Neighbor Solicitation and Advertisement messages in ICMPv6 (RFC 4861) use solicited-node multicast groups instead of broadcast, and can be secured with SEND."
+        }
+      ]
+    },
+    {
+      "title": "Inspecting the cache",
+      "summary": "Commands.",
+      "sections": [
+        {
+          "body": "Linux: `ip neigh show`. Windows: `arp -a`. Entries move through states such as REACHABLE, STALE, and FAILED as they age or fail to resolve.",
+          "code": "$ ip neigh show\n192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "ARP resolves an IPv4 address to a MAC address on the local segment only.",
+    "Request is broadcast; reply is unicast; results are cached with a timeout.",
+    "For remote destinations ARP resolves the default gateway.",
+    "ARP is unauthenticated, so use DAI and encryption."
+  ],
+  "references": [
+    {
+      "label": "RFC 826: An Ethernet Address Resolution Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc826"
+    },
+    {
+      "label": "RFC 4861: Neighbor Discovery for IP version 6",
+      "url": "https://www.rfc-editor.org/rfc/rfc4861"
+    },
+    {
+      "label": "Reference: Ethernet frame (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Ethernet_frame"
+    }
+  ]
+}

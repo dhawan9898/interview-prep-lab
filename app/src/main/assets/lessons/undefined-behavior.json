@@ -1,0 +1,105 @@
+{
+  "summary": "Undefined behavior (UB) means the C standard places no requirements on what happens. The program may crash, print garbage, appear to work, or be silently miscompiled, because the compiler is allowed to assume UB never occurs.",
+  "sections": [
+    {
+      "heading": "Three kinds of unpredictable",
+      "bullets": [
+        "Undefined behavior: no requirements at all (null dereference, signed overflow).",
+        "Unspecified behavior: the implementation picks among allowed options and need not document it (order of evaluating function arguments).",
+        "Implementation-defined behavior: the compiler must document its choice (size of int, right shift of negative numbers)."
+      ]
+    },
+    {
+      "heading": "Common sources",
+      "bullets": [
+        "Signed integer overflow: `INT_MAX + 1`.",
+        "Division by zero.",
+        "Out-of-bounds array access or pointer arithmetic.",
+        "Dereferencing NULL or dangling pointers.",
+        "Reading an uninitialized automatic variable.",
+        "Modifying a string literal.",
+        "Modifying a variable twice between sequence points: `i = i++ + ++i`.",
+        "Strict-aliasing violations and misaligned access.",
+        "Shifting by a negative or too-large amount."
+      ]
+    },
+    {
+      "heading": "Examples",
+      "code": "int a = INT_MAX; a + 1;          // signed overflow: UB\nint arr[4]; arr[5] = 0;          // out of bounds: UB\nint *p = NULL; *p = 1;           // null deref: UB\nchar *s = \"abc\"; s[0] = 'x';    // string literal write: UB\nint i = 4; int r = i++ * i++;    // unsequenced: UB"
+    },
+    {
+      "heading": "Why the standard allows it",
+      "body": "Leaving behavior undefined lets compilers skip bounds and overflow checks and optimize aggressively. Signed overflow being UB lets `for (int i = 0; i < n; i++)` be assumed to terminate and be vectorized. The price is that bugs may not fail where they occur."
+    },
+    {
+      "heading": "Consequences",
+      "bullets": [
+        "Results differ across compilers, versions, and optimization levels.",
+        "Optimizers can delete checks that rely on UB, e.g. `if (x + 1 < x)` is removed for signed x.",
+        "Security holes: many exploits start as UB.",
+        "Debugging is hard because failures appear far from the cause."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Unsigned overflow is defined",
+      "summary": "Wraps modulo 2^N.",
+      "sections": [
+        {
+          "body": "Unsigned arithmetic is specified to wrap, so `UINT_MAX + 1 == 0` is fine. Signed overflow is not. Prefer unsigned types for bit manipulation and check ranges before signed arithmetic.",
+          "code": "if (a > INT_MAX - b) { /* would overflow */ }\nelse sum = a + b;"
+        }
+      ]
+    },
+    {
+      "title": "Sequence points",
+      "summary": "Order of side effects.",
+      "sections": [
+        {
+          "body": "Between two sequence points an object may be modified at most once, and its prior value may be read only to compute the new value. `a[i] = i++` and `printf(\"%d %d\", i++, i++)` violate this. Split such statements."
+        }
+      ]
+    },
+    {
+      "title": "Strict aliasing",
+      "summary": "Accessing an object through the wrong type.",
+      "sections": [
+        {
+          "body": "Reading a `float` through an `int *` is UB, letting compilers reorder or drop loads. To reinterpret bytes safely use `memcpy` or a `union` as documented by your compiler.",
+          "code": "float f = 1.0f; uint32_t u;\nmemcpy(&u, &f, sizeof u);   // safe"
+        }
+      ]
+    },
+    {
+      "title": "Finding UB",
+      "summary": "Sanitizers and warnings.",
+      "sections": [
+        {
+          "body": "Build with `-fsanitize=undefined,address -Wall -Wextra`. UBSan reports signed overflow, bad shifts, null deref, and misaligned access at run time. Static analyzers and `-O2` warnings catch more, and tools like Frama-C or CompCert's interpreter define behavior exactly.",
+          "code": "gcc -g -O1 -fsanitize=undefined,address prog.c"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "UB gives the compiler license to assume it never happens.",
+    "Signed overflow, out-of-bounds, null deref, uninitialized reads, and unsequenced modifications are UB.",
+    "Unspecified and implementation-defined are different from undefined.",
+    "Use -fsanitize=undefined and clean warnings to catch it."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Undefined behavior in C and C++ (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/undefined-behavior-c-cpp/"
+    },
+    {
+      "label": "CERT C Coding Standard",
+      "url": "https://wiki.sei.cmu.edu/confluence/display/c/SEI+CERT+C+Coding+Standard"
+    }
+  ]
+}

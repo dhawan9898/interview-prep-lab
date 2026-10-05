@@ -1,0 +1,107 @@
+{
+  "summary": "DHCP automatically gives a host an IP address, mask, gateway, and DNS servers for a limited lease. A client finds a server with a broadcast, accepts an offer, and renews before the lease expires.",
+  "sections": [
+    {
+      "heading": "The four-message exchange (DORA)",
+      "body": "RFC 2131 defines the sequence. Clients use UDP port 68 and servers port 67. The client has no address yet, so it sends from 0.0.0.0 to 255.255.255.255.",
+      "code": "Client                               Server\n  --- DHCPDISCOVER (broadcast) --->   find servers\n  <-- DHCPOFFER  (offers address)\n  --- DHCPREQUEST (broadcast) ---->   accept one offer\n  <-- DHCPACK    (lease details)       committed"
+    },
+    {
+      "heading": "Why REQUEST is broadcast",
+      "body": "If several servers offered, the client's broadcast REQUEST names the chosen server so the others can withdraw their offers and free the address."
+    },
+    {
+      "heading": "What the ACK carries",
+      "bullets": [
+        "yiaddr: the assigned address.",
+        "Options: subnet mask (1), router (3), DNS servers (6), lease time (51), domain name (15), and more.",
+        "The transaction ID (xid) and client hardware address (chaddr) identify the client."
+      ]
+    },
+    {
+      "heading": "Lease lifecycle and timers",
+      "bullets": [
+        "BOUND: the client uses the address and sets timers.",
+        "T1 = 50% of the lease: enter RENEWING and unicast a REQUEST to the original server.",
+        "T2 = 87.5%: if still unanswered, enter REBINDING and broadcast a REQUEST to any server.",
+        "At 100%: the lease expires, the client must stop using the address and restart in INIT.",
+        "DHCPRELEASE hands the address back early."
+      ]
+    },
+    {
+      "heading": "Other messages",
+      "bullets": [
+        "DHCPNAK: server says the requested address is invalid (client moved networks).",
+        "DHCPDECLINE: client found the offered address already in use (ARP probe) and rejects it.",
+        "DHCPINFORM: client has an address but wants configuration options only."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Relay agents",
+      "summary": "Crossing routers.",
+      "sections": [
+        {
+          "body": "Broadcasts do not cross routers, so a relay agent on the client's subnet forwards requests to the server as unicast and records its own address in giaddr. The server uses giaddr to choose the right scope and replies via the relay."
+        }
+      ]
+    },
+    {
+      "title": "Client states",
+      "summary": "INIT to BOUND.",
+      "sections": [
+        {
+          "body": "INIT -> SELECTING (collect offers) -> REQUESTING -> BOUND -> RENEWING -> REBINDING, with a return to INIT on NAK or expiry."
+        }
+      ]
+    },
+    {
+      "title": "Reservations and scopes",
+      "summary": "Server configuration.",
+      "sections": [
+        {
+          "body": "A scope is the pool and options for a subnet. Reservations bind a MAC address to a fixed IP so a device such as a printer always receives the same address."
+        }
+      ]
+    },
+    {
+      "title": "Security: rogue servers and starvation",
+      "summary": "Attacks and defences.",
+      "sections": [
+        {
+          "body": "A rogue DHCP server can hand out a malicious gateway or DNS. Starvation attacks exhaust the pool with fake MACs. Switch features: DHCP snooping (only trusted ports may send server replies, and it builds a binding table) and port security."
+        }
+      ]
+    },
+    {
+      "title": "DHCPv6",
+      "summary": "IPv6 equivalent.",
+      "sections": [
+        {
+          "body": "DHCPv6 (RFC 8415) uses Solicit, Advertise, Request, and Reply on UDP 546/547. Often combined with SLAAC; prefix delegation hands routers a whole prefix."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "DORA: Discover, Offer, Request, Ack; UDP 67 (server) and 68 (client).",
+    "Leases renew at T1 = 50% (unicast) and T2 = 87.5% (broadcast).",
+    "Relay agents carry requests across routers using giaddr.",
+    "Protect with DHCP snooping."
+  ],
+  "references": [
+    {
+      "label": "RFC 2131: Dynamic Host Configuration Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc2131"
+    },
+    {
+      "label": "RFC 2132: DHCP Options and BOOTP Vendor Extensions",
+      "url": "https://www.rfc-editor.org/rfc/rfc2132"
+    },
+    {
+      "label": "RFC 8415: DHCP for IPv6",
+      "url": "https://www.rfc-editor.org/rfc/rfc8415"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "summary": "Longest-prefix match is the rule routers use to choose among overlapping routes: among all entries that match the destination address, pick the one with the longest prefix (the most specific route).",
+  "sections": [
+    {
+      "heading": "The rule",
+      "body": "Forwarding is done on a longest-match basis (RFC 4632). A destination can match several table entries; the entry whose prefix length is greatest wins.",
+      "code": "Routing table:\n  0.0.0.0/0          -> ISP\n  192.168.0.0/16     -> core\n  192.168.20.16/28   -> branch\n\nDestination 192.168.20.19:\n  matches /0, /16, and /28   -> /28 wins   (branch)\nDestination 192.168.5.7:\n  matches /0 and /16         -> /16 wins   (core)\nDestination 8.8.8.8:\n  matches /0 only           -> default route (ISP)"
+    },
+    {
+      "heading": "Why it works",
+      "body": "Specific routes carve exceptions out of broad ones. An ISP can advertise one aggregate for a customer block while a customer that moves providers advertises a longer prefix, and traffic follows the more specific route without rewriting the aggregate."
+    },
+    {
+      "heading": "Default route",
+      "body": "0.0.0.0/0 (or ::/0 in IPv6) has prefix length zero, so it matches everything but loses to any other match. It acts as the last resort."
+    },
+    {
+      "heading": "Tie-breakers",
+      "body": "Prefix length is checked first. Only among routes with the same prefix do other criteria apply: lowest administrative distance (which source to trust), then the lowest metric."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "How software finds the match",
+      "summary": "Tries.",
+      "sections": [
+        {
+          "body": "A binary trie (radix tree) stores prefixes along bit paths. A lookup walks the destination bits and remembers the deepest node that holds a route; that is the longest match. Patricia tries compress single-child chains. Lookup cost is O(address length), at most 32 steps for IPv4.",
+          "code": "node = root; best = none\nfor each bit b of dest:\n  if node has route: best = node.route\n  node = node.child[b]; if node is null: break\nreturn best"
+        }
+      ]
+    },
+    {
+      "title": "How hardware finds the match",
+      "summary": "TCAM.",
+      "sections": [
+        {
+          "body": "High-speed routers use TCAM, which compares the address against every stored prefix in parallel, with masks, returning the first match in one cycle. Entries are ordered by prefix length so the first hit is the longest. TCAM is fast but power-hungry and size-limited, which is why route aggregation matters."
+        }
+      ]
+    },
+    {
+      "title": "Interaction with administrative distance",
+      "summary": "Common confusion.",
+      "sections": [
+        {
+          "body": "A /24 route learned via a high-distance protocol still beats a /16 from a low-distance one, because prefix length is evaluated before distance. Distance only decides between routes to the same prefix."
+        }
+      ]
+    },
+    {
+      "title": "Black holes and hijacks",
+      "summary": "Specificity cuts both ways.",
+      "sections": [
+        {
+          "body": "Anyone who can announce a more specific prefix attracts that traffic. BGP prefix hijacks use this, so operators use RPKI route-origin validation and prefix filters."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Among matching routes, the longest prefix wins.",
+    "Default route 0.0.0.0/0 matches everything and is least specific.",
+    "Software uses tries; hardware uses TCAM.",
+    "Prefix length is compared before administrative distance and metric."
+  ],
+  "references": [
+    {
+      "label": "RFC 4632: Classless Inter-domain Routing (CIDR)",
+      "url": "https://www.rfc-editor.org/rfc/rfc4632"
+    },
+    {
+      "label": "Reference: Longest prefix match (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Longest_prefix_match"
+    }
+  ]
+}

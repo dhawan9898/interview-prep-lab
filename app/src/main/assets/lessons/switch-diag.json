@@ -1,0 +1,116 @@
+{
+  "summary": "Switch diagnostics means using show commands and counters to locate problems quickly: link state, MAC learning, VLANs, trunks, spanning tree, and bundles. Work from the physical layer upward.",
+  "sections": [
+    {
+      "heading": "A systematic approach",
+      "bullets": [
+        "Layer 1: is the link up, at the right speed and duplex, with clean counters?",
+        "Layer 2: are MACs learned, is the port in the right VLAN, is the trunk allowing it, is spanning tree forwarding?",
+        "Layer 3: do the host and gateway share the subnet, and is the ARP entry present?",
+        "Change one thing at a time and re-test."
+      ]
+    },
+    {
+      "heading": "Core show commands (Cisco IOS style)",
+      "bullets": [
+        "show interfaces status: port up/down, VLAN, duplex, speed at a glance.",
+        "show interfaces GigabitEthernet0/1: detailed counters.",
+        "show mac address-table [address|interface|vlan]: where a device was learned.",
+        "show vlan brief: VLANs and their access ports.",
+        "show interfaces trunk: trunk ports, allowed and active VLANs, native VLAN.",
+        "show spanning-tree [vlan N]: root bridge, port roles and states.",
+        "show etherchannel summary: bundle membership and flags.",
+        "show cdp neighbors / show lldp neighbors: what is attached to each port.",
+        "show logging: link flaps, MAC flapping, err-disable events."
+      ]
+    },
+    {
+      "heading": "Reading interface counters",
+      "bullets": [
+        "CRC / input errors: bad cable, interference, duplex mismatch.",
+        "Runts and giants: collisions or MTU mismatch.",
+        "Output drops: congestion.",
+        "Late collisions: duplex mismatch or too-long cabling.",
+        "Resets/flaps: unstable link or failing optic."
+      ]
+    },
+    {
+      "heading": "Common symptoms and checks",
+      "bullets": [
+        "Port down/down: cable, remote end, or err-disabled (check `show interfaces status err-disabled`).",
+        "Link up, no traffic: wrong VLAN, trunk not allowing the VLAN, or port security violation.",
+        "Slow link: speed/duplex mismatch or errors.",
+        "Intermittent: loops (STP), MAC flapping, or a failing cable.",
+        "Host cannot reach gateway: ARP, VLAN, or default gateway misconfiguration."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Linux equivalents",
+      "summary": "Same questions on a host or bridge.",
+      "sections": [
+        {
+          "body": "`ip -s link` shows counters and errors; `ethtool eth0` shows speed and duplex; `bridge fdb show` is the MAC table; `bridge vlan show` lists VLANs; `ip neigh` is ARP.",
+          "code": "$ ethtool eth0 | grep -E 'Speed|Duplex|Link'\n$ ip -s link show eth0"
+        }
+      ]
+    },
+    {
+      "title": "Packet captures",
+      "summary": "See what is on the wire.",
+      "sections": [
+        {
+          "body": "SPAN/port mirroring copies traffic to an analyzer port; Wireshark or tcpdump then shows ARP, STP BPDUs, and LACPDUs directly. Filter on `arp`, `stp`, or `ether proto 0x8809`."
+        }
+      ]
+    },
+    {
+      "title": "Spotting a loop",
+      "summary": "Symptoms and fix.",
+      "sections": [
+        {
+          "body": "Symptoms: very high CPU, utilization near 100%, rapidly increasing broadcast counters, MAC flapping logs. Find the looping ports from the interface with the fastest-growing counters, shut one, and fix the topology or enable BPDU guard."
+        }
+      ]
+    },
+    {
+      "title": "Err-disable",
+      "summary": "Automatic protection.",
+      "sections": [
+        {
+          "body": "Ports shut themselves down on BPDU guard, port security, or link flap events. `show interfaces status err-disabled` names the cause; fix it, then `shutdown` / `no shutdown` (or configure auto-recovery)."
+        }
+      ]
+    },
+    {
+      "title": "Baselines and documentation",
+      "summary": "Make future faults easy.",
+      "sections": [
+        {
+          "body": "Keep configuration backups, a port map, and baseline counters so deviations are obvious. Use SNMP or streaming telemetry to alert on error and utilization trends."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Troubleshoot bottom-up: link, MAC/VLAN/trunk, STP, then IP.",
+    "Know the key commands: interfaces status, mac address-table, vlan brief, trunk, spanning-tree, etherchannel.",
+    "Counters tell the story: CRC means cabling, runts/giants mean MTU or collisions, drops mean congestion.",
+    "Loops show as broadcast storms and MAC flapping."
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Reference: Cisco IOS switching command references",
+      "url": "https://www.cisco.com/c/en/us/support/switches/index.html"
+    },
+    {
+      "label": "Linux man-pages: bridge(8)",
+      "url": "https://man7.org/linux/man-pages/man8/bridge.8.html"
+    }
+  ]
+}

@@ -78,9 +78,15 @@ class ProgressViewModel @Inject constructor(
         }
     }
 
-    fun markCompleted(topicId: String) {
+    fun setCompleted(topicId: String, name: String, category: String, completed: Boolean) {
         viewModelScope.launch {
-            progressRepository.markCompleted(topicId)
+            progressRepository.setCompleted(topicId, name, category, completed)
+        }
+    }
+
+    fun recordView(topicId: String, name: String, category: String, durationMs: Long) {
+        viewModelScope.launch {
+            progressRepository.recordView(topicId, name, category, durationMs)
         }
     }
 

@@ -1,0 +1,107 @@
+{
+  "summary": "Link aggregation bundles several physical links between two devices into one logical link for more bandwidth and redundancy. LACP, defined in IEEE 802.1AX (formerly 802.3ad), negotiates the bundle automatically.",
+  "sections": [
+    {
+      "heading": "Why aggregate",
+      "bullets": [
+        "More total bandwidth than a single link.",
+        "Redundancy: the bundle keeps working if a member fails.",
+        "STP sees one logical link, so no member links are blocked."
+      ]
+    },
+    {
+      "heading": "How LACP works",
+      "body": "Each side sends LACPDUs (EtherType 0x8809, slow-protocols multicast 01:80:C2:00:00:02) on every member link. They carry the system priority and MAC, a port key, and port state. Links whose partner information matches are bundled and activated; mismatches stay out. This detects misconfiguration and cabling mistakes that static bundles cannot."
+    },
+    {
+      "heading": "Modes",
+      "bullets": [
+        "Active: sends LACPDUs and initiates negotiation.",
+        "Passive: replies only if it receives LACPDUs; two passive ends never form a bundle.",
+        "Static ('on'): no protocol, forced bundle; risky if the peer is misconfigured.",
+        "LACPDU timing: fast (every 1 s) or slow (every 30 s)."
+      ]
+    },
+    {
+      "heading": "Load balancing",
+      "body": "Frames are assigned to member links by hashing header fields so a single flow always uses the same link and stays in order. A single TCP connection therefore never exceeds one member's speed.",
+      "bullets": [
+        "L2 hash: source/destination MAC.",
+        "L2+L3: plus IP addresses.",
+        "L3+L4: plus TCP/UDP ports (best spread)."
+      ]
+    },
+    {
+      "heading": "Requirements",
+      "body": "Members must have the same speed and duplex, belong to the same VLAN settings, and typically terminate on the same device (up to 8 active links is common)."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Cisco configuration",
+      "summary": "EtherChannel.",
+      "sections": [
+        {
+          "code": "interface range Gi0/1-2\n channel-group 1 mode active\ninterface Port-channel1\n switchport mode trunk\n! verify\nshow etherchannel summary"
+        }
+      ]
+    },
+    {
+      "title": "Linux bonding",
+      "summary": "Modes.",
+      "sections": [
+        {
+          "body": "`mode=802.3ad` uses LACP; `active-backup` needs no switch support; `balance-xor` hashes statically; `balance-tlb/alb` adapt without switch cooperation.",
+          "code": "ip link add bond0 type bond mode 802.3ad xmit_hash_policy layer3+4"
+        }
+      ]
+    },
+    {
+      "title": "MLAG",
+      "summary": "Across two switches.",
+      "sections": [
+        {
+          "body": "Multi-chassis LAG presents two switches as one logical partner, so a server can aggregate links to both for switch-level redundancy. Implementations are vendor-specific (vPC, MC-LAG)."
+        }
+      ]
+    },
+    {
+      "title": "Why a single flow does not speed up",
+      "summary": "Common misunderstanding.",
+      "sections": [
+        {
+          "body": "Four 1 Gb/s links give 4 Gb/s only across many flows. One file copy still caps at 1 Gb/s. Use multipath at higher layers (multipath TCP, application parallelism) to use more."
+        }
+      ]
+    },
+    {
+      "title": "Troubleshooting",
+      "summary": "Typical faults.",
+      "sections": [
+        {
+          "bullets": [
+            "Bundle not forming: both ends passive, mismatched modes or speeds, wrong VLAN config.",
+            "Port shown as suspended or individual in the summary.",
+            "Uneven traffic: poor hash for the traffic mix; change the hash policy."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "LACP (IEEE 802.1AX) negotiates bundles with LACPDUs; at least one side must be active.",
+    "Hashing keeps each flow on one link, so a single flow is limited to one member's speed.",
+    "Members need matching speed and duplex.",
+    "MLAG extends aggregation across two switches."
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Reference: Link aggregation (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Link_aggregation"
+    }
+  ]
+}

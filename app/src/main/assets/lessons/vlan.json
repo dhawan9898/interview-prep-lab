@@ -1,0 +1,109 @@
+{
+  "summary": "A VLAN divides one physical switch network into separate logical Layer 2 broadcast domains. IEEE 802.1Q tags frames with a VLAN ID so many VLANs can share one trunk link.",
+  "sections": [
+    {
+      "heading": "Why VLANs",
+      "bullets": [
+        "Segment traffic by department, function, or security zone without separate hardware.",
+        "Shrink broadcast domains for performance.",
+        "Move users without recabling.",
+        "Each VLAN is typically one IP subnet."
+      ]
+    },
+    {
+      "heading": "The 802.1Q tag",
+      "body": "A 4-byte tag is inserted after the source MAC address:",
+      "bullets": [
+        "TPID: 0x8100 identifies a tagged frame.",
+        "PCP: priority (class of service) 0-7.",
+        "DEI: drop eligibility.",
+        "VID: VLAN ID; usable values 1-4094 (0 and 4095 are reserved).",
+        "The tag adds 4 bytes, raising the maximum frame to 1522; the FCS is recalculated."
+      ],
+      "code": "| Dst MAC | Src MAC | TPID 0x8100 (16) | PCP (3) | DEI (1) | VID (12) | EtherType | Payload | FCS |"
+    },
+    {
+      "heading": "Port types",
+      "bullets": [
+        "Access port: belongs to one VLAN and sends/receives untagged frames; for end hosts.",
+        "Trunk port: carries many VLANs with tags; between switches, or to routers and servers.",
+        "Native VLAN: frames on a trunk without a tag are assigned to it; both ends must agree."
+      ]
+    },
+    {
+      "heading": "Inter-VLAN routing",
+      "body": "Hosts in different VLANs are in different subnets, so traffic must be routed. Options: router-on-a-stick (a trunk to a router with a subinterface per VLAN), or a Layer 3 switch with switched virtual interfaces (SVIs)."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Basic configuration (Cisco IOS)",
+      "summary": "Typical commands.",
+      "sections": [
+        {
+          "code": "vlan 10\n name SALES\ninterface Gi0/1\n switchport mode access\n switchport access vlan 10\ninterface Gi0/24\n switchport mode trunk\n switchport trunk allowed vlan 10,20\n switchport trunk native vlan 99"
+        }
+      ]
+    },
+    {
+      "title": "VLAN hopping",
+      "summary": "Attacks and prevention.",
+      "sections": [
+        {
+          "bullets": [
+            "Switch spoofing: an attacker negotiates a trunk via DTP. Disable with `switchport nonegotiate` and set ports to access.",
+            "Double tagging: an outer native-VLAN tag is stripped by the first switch, exposing the inner tag. Use an unused native VLAN and tag it, and never put users on it."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Q-in-Q (802.1ad)",
+      "summary": "Provider bridging.",
+      "sections": [
+        {
+          "body": "Service providers stack an outer S-tag (TPID 0x88a8) on a customer's C-tag so customer VLANs stay private across the provider network."
+        }
+      ]
+    },
+    {
+      "title": "Voice VLANs and QoS",
+      "summary": "Priority.",
+      "sections": [
+        {
+          "body": "IP phones are often placed in a separate voice VLAN, and PCP bits mark voice for priority queuing."
+        }
+      ]
+    },
+    {
+      "title": "Troubleshooting",
+      "summary": "Typical faults.",
+      "sections": [
+        {
+          "bullets": [
+            "No connectivity across a trunk: VLAN not allowed or not created on the far switch.",
+            "Native VLAN mismatch warnings (CDP).",
+            "Host in the wrong VLAN or wrong subnet/gateway.",
+            "Commands: show vlan brief, show interfaces trunk."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "802.1Q adds a 4-byte tag with a 12-bit VLAN ID (1-4094).",
+    "Access ports are untagged for one VLAN; trunks carry many VLANs tagged.",
+    "Different VLANs need a router or Layer 3 switch to talk.",
+    "Harden against switch spoofing and double tagging."
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Reference: IEEE 802.1Q (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/IEEE_802.1Q"
+    }
+  ]
+}

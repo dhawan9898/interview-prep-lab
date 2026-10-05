@@ -1,0 +1,101 @@
+{
+  "summary": "TCP opens a connection with a three-way handshake: SYN, SYN-ACK, ACK. It agrees initial sequence numbers and confirms that both sides can send and receive before any data flows.",
+  "sections": [
+    {
+      "heading": "The exchange (RFC 9293, section 3.5)",
+      "body": "Client calls connect(); server is in LISTEN. Example initial sequence numbers 100 (client) and 300 (server):",
+      "code": "Client                          Server\nCLOSED                          LISTEN\n  --- SYN seq=100 ----------->  \nSYN-SENT                        SYN-RECEIVED\n  <-- SYN+ACK seq=300 ack=101 -- \nESTABLISHED                     \n  --- ACK seq=101 ack=301 ----->  \n                                ESTABLISHED"
+    },
+    {
+      "heading": "Why three steps",
+      "body": "Each side must send a SYN and have it acknowledged. The server's SYN and its ACK of the client's SYN are combined into one packet (SYN+ACK), so four messages become three. Both directions are thereby synchronized."
+    },
+    {
+      "heading": "What is negotiated",
+      "bullets": [
+        "Initial sequence numbers (ISNs), one per direction.",
+        "Maximum Segment Size (MSS) option.",
+        "Window scale factor, SACK-permitted, and timestamps options.",
+        "Receive windows."
+      ]
+    },
+    {
+      "heading": "Initial sequence numbers",
+      "body": "ISNs must be unpredictable, otherwise an attacker can forge segments. RFC 9293 describes ISN = a 4-microsecond clock + a keyed hash of the connection 4-tuple and a secret that outsiders cannot compute."
+    },
+    {
+      "heading": "SYN consumes a sequence number",
+      "body": "A SYN counts as one byte of sequence space, which is why the acknowledgment is ISN+1 (101 and 301 above)."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "TCP states during setup",
+      "summary": "Client and server views.",
+      "sections": [
+        {
+          "bullets": [
+            "Client: CLOSED -> SYN-SENT -> ESTABLISHED.",
+            "Server: CLOSED -> LISTEN -> SYN-RECEIVED -> ESTABLISHED."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "SYN flood and SYN cookies",
+      "summary": "Attack on the half-open state.",
+      "sections": [
+        {
+          "body": "A flood of SYNs fills the server's half-open queue. SYN cookies encode state in the server's ISN so no memory is held until the final ACK returns with a valid cookie, letting the connection be rebuilt."
+        }
+      ]
+    },
+    {
+      "title": "Simultaneous open",
+      "summary": "Both sides send SYN at once.",
+      "sections": [
+        {
+          "body": "Rare but required: each moves SYN-SENT -> SYN-RECEIVED on seeing the other's SYN and then to ESTABLISHED after the SYN+ACKs, using four segments."
+        }
+      ]
+    },
+    {
+      "title": "Connection refused and RST",
+      "summary": "When there is no listener.",
+      "sections": [
+        {
+          "body": "A SYN to a closed port draws a RST, and the client sees 'connection refused'. A silent timeout instead means a firewall dropped the SYN."
+        }
+      ]
+    },
+    {
+      "title": "TCP Fast Open and QUIC",
+      "summary": "Cutting round trips.",
+      "sections": [
+        {
+          "body": "TCP Fast Open lets data ride in the SYN on repeat connections. QUIC merges transport and TLS setup, needing one round trip (or zero on resumption)."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "SYN, SYN+ACK, ACK synchronizes sequence numbers in both directions.",
+    "SYN consumes one sequence number; ACK = ISN + 1.",
+    "Options like MSS, window scale, and SACK are negotiated in the SYNs.",
+    "Randomized ISNs and SYN cookies defend against spoofing and floods."
+  ],
+  "references": [
+    {
+      "label": "RFC 9293: Transmission Control Protocol (TCP)",
+      "url": "https://www.rfc-editor.org/rfc/rfc9293"
+    },
+    {
+      "label": "RFC 4987: TCP SYN Flooding Attacks and Common Mitigations",
+      "url": "https://www.rfc-editor.org/rfc/rfc4987"
+    },
+    {
+      "label": "RFC 7323: TCP Extensions for High Performance",
+      "url": "https://www.rfc-editor.org/rfc/rfc7323"
+    }
+  ]
+}

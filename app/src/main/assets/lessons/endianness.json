@@ -1,0 +1,101 @@
+{
+  "summary": "Endianness is the order in which the bytes of a multi-byte value are stored in memory. Little-endian puts the least significant byte first; big-endian puts the most significant byte first. It matters whenever data crosses machines, files, or networks.",
+  "sections": [
+    {
+      "heading": "The two orders",
+      "body": "For the 32-bit value 0x12345678 stored starting at address 0:",
+      "code": "address:        00 01 02 03\nbig-endian:     12 34 56 78   (MSB at lowest address)\nlittle-endian:  78 56 34 12   (LSB at lowest address)"
+    },
+    {
+      "heading": "Who uses which",
+      "bullets": [
+        "x86, x86-64, and most ARM systems run little-endian.",
+        "Network protocols use big-endian, called network byte order.",
+        "Some older architectures (SPARC, classic PowerPC, MIPS configurations) are big-endian; some CPUs are bi-endian.",
+        "Single-byte values (char) are unaffected."
+      ]
+    },
+    {
+      "heading": "Detecting host endianness",
+      "code": "uint32_t x = 1;\nunsigned char *b = (unsigned char *)&x;\nputs(b[0] == 1 ? \"little-endian\" : \"big-endian\");"
+    },
+    {
+      "heading": "Network byte order functions",
+      "body": "Convert between host and network order with these functions from `<arpa/inet.h>`. They are no-ops on big-endian hosts and byte swaps on little-endian ones.",
+      "bullets": [
+        "`htons` / `ntohs`: 16-bit host-to-network and back.",
+        "`htonl` / `ntohl`: 32-bit.",
+        "Use them for every multi-byte field you read from or write to a packet."
+      ],
+      "code": "uint16_t port = htons(8080);\nuint32_t addr = ntohl(pkt->src_ip);"
+    },
+    {
+      "heading": "Where it bites",
+      "bullets": [
+        "Reading binary files written on another architecture.",
+        "Parsing protocol headers by casting a byte buffer to a struct.",
+        "Hash or checksum code that assumes a byte order.",
+        "Unicode UTF-16/32 text, which uses a Byte Order Mark (BOM) to declare order."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Bit order vs byte order",
+      "summary": "Not the same thing.",
+      "sections": [
+        {
+          "body": "Endianness describes byte order in memory. Bit numbering inside a byte is a separate convention (as in packet diagrams, where the most significant bit is drawn first). Protocol specs state both."
+        }
+      ]
+    },
+    {
+      "title": "Safe serialization",
+      "summary": "Never rely on struct layout for wire formats.",
+      "sections": [
+        {
+          "body": "Build packets by writing each field explicitly in a fixed order, or shift and mask: `buf[0] = v >> 8; buf[1] = v & 0xff;`. This is independent of host endianness, struct padding, and alignment.",
+          "code": "static void put16(uint8_t *b, uint16_t v) { b[0] = v >> 8; b[1] = (uint8_t)v; }\nstatic uint16_t get16(const uint8_t *b) { return (b[0] << 8) | b[1]; }"
+        }
+      ]
+    },
+    {
+      "title": "Byte swap builtins",
+      "summary": "Fast manual swaps.",
+      "sections": [
+        {
+          "body": "GCC and Clang provide `__builtin_bswap16/32/64`, and Linux has `le32toh`, `be32toh`, and friends in `<endian.h>` for explicit conversions to and from a named order."
+        }
+      ]
+    },
+    {
+      "title": "Why both orders exist",
+      "summary": "History and trade-offs.",
+      "sections": [
+        {
+          "body": "Big-endian reads naturally left to right and makes comparison of byte strings match numeric order. Little-endian lets a CPU read the low part of a value first and simplifies casting to a narrower type. Neither is faster in general; compatibility is the real cost."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Endianness is byte order in memory: 0x12345678 is 12 34 56 78 (big) or 78 56 34 12 (little).",
+    "Network byte order is big-endian; use htons/htonl and ntohs/ntohl.",
+    "Serialize fields explicitly rather than casting buffers to structs.",
+    "Single bytes are unaffected; only multi-byte values care."
+  ],
+  "references": [
+    {
+      "label": "Reference: Little and big endian mystery (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/little-and-big-endian-mystery/"
+    },
+    {
+      "label": "RFC 791 Appendix B: data transmission order",
+      "url": "https://www.rfc-editor.org/rfc/rfc791"
+    },
+    {
+      "label": "Linux man-pages: byteorder(3)",
+      "url": "https://man7.org/linux/man-pages/man3/byteorder.3.html"
+    }
+  ]
+}

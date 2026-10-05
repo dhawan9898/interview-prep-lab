@@ -6,7 +6,7 @@ import com.interviewpreplab.core.model.FlowPacket
 import com.interviewpreplab.core.model.PacketFlowScene
 
 object TCPTeardownRunner {
-    fun run(): List<Frame> = listOf(
+    private fun baseFrames(): List<Frame> = listOf(
         Frame("TCP connection teardown (FIN-ACK handshake): closes connection gracefully. 4-way handshake.", "intro",
             mapOf("handshake_way" to "4", "purpose" to "graceful close")),
 
@@ -33,5 +33,21 @@ object TCPTeardownRunner {
 
         Frame("TCP teardown ensures both sides agree connection is closed. Prevents data loss and packet confusion.", "summary",
             mapOf("reliability" to "high", "steps" to "4"))
+    )
+
+    private val nodes = listOf(
+        FlowNode("client", "Initiator", "host"),
+        FlowNode("server", "Responder", "host")
+    )
+
+    fun run(): List<Frame> = baseFrames().withFlow(
+        nodes = nodes,
+        stages = mapOf(
+            1 to stage(FlowStep("client", "server", "TCP", "FIN seq=x", setOf("FIN"))),
+            2 to stage(FlowStep("server", "client", "TCP", "ACK ack=x+1", setOf("ACK"))),
+            3 to stage(FlowStep("server", "client", "TCP", "FIN seq=y", setOf("FIN"))),
+            4 to stage(FlowStep("client", "server", "TCP", "ACK ack=y+1", setOf("ACK")))
+        ),
+        description = "TCP connection close"
     )
 }

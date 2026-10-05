@@ -1,0 +1,87 @@
+{
+  "summary": "A circular queue stores its elements in a fixed array and wraps indices around with modulo arithmetic, so freed slots at the front are reused. Both enqueue and dequeue are O(1) with no wasted space.",
+  "sections": [
+    {
+      "heading": "Why circular",
+      "body": "A linear array queue marches rightward and abandons the left part. Treating the array as a ring means that after the last index you continue at index 0, so capacity is always fully usable."
+    },
+    {
+      "heading": "Core formulas",
+      "body": "Track `front`, `size`, and `capacity`.",
+      "code": "rear        = (front + size - 1) % capacity   // last element\nnext_free   = (front + size) % capacity       // where enqueue writes\nafter dequeue: front = (front + 1) % capacity"
+    },
+    {
+      "heading": "Operations",
+      "bullets": [
+        "enqueue: if size == capacity, report full; else write at next_free, size++.",
+        "dequeue: if size == 0, report empty; else read a[front], front = (front+1) % capacity, size--.",
+        "Both O(1)."
+      ],
+      "code": "int enqueue(Q *q, int x) {\n  if (q->size == q->cap) return -1;\n  q->a[(q->front + q->size) % q->cap] = x; q->size++; return 0;\n}\nint dequeue(Q *q, int *out) {\n  if (q->size == 0) return -1;\n  *out = q->a[q->front]; q->front = (q->front + 1) % q->cap; q->size--; return 0;\n}"
+    },
+    {
+      "heading": "Full versus empty",
+      "body": "If you track only `front` and `rear`, a full queue and an empty one look identical (front == rear). Three standard fixes: keep a `size` counter (above), leave one slot permanently unused, or keep a separate full/empty flag."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Power-of-two capacity",
+      "summary": "Replace modulo with a bit mask.",
+      "sections": [
+        {
+          "body": "If capacity is 2^k, `i % cap` equals `i & (cap - 1)`, which is faster and lets head and tail run as free-running unsigned counters. This is the layout of the Linux kernel's `kfifo`.",
+          "code": "idx = counter & (cap - 1);"
+        }
+      ]
+    },
+    {
+      "title": "Ring buffers in practice",
+      "summary": "Where this appears.",
+      "sections": [
+        {
+          "bullets": [
+            "Network card receive/transmit descriptor rings.",
+            "Audio and video streaming buffers.",
+            "UART and serial driver FIFOs.",
+            "Logging buffers that overwrite the oldest entry."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Overwrite mode",
+      "summary": "Keep the latest N items.",
+      "sections": [
+        {
+          "body": "When full, advance `front` as you write so the oldest item is dropped. Useful for telemetry windows and crash logs."
+        }
+      ]
+    },
+    {
+      "title": "Single-producer single-consumer lock-free",
+      "summary": "Concurrency.",
+      "sections": [
+        {
+          "body": "With one writer and one reader, the writer only updates `tail` and the reader only `head`, so a ring buffer needs no locks, just correct memory ordering."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Indices wrap with `% capacity`, reusing freed slots.",
+    "enqueue and dequeue are O(1); no shifting.",
+    "Distinguish full from empty with a size counter or a spare slot.",
+    "Power-of-two capacities allow a fast mask instead of modulo."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Circular queue (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    }
+  ]
+}

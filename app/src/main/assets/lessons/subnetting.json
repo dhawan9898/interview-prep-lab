@@ -1,0 +1,108 @@
+{
+  "summary": "Subnetting splits an IP network into smaller networks by borrowing host bits for the network part. With CIDR the boundary can be at any bit, written as a prefix length such as /26.",
+  "sections": [
+    {
+      "heading": "Prefix notation",
+      "body": "A CIDR address is an IP address followed by a slash and the number of leading network bits (RFC 4632). 192.168.1.0/26 has 26 network bits and 6 host bits.",
+      "bullets": [
+        "/24 = 255.255.255.0 (256 addresses)",
+        "/25 = 255.255.255.128 (128)",
+        "/26 = 255.255.255.192 (64)",
+        "/27 = 255.255.255.224 (32)",
+        "/28 = 255.255.255.240 (16)",
+        "/30 = 255.255.255.252 (4)"
+      ]
+    },
+    {
+      "heading": "The four numbers you compute",
+      "bullets": [
+        "Network address: IP AND mask.",
+        "Broadcast address: all host bits set to 1.",
+        "First usable host: network + 1.",
+        "Last usable host: broadcast - 1.",
+        "Usable hosts: 2^h - 2, where h is the number of host bits."
+      ]
+    },
+    {
+      "heading": "Worked example: 192.168.1.130/26",
+      "body": "A /26 has block size 64 in the last octet (256 - 192). Blocks start at 0, 64, 128, 192. The address 130 falls in the block starting at 128.",
+      "code": "network    192.168.1.128\nbroadcast  192.168.1.191\nfirst host 192.168.1.129\nlast host  192.168.1.190\nhosts      2^6 - 2 = 62"
+    },
+    {
+      "heading": "Dividing a network",
+      "body": "To split 192.168.1.0/24 into four equal subnets, borrow 2 bits: /26. The subnets are .0/26, .64/26, .128/26, .192/26, each with 62 usable hosts."
+    },
+    {
+      "heading": "Special prefixes",
+      "bullets": [
+        "/31: point-to-point links with two usable addresses (RFC 3021).",
+        "/32: a single host route.",
+        "Private ranges (RFC 1918): 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16.",
+        "Link-local: 169.254.0.0/16."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "VLSM",
+      "summary": "Different sized subnets from one block.",
+      "sections": [
+        {
+          "body": "Variable Length Subnet Masks let you give each segment only what it needs: allocate the largest subnet first, then carve smaller ones from what remains. Example: 10.0.0.0/24 into a /25 for 100 hosts, a /26 for 50, and /30s for router links."
+        }
+      ]
+    },
+    {
+      "title": "Route aggregation (supernetting)",
+      "summary": "Combining prefixes.",
+      "sections": [
+        {
+          "body": "Contiguous, aligned blocks collapse into one shorter prefix: 192.168.0.0/24 and 192.168.1.0/24 become 192.168.0.0/23. Aggregation shrinks routing tables and is the point of CIDR."
+        }
+      ]
+    },
+    {
+      "title": "Quick method for any prefix",
+      "summary": "Block-size trick.",
+      "sections": [
+        {
+          "body": "Find the interesting octet, compute block size = 256 - mask value in that octet, then find the multiple of the block size at or below the address. That multiple is the network; the next multiple minus one is the broadcast."
+        }
+      ]
+    },
+    {
+      "title": "Same subnet or not?",
+      "summary": "The test hosts perform.",
+      "sections": [
+        {
+          "body": "A host ANDs the destination with its own mask; if the result equals its own network, it ARPs for the destination directly, otherwise it sends to the default gateway. A wrong mask breaks this decision and causes odd one-way connectivity.",
+          "code": "same_subnet = (src & mask) == (dst & mask)"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "CIDR /n = n network bits; host bits h = 32 - n.",
+    "Usable hosts = 2^h - 2 (except /31 and /32).",
+    "Block size in the interesting octet = 256 - mask value.",
+    "VLSM allocates by need; aggregation shortens routing tables."
+  ],
+  "references": [
+    {
+      "label": "RFC 4632: Classless Inter-domain Routing (CIDR)",
+      "url": "https://www.rfc-editor.org/rfc/rfc4632"
+    },
+    {
+      "label": "RFC 1918: Address Allocation for Private Internets",
+      "url": "https://www.rfc-editor.org/rfc/rfc1918"
+    },
+    {
+      "label": "RFC 3021: Using 31-Bit Prefixes on IPv4 Point-to-Point Links",
+      "url": "https://www.rfc-editor.org/rfc/rfc3021"
+    },
+    {
+      "label": "Reference: Subnetwork (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Subnet"
+    }
+  ]
+}

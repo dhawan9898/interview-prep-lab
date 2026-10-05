@@ -1,0 +1,96 @@
+{
+  "summary": "Ethernet is the dominant Layer 2 technology. Data travels in frames that carry destination and source MAC addresses, a type field, a payload, and a CRC, so devices on one link or switch domain can address each other directly.",
+  "sections": [
+    {
+      "heading": "Ethernet II frame layout",
+      "body": "On the wire a frame is preceded by a preamble, but the frame proper runs from destination MAC to FCS.",
+      "code": "| Preamble 7 | SFD 1 | Dst MAC 6 | Src MAC 6 | EtherType 2 | Payload 46-1500 | FCS 4 |  (+ 12-byte inter-frame gap)"
+    },
+    {
+      "heading": "Field by field",
+      "bullets": [
+        "Preamble (7 bytes of 10101010) and SFD (10101011) let the receiver synchronize clocks.",
+        "Destination MAC: who the frame is for (unicast, multicast, or broadcast ff:ff:ff:ff:ff:ff).",
+        "Source MAC: always unicast; switches learn from it.",
+        "EtherType: which protocol is in the payload (0x0800 IPv4, 0x0806 ARP, 0x86DD IPv6, 0x8100 802.1Q VLAN tag).",
+        "Payload: 46 to 1500 bytes; shorter data is padded to 46 so the minimum frame is 64 bytes.",
+        "FCS: a 32-bit CRC over destination through payload; bad frames are silently dropped."
+      ]
+    },
+    {
+      "heading": "MAC addresses",
+      "body": "A MAC address is 48 bits written as six hex bytes. The first 3 bytes are the OUI assigned to the manufacturer. In the first byte, the least significant bit marks group (multicast/broadcast) addresses and the next bit marks locally administered addresses.",
+      "bullets": [
+        "Unicast: one NIC.",
+        "Multicast: a group (first byte LSB = 1), e.g. 01:00:5e:xx:xx:xx for IPv4 multicast.",
+        "Broadcast: ff:ff:ff:ff:ff:ff, delivered to every host in the broadcast domain."
+      ]
+    },
+    {
+      "heading": "MTU and frame sizes",
+      "body": "The standard Ethernet MTU is 1500 bytes of payload, so the largest untagged frame is 1518 bytes (1522 with an 802.1Q tag). Jumbo frames (commonly 9000) raise the payload size but need every device on the path to agree."
+    },
+    {
+      "heading": "EtherType versus length",
+      "body": "In original 802.3 the same 2-byte field held a length. Values up to 1500 are lengths; values 1536 and above are EtherTypes. Modern IP traffic uses Ethernet II with EtherTypes."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "CSMA/CD and why it mostly disappeared",
+      "summary": "Shared media versus switches.",
+      "sections": [
+        {
+          "body": "Early Ethernet shared a cable: stations listened before sending and, on a collision, stopped and retried with random backoff (CSMA/CD). The minimum frame size guarantees a sender is still transmitting when a collision signal returns. Modern full-duplex switched links have no collisions, so CSMA/CD is unused."
+        }
+      ]
+    },
+    {
+      "title": "Frame check sequence",
+      "summary": "CRC-32 error detection.",
+      "sections": [
+        {
+          "body": "The sender computes a CRC-32 over the frame and appends it; the receiver recomputes and drops mismatches. Ethernet detects errors but never retransmits; reliability is left to higher layers such as TCP."
+        }
+      ]
+    },
+    {
+      "title": "Runts, giants, and jabber",
+      "summary": "Reading error counters.",
+      "sections": [
+        {
+          "bullets": [
+            "Runt: shorter than 64 bytes (often a collision fragment or bad NIC).",
+            "Giant: longer than the maximum (MTU mismatch).",
+            "CRC errors: corrupted in transit; check cabling, duplex, or interference."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Auto-negotiation and duplex",
+      "summary": "Matching both ends.",
+      "sections": [
+        {
+          "body": "Links negotiate speed and duplex. A duplex mismatch (one side full, the other half) causes late collisions and terrible throughput even though the link is up. Prefer auto on both sides or fix both manually."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "A frame = dst MAC + src MAC + EtherType + payload + FCS; minimum 64 bytes, standard MTU 1500.",
+    "EtherType identifies the next protocol (IPv4, ARP, IPv6, VLAN tag).",
+    "Ethernet detects bad frames (FCS) but does not retransmit.",
+    "Broadcast frames reach the whole broadcast domain."
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.3 Ethernet working group",
+      "url": "https://www.ieee802.org/3/"
+    },
+    {
+      "label": "Reference: Ethernet frame (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Ethernet_frame"
+    }
+  ]
+}

@@ -31,6 +31,23 @@ class ProgressRepository @Inject constructor(
         topicProgressDao.markCompleted(topicId)
     }
 
+    // The DAO's UPDATE queries are no-ops when no row exists, so every write goes through here first.
+    private suspend fun ensureRow(topicId: String, name: String, category: String): TopicProgressEntity {
+        return topicProgressDao.getProgress(topicId)
+            ?: TopicProgressEntity(topicId = topicId, topicName = name, category = category)
+                .also { topicProgressDao.insertOrUpdate(it) }
+    }
+
+    suspend fun setCompleted(topicId: String, name: String, category: String, completed: Boolean) {
+        val row = ensureRow(topicId, name, category)
+        if (row.isCompleted != completed) topicProgressDao.insertOrUpdate(row.copy(isCompleted = completed))
+    }
+
+    suspend fun recordView(topicId: String, name: String, category: String, durationMs: Long) {
+        ensureRow(topicId, name, category)
+        topicProgressDao.updateViewTime(topicId, System.currentTimeMillis(), durationMs)
+    }
+
     // Read
     suspend fun getProgress(topicId: String): TopicProgressEntity? {
         return topicProgressDao.getProgress(topicId)

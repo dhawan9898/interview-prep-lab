@@ -1,0 +1,91 @@
+{
+  "summary": "A null pointer is a pointer that deliberately points at no object. It is the standard 'nothing here' value and the guard that separates safe code from crashes.",
+  "sections": [
+    {
+      "heading": "Definition",
+      "body": "The C standard defines a null pointer constant as an integer constant expression with value 0, or such an expression cast to `void *`. The macro `NULL` (from `<stddef.h>`, `<stdio.h>`, `<stdlib.h>`) expands to it. Comparing any pointer to NULL tells you whether it refers to an object.",
+      "code": "int *p = NULL;\nif (p == NULL) { /* nothing to use */ }"
+    },
+    {
+      "heading": "Where NULL is used",
+      "bullets": [
+        "Initializing pointers before they have a target.",
+        "Signalling failure: `malloc`, `fopen`, and `strstr` return NULL on failure or no match.",
+        "Marking the end of linked lists, trees, and argument vectors (`argv[argc]` is NULL).",
+        "Optional parameters: pass NULL to mean 'not provided'."
+      ]
+    },
+    {
+      "heading": "Checking allocation results",
+      "code": "int *p = malloc(5 * sizeof *p);\nif (p == NULL) {\n  fprintf(stderr, \"out of memory\\n\");\n  return 1;\n}"
+    },
+    {
+      "heading": "What happens on dereference",
+      "body": "Dereferencing NULL is undefined behavior. On common desktop systems page zero is unmapped, so you get a segmentation fault, but the standard does not promise that, and optimizers may assume it never happens."
+    },
+    {
+      "heading": "NULL vs void* vs uninitialized",
+      "bullets": [
+        "NULL is a value meaning 'no object'; it can be assigned to any pointer type.",
+        "`void *` is a type: a generic pointer that can hold any object address.",
+        "An uninitialized pointer holds garbage (a wild pointer) and is dangerous because you cannot test it."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Set pointers to NULL after free",
+      "summary": "A cheap defence against double-free and use-after-free.",
+      "sections": [
+        {
+          "body": "`free(NULL)` is defined to do nothing, so nulling a pointer after freeing makes an accidental second free harmless and makes later NULL checks meaningful.",
+          "code": "free(p);\np = NULL;"
+        }
+      ]
+    },
+    {
+      "title": "Null is not necessarily all-zero bits",
+      "summary": "A portability footnote.",
+      "sections": [
+        {
+          "body": "The source-level constant 0 converts to a null pointer, but the machine representation of a null pointer may not be all zero bits on exotic platforms. Always compare with NULL, never `memcmp` against zeros."
+        }
+      ]
+    },
+    {
+      "title": "Defensive APIs",
+      "summary": "Validate at the boundary.",
+      "sections": [
+        {
+          "body": "Public functions should check pointer parameters and return an error code; internal helpers may document 'must not be NULL' and use `assert`. Static analyzers can then flag callers that pass NULL.",
+          "code": "int copy(char *dst, const char *src) {\n  if (!dst || !src) return -1;\n  /* ... */\n}"
+        }
+      ]
+    },
+    {
+      "title": "nullptr in C23 and C++",
+      "summary": "A typed null.",
+      "sections": [
+        {
+          "body": "C++11 added `nullptr` and C23 adopted it, giving null a dedicated type so it cannot be confused with the integer 0 in overload or variadic contexts."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "NULL means 'points at nothing'; always check before dereferencing.",
+    "Functions signal failure by returning NULL; test the result.",
+    "Dereferencing NULL is undefined behavior.",
+    "NULL is a value; void* is a type; uninitialized pointers are neither."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: NULL pointer in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/null-pointer-in-c/"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "summary": "A singly linked list is a chain of nodes, each holding a value and a pointer to the next node. It grows and shrinks dynamically, and inserting or deleting at a known position needs no shifting.",
+  "sections": [
+    {
+      "heading": "Node structure",
+      "body": "A list is identified by a `head` pointer to the first node; the last node's `next` is NULL.",
+      "code": "struct Node { int data; struct Node *next; };\nstruct Node *head = NULL;   // empty list"
+    },
+    {
+      "heading": "Traversal",
+      "body": "Follow `next` until NULL. O(n).",
+      "code": "for (struct Node *p = head; p; p = p->next)\n  printf(\"%d \", p->data);"
+    },
+    {
+      "heading": "Insertion",
+      "bullets": [
+        "At head: new->next = head; head = new. O(1).",
+        "At tail: walk to the last node (O(n)), or keep a tail pointer (O(1)).",
+        "After a node p: new->next = p->next; p->next = new. O(1) once p is known."
+      ],
+      "code": "void push_front(struct Node **head, int v) {\n  struct Node *n = malloc(sizeof *n);\n  n->data = v; n->next = *head; *head = n;\n}"
+    },
+    {
+      "heading": "Deletion",
+      "body": "To delete a node you need the node before it. Deleting the head just moves `head`. Always free the removed node.",
+      "code": "void delete_value(struct Node **head, int v) {\n  for (struct Node **pp = head; *pp; pp = &(*pp)->next)\n    if ((*pp)->data == v) { struct Node *t = *pp; *pp = t->next; free(t); return; }\n}"
+    },
+    {
+      "heading": "Complexity vs array",
+      "bullets": [
+        "Access by index: O(n) (array O(1)).",
+        "Search: O(n).",
+        "Insert/delete at head: O(1) (array O(n)).",
+        "Extra memory: one pointer per node, plus malloc overhead.",
+        "Poor cache locality: nodes are scattered in memory."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Reversing a list",
+      "summary": "Three-pointer technique.",
+      "sections": [
+        {
+          "body": "Walk the list keeping `prev`, `cur`, `next`; point each node back at prev. O(n) time, O(1) space.",
+          "code": "struct Node *prev = NULL, *cur = head;\nwhile (cur) { struct Node *nx = cur->next; cur->next = prev; prev = cur; cur = nx; }\nhead = prev;"
+        }
+      ]
+    },
+    {
+      "title": "Fast and slow pointers",
+      "summary": "Middle and cycle detection.",
+      "sections": [
+        {
+          "body": "Move `slow` one step and `fast` two steps. When fast reaches the end, slow is at the middle. If the list has a cycle, fast eventually meets slow (Floyd's algorithm)."
+        }
+      ]
+    },
+    {
+      "title": "Doubly and circular lists",
+      "summary": "Variants.",
+      "sections": [
+        {
+          "bullets": [
+            "Doubly linked: prev and next pointers allow O(1) deletion given the node and backward traversal; used by the Linux kernel's `list_head`.",
+            "Circular: the last node points to the head; natural for round-robin."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Linked list vs dynamic array",
+      "summary": "Choosing between them.",
+      "sections": [
+        {
+          "body": "Arrays win on indexing, iteration speed, and memory use. Lists win only when you hold node pointers and insert/delete in the middle often, or need stable addresses. In practice arrays are usually faster even for middle insertions on small data."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Nodes hold data and a next pointer; `head` identifies the list.",
+    "O(1) insert/delete at the head, O(n) search and index access.",
+    "Deleting needs the predecessor; use a pointer-to-pointer for clean code.",
+    "Master reversal and fast/slow pointer patterns."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Singly linked list tutorial (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    }
+  ]
+}

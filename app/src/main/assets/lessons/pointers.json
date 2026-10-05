@@ -1,0 +1,108 @@
+{
+  "summary": "A pointer is a variable that holds the memory address of another object. Pointers let C share data without copying it, build linked structures, return multiple results from functions, and reach hardware registers.",
+  "sections": [
+    {
+      "heading": "What a pointer is",
+      "body": "Every object lives at an address. The address-of operator `&x` produces it and the dereference operator `*p` reads or writes the object a pointer refers to. The pointer's type tells the compiler how many bytes `*p` touches and how to interpret them.",
+      "code": "int x = 42;\nint *p = &x;     // p holds the address of x\n*p = 7;          // x is now 7\nprintf(\"%p %d\\n\", (void *)p, *p);"
+    },
+    {
+      "heading": "Declaring and initializing",
+      "body": "Declare with `type *name;`. The `*` means 'pointer to' in a declaration and 'follow the pointer' in an expression. Initialize at declaration, either to a real address or to NULL.",
+      "bullets": [
+        "`int *p = &x;` points p at x.",
+        "`int *p = NULL;` explicitly points at nothing.",
+        "Print addresses with `%p` and cast to `void *`; print the pointed-to value with the type's own specifier."
+      ]
+    },
+    {
+      "heading": "Size of a pointer",
+      "body": "All data pointers on a given platform have the same size because they only store an address: 4 bytes on 32-bit systems and 8 bytes on 64-bit systems. `sizeof(p)` is the pointer's size; `sizeof(*p)` is the size of the object it points to.",
+      "code": "printf(\"%zu %zu %zu\\n\", sizeof(char *), sizeof(int *), sizeof(double *));  // 8 8 8 on x86-64"
+    },
+    {
+      "heading": "Why pointers matter",
+      "bullets": [
+        "Pass-by-reference: a function modifies the caller's variable through its address.",
+        "Dynamic memory: `malloc` returns a pointer to heap storage.",
+        "Data structures: linked lists, trees, and graphs are nodes joined by pointers.",
+        "Efficiency: pass a pointer to a large struct instead of copying it."
+      ]
+    },
+    {
+      "heading": "Where pointers go wrong",
+      "bullets": [
+        "Dereferencing NULL or a wild pointer is undefined behavior (usually a segmentation fault).",
+        "Using memory after `free` (dangling pointer).",
+        "Reading or writing past the end of an array.",
+        "Losing the only pointer to heap memory (leak)."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Types of special pointers",
+      "summary": "NULL, void, wild, and dangling pointers.",
+      "sections": [
+        {
+          "bullets": [
+            "NULL pointer: points to nothing; check it before use.",
+            "void pointer: generic address holder; cast before dereferencing and no arithmetic.",
+            "Wild pointer: declared but never initialized, so it holds garbage.",
+            "Dangling pointer: refers to memory that was freed or left scope."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Pointer to pointer",
+      "summary": "Why `int **pp` exists.",
+      "sections": [
+        {
+          "body": "A pointer is itself a variable and has an address, so you can point at it. A `**` parameter lets a function change which object the caller's pointer refers to, for example when allocating on the caller's behalf.",
+          "code": "void alloc(int **out) { *out = malloc(sizeof **out); }\nint *p; alloc(&p);   // p now points to heap memory"
+        }
+      ]
+    },
+    {
+      "title": "const and pointers",
+      "summary": "Pointer-to-const versus const pointer.",
+      "sections": [
+        {
+          "body": "Read the declaration right to left.",
+          "bullets": [
+            "`const int *p`: the int cannot be modified through p; p can be re-pointed.",
+            "`int *const p`: p cannot be re-pointed; the int can be modified.",
+            "`const int *const p`: neither can change."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Arrays and pointers",
+      "summary": "An array name decays to a pointer to its first element.",
+      "sections": [
+        {
+          "body": "`a[i]` is defined as `*(a + i)`. In most expressions the array name becomes `&a[0]`, but `sizeof(a)` still gives the whole array's size, which is the main difference from a pointer.",
+          "code": "int a[3] = {10, 20, 30};\nint *p = a;\nprintf(\"%d %d\\n\", p[1], *(a + 2));   // 20 30"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "`&` takes an address; `*` follows one.",
+    "A pointer's own size is fixed per platform; the pointee's type sets how memory is read.",
+    "Always initialize pointers and check for NULL before dereferencing.",
+    "Most C memory bugs are pointer bugs: wild, dangling, out of bounds, or leaked."
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Reference: Pointers in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/c-pointers/"
+    }
+  ]
+}

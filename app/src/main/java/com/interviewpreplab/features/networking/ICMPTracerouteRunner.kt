@@ -6,7 +6,7 @@ import com.interviewpreplab.core.model.FlowPacket
 import com.interviewpreplab.core.model.PacketFlowScene
 
 object ICMPTracerouteRunner {
-    fun run(): List<Frame> = listOf(
+    private fun baseFrames(): List<Frame> = listOf(
         Frame("ICMP (Internet Control Message Protocol): Layer 3 protocol for network diagnostics. Types: Echo, Unreachable, TTL Exceeded.", "intro",
             mapOf("layer" to "3", "types" to "3+")),
 
@@ -33,5 +33,23 @@ object ICMPTracerouteRunner {
 
         Frame("ICMP is not typically rate-limited in older networks, but modern routers limit ICMP to prevent DoS.", "rate_limiting",
             mapOf("purpose" to "prevent flooding", "modern" to "true"))
+    )
+
+    private val nodes = listOf(
+        FlowNode("host", "Host", "host"),
+        FlowNode("r1", "Router 1", "router"),
+        FlowNode("r2", "Router 2", "router"),
+        FlowNode("dest", "Destination", "server")
+    )
+
+    fun run(): List<Frame> = baseFrames().withFlow(
+        nodes = nodes,
+        stages = mapOf(
+            1 to stage(FlowStep("host", "dest", "ICMP", "Echo Request (8)"), FlowStep("dest", "host", "ICMP", "Echo Reply (0)")),
+            3 to stage(FlowStep("host", "r1", "UDP", "TTL=1"), FlowStep("r1", "host", "ICMP", "Time Exceeded (11)"), reset = true),
+            4 to stage(FlowStep("host", "r2", "UDP", "TTL=2"), FlowStep("r2", "host", "ICMP", "Time Exceeded (11)")),
+            5 to stage(FlowStep("host", "dest", "UDP", "TTL=3"), FlowStep("dest", "host", "ICMP", "Port Unreachable (3/3)"))
+        ),
+        description = "Ping and traceroute"
     )
 }

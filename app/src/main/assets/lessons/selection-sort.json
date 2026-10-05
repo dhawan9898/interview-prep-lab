@@ -1,0 +1,85 @@
+{
+  "summary": "Selection sort grows a sorted prefix by repeatedly selecting the smallest remaining element and swapping it into place. It does at most n-1 swaps, which is its one real advantage.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "For position i from 0 to n-2, scan a[i..n-1] for the index of the minimum.",
+        "Swap that minimum with a[i].",
+        "The prefix a[0..i] is now final; continue with the next position."
+      ],
+      "code": "void selection_sort(int a[], int n) {\n  for (int i = 0; i < n - 1; i++) {\n    int min = i;\n    for (int j = i + 1; j < n; j++)\n      if (a[j] < a[min]) min = j;\n    if (min != i) { int t = a[i]; a[i] = a[min]; a[min] = t; }\n  }\n}"
+    },
+    {
+      "heading": "Walkthrough",
+      "body": "On [64, 25, 12, 22, 11]: the minimum 11 swaps with 64 giving [11, 25, 12, 22, 64]; next 12 swaps with 25 giving [11, 12, 25, 22, 64]; then 22, then done."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Comparisons: always n(n-1)/2, so O(n²) in best, average, and worst cases.",
+        "Swaps: at most n-1, i.e. O(n).",
+        "Space: O(1).",
+        "Not adaptive: sorted input is not faster."
+      ]
+    },
+    {
+      "heading": "Stability",
+      "body": "The standard version is not stable. Swapping a distant minimum into position can jump over an equal element: [4a, 4b, 1] becomes [1, 4b, 4a]. A stable variant shifts elements instead of swapping, at the cost of more writes."
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "When fewer writes matter",
+      "summary": "Flash memory and expensive swaps.",
+      "sections": [
+        {
+          "body": "If writing is far costlier than reading (EEPROM, flash with limited erase cycles, large records), selection sort's O(n) swaps beat bubble and insertion sort's O(n²) writes, despite O(n²) comparisons."
+        }
+      ]
+    },
+    {
+      "title": "Relation to heap sort",
+      "summary": "Selection with a better data structure.",
+      "sections": [
+        {
+          "body": "Heap sort is selection sort where 'find the minimum' uses a heap in O(log n) instead of a linear scan, improving total time from O(n²) to O(n log n)."
+        }
+      ]
+    },
+    {
+      "title": "Double selection",
+      "summary": "Find min and max each pass.",
+      "sections": [
+        {
+          "body": "Track both the minimum and the maximum in one scan and place them at both ends. Halves the number of passes, same O(n²) overall."
+        }
+      ]
+    },
+    {
+      "title": "Cycle sort",
+      "summary": "Minimum possible writes.",
+      "sections": [
+        {
+          "body": "Cycle sort writes each element at most once to its final position, achieving the theoretical minimum number of writes, still O(n²) time."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Select the minimum, swap it to the front, repeat.",
+    "Always O(n²) comparisons but only O(n) swaps.",
+    "In place, not stable, not adaptive.",
+    "Use when writes are expensive; otherwise prefer insertion or O(n log n) sorts."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Selection sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    }
+  ]
+}
