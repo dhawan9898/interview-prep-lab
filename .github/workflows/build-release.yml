@@ -7,10 +7,23 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+
+# Needed so the job can push the version-bump commit and create the release.
+permissions:
+  contents: write
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      IS_RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
 
     steps:
       - name: Checkout code
@@ -23,40 +36,38 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Get current version
-        id: version
-        run: |
-          VERSION=$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts | cut -d'"' -f2)
-          VERSION_CODE=$(grep -o 'versionCode = [0-9]*' app/build.gradle.kts | grep -o '[0-9]*')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
       - name: Increment version
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: env.IS_RELEASE == 'true'
         run: |
           OLD_VERSION=$(grep -o 'versionName = "[^"]*"' app/build.gradle.kts | cut -d'"' -f2)
           OLD_CODE=$(grep -o 'versionCode = [0-9]*' app/build.gradle.kts | grep -o '[0-9]*')
 
-          # Increment patch version
           IFS='.' read -r major minor patch <<< "$OLD_VERSION"
-          NEW_PATCH=$((patch + 1))
-          NEW_VERSION="$major.$minor.$NEW_PATCH"
+          NEW_VERSION="$major.$minor.$((patch + 1))"
           NEW_CODE=$((OLD_CODE + 1))
 
-          # Update build.gradle.kts
           sed -i "s/versionCode = $OLD_CODE/versionCode = $NEW_CODE/" app/build.gradle.kts
           sed -i "s/versionName = \"$OLD_VERSION\"/versionName = \"$NEW_VERSION\"/" app/build.gradle.kts
 
           echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "VERSION_CODE=$NEW_CODE" >> $GITHUB_ENV
-          echo "OLD_VERSION=$OLD_VERSION" >> $GITHUB_ENV
 
-      - name: Build APK
-        run: ./gradlew assembleDebug
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      # Signing is optional: it only runs when the SIGNING_KEY secret is configured.
       - name: Sign APK
+        if: env.IS_RELEASE == 'true' && env.SIGNING_KEY != ''
         uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
@@ -68,70 +79,51 @@ jobs:
         env:
           BUILD_TOOLS_VERSION: "34.0.0"
 
-      - name: Rename signed APK
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Prepare release APK
+        if: env.IS_RELEASE == 'true'
         run: |
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk release/InterviewPrepLab-${{ env.VERSION }}.apk
+          APK="${{ steps.sign_app.outputs.signedReleaseFile }}"
+          [ -n "$APK" ] || APK=app/build/outputs/apk/debug/app-debug.apk
+          cp "$APK" "release/InterviewPrepLab-${VERSION}.apk"
 
-      - name: Commit version bump
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Commit and push version bump
+        if: env.IS_RELEASE == 'true'
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git add app/build.gradle.kts
-          git commit -m "chore: bump version to ${{ env.VERSION }}" || true
-
-      - name: Push version bump
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
-          force: false
+          git commit -m "chore: bump version to ${VERSION} [skip ci]"
+          git push origin HEAD:main
 
       - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v1
+        if: env.IS_RELEASE == 'true'
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
           name: Interview Prep Lab v${{ env.VERSION }}
           body: |
             ## Interview Prep Lab v${{ env.VERSION }}
 
-            **Release Notes:**
-            - Version Code: ${{ env.VERSION_CODE }}
-            - Release Date: $(date)
-
-            **Download:**
-            - [InterviewPrepLab-${{ env.VERSION }}.apk](https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/InterviewPrepLab-${{ env.VERSION }}.apk)
+            **Version Code:** ${{ env.VERSION_CODE }}
 
             **Installation:**
-            1. Download the APK from the link above
-            2. Enable "Unknown sources" in Android settings
+            1. Download `InterviewPrepLab-${{ env.VERSION }}.apk` below
+            2. Enable "Install unknown apps" in Android settings
             3. Tap the APK to install
-            4. For updates on existing installations: simply tap the new APK to upgrade
+            4. To update an existing install, tap the new APK to upgrade
 
             **Features:**
             - Interactive DSA visualizations with smooth animations
             - Frame-by-frame step-through of algorithms
-            - Playback controls (play/pause/step/scrub)
+            - Playback controls (play/pause/step/scrub/speed)
             - Narration explaining each step
             - Statistics tracking (comparisons, swaps, etc.)
-
-            **Topics Covered:**
-            - Sorting: Bubble Sort, Selection Sort, Insertion Sort, Quick Sort, Merge Sort, Heap Sort
-            - Searching: Binary Search, Jump Search, Linear Search
-            - Data Structures: Stack, Queue, Circular Queue, Linked List, BST, Heap, Graph
-            - And more...
-
-            Enjoy your interview prep! 🚀
           files: release/InterviewPrepLab-${{ env.VERSION }}.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload APK to artifacts
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
