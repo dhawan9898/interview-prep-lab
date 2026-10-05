@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class NATRunnerTest {
     @Test
     fun testPrivateRangesPresent() {
         val frames = NATRunner.run()
-        assert(frames.any { it.phase == "private_ranges" }, "Should explain private IP ranges")
+        assertTrue(frames.any { it.phase == "private_ranges" }, "Should explain private IP ranges")
     }
 
     @Test
     fun testTranslationTablePresent() {
         val frames = NATRunner.run()
-        assert(frames.any { it.phase == "translation_table" }, "Should explain translation table")
+        assertTrue(frames.any { it.phase == "translation_table" }, "Should explain translation table")
     }
 }

@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class BGPRunnerTest {
     @Test
     fun testASPresent() {
         val frames = BGPRunner.run()
-        assert(frames.any { it.phase == "as" }, "Should explain autonomous systems")
+        assertTrue(frames.any { it.phase == "as" }, "Should explain autonomous systems")
     }
 
     @Test
     fun testBestPathPresent() {
         val frames = BGPRunner.run()
-        assert(frames.any { it.phase == "best_path" }, "Should explain best path selection")
+        assertTrue(frames.any { it.phase == "best_path" }, "Should explain best path selection")
     }
 }

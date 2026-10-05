@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class SwitchDiagnosticsRunnerTest {
     @Test
     fun testMACTableCommandPresent() {
         val frames = SwitchDiagnosticsRunner.run()
-        assert(frames.any { it.phase == "cmd_mac_table" }, "Should explain MAC table command")
+        assertTrue(frames.any { it.phase == "cmd_mac_table" }, "Should explain MAC table command")
     }
 
     @Test
     fun testDiagnosisPresent() {
         val frames = SwitchDiagnosticsRunner.run()
-        assert(frames.any { it.phase.contains("diagnosis") }, "Should explain troubleshooting")
+        assertTrue(frames.any { it.phase.contains("diagnosis") }, "Should explain troubleshooting")
     }
 }

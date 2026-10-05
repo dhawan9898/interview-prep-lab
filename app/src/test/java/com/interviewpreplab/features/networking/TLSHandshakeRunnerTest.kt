@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class TLSHandshakeRunnerTest {
     @Test
     fun testClientHelloPresent() {
         val frames = TLSHandshakeRunner.run()
-        assert(frames.any { it.phase == "step1_client_hello" }, "Should explain ClientHello")
+        assertTrue(frames.any { it.phase == "step1_client_hello" }, "Should explain ClientHello")
     }
 
     @Test
     fun testCertificatePresent() {
         val frames = TLSHandshakeRunner.run()
-        assert(frames.any { it.phase == "step3_cert" }, "Should explain certificate exchange")
+        assertTrue(frames.any { it.phase == "step3_cert" }, "Should explain certificate exchange")
     }
 }

@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -25,12 +26,12 @@ class SubnettingRunnerTest {
         val frames = SubnettingRunner.run()
         val firstFrame = frames[0]
         assertEquals("intro", firstFrame.phase, "First frame should be intro phase")
-        assert(firstFrame.stats.containsKey("notation"), "Should mention CIDR notation")
+        assertTrue(firstFrame.stats.containsKey("notation"), "Should mention CIDR notation")
     }
 
     @Test
     fun testCIDRFramePresent() {
         val frames = SubnettingRunner.run()
-        assert(frames.any { it.phase == "cidr" }, "Should have CIDR notation frame")
+        assertTrue(frames.any { it.phase == "cidr" }, "Should have CIDR notation frame")
     }
 }

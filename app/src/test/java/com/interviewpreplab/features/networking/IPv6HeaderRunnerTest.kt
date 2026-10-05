@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -26,7 +27,7 @@ class IPv6HeaderRunnerTest {
         val frames = IPv6HeaderRunner.run()
         val lastFrame = frames.last()
         assertEquals("summary", lastFrame.phase, "Last frame should be summary phase")
-        assert(lastFrame.stats.containsKey("size"), "Last frame should contain size stat")
+        assertTrue(lastFrame.stats.containsKey("size"), "Last frame should contain size stat")
     }
 
     @Test

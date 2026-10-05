@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,6 +24,6 @@ class LongestPrefixMatchRunnerTest {
     @Test
     fun testAlgorithmPresent() {
         val frames = LongestPrefixMatchRunner.run()
-        assert(frames.any { it.stats.containsKey("algorithm") }, "Should explain the algorithm")
+        assertTrue(frames.any { it.stats.containsKey("algorithm") }, "Should explain the algorithm")
     }
 }

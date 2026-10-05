@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class ICMPTracerouteRunnerTest {
     @Test
     fun testPingFramePresent() {
         val frames = ICMPTracerouteRunner.run()
-        assert(frames.any { it.phase == "ping" }, "Should have ping frame")
+        assertTrue(frames.any { it.phase == "ping" }, "Should have ping frame")
     }
 
     @Test
     fun testTracerouteMethodPresent() {
         val frames = ICMPTracerouteRunner.run()
-        assert(frames.any { it.phase == "traceroute_method" }, "Should explain traceroute method")
+        assertTrue(frames.any { it.phase == "traceroute_method" }, "Should explain traceroute method")
     }
 }

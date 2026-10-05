@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class MACLearningRunnerTest {
     @Test
     fun testLearningPresent() {
         val frames = MACLearningRunner.run()
-        assert(frames.any { it.phase == "step2_learning" }, "Should explain MAC learning")
+        assertTrue(frames.any { it.phase == "step2_learning" }, "Should explain MAC learning")
     }
 
     @Test
     fun testForwardingPresent() {
         val frames = MACLearningRunner.run()
-        assert(frames.any { it.phase == "step4_forward" }, "Should explain frame forwarding")
+        assertTrue(frames.any { it.phase == "step4_forward" }, "Should explain frame forwarding")
     }
 }

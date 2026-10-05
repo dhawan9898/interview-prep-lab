@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class OSPFRunnerTest {
     @Test
     fun testLinkStatePresent() {
         val frames = OSPFRunner.run()
-        assert(frames.any { it.phase == "link_state" }, "Should explain link-state concept")
+        assertTrue(frames.any { it.phase == "link_state" }, "Should explain link-state concept")
     }
 
     @Test
     fun testSPFPresent() {
         val frames = OSPFRunner.run()
-        assert(frames.any { it.phase == "spf" }, "Should explain SPF algorithm")
+        assertTrue(frames.any { it.phase == "spf" }, "Should explain SPF algorithm")
     }
 }

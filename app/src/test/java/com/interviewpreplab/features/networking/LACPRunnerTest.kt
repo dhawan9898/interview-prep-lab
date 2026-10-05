@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class LACPRunnerTest {
     @Test
     fun testBundlePresent() {
         val frames = LACPRunner.run()
-        assert(frames.any { it.phase == "bundle" }, "Should explain link bundling")
+        assertTrue(frames.any { it.phase == "bundle" }, "Should explain link bundling")
     }
 
     @Test
     fun testLoadBalancingPresent() {
         val frames = LACPRunner.run()
-        assert(frames.any { it.phase == "load_balancing" }, "Should explain load balancing")
+        assertTrue(frames.any { it.phase == "load_balancing" }, "Should explain load balancing")
     }
 }

@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class STPRunnerTest {
     @Test
     fun testRootElectionPresent() {
         val frames = STPRunner.run()
-        assert(frames.any { it.phase == "root_election" }, "Should explain root bridge election")
+        assertTrue(frames.any { it.phase == "root_election" }, "Should explain root bridge election")
     }
 
     @Test
     fun testBPDUPresent() {
         val frames = STPRunner.run()
-        assert(frames.any { it.phase == "bpdu" }, "Should explain BPDU mechanism")
+        assertTrue(frames.any { it.phase == "bpdu" }, "Should explain BPDU mechanism")
     }
 }

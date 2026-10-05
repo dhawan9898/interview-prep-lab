@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class VLANRunnerTest {
     @Test
     fun testTagFormatPresent() {
         val frames = VLANRunner.run()
-        assert(frames.any { it.phase == "tag_format" }, "Should explain 802.1Q tag format")
+        assertTrue(frames.any { it.phase == "tag_format" }, "Should explain 802.1Q tag format")
     }
 
     @Test
     fun testAccessPortPresent() {
         val frames = VLANRunner.run()
-        assert(frames.any { it.phase == "access_port" }, "Should explain access ports")
+        assertTrue(frames.any { it.phase == "access_port" }, "Should explain access ports")
     }
 }

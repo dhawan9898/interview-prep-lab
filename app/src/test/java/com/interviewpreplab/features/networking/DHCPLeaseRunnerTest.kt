@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class DHCPLeaseRunnerTest {
     @Test
     fun testDiscoverPresent() {
         val frames = DHCPLeaseRunner.run()
-        assert(frames.any { it.phase == "step1_discover" }, "Should explain DHCP Discover")
+        assertTrue(frames.any { it.phase == "step1_discover" }, "Should explain DHCP Discover")
     }
 
     @Test
     fun testLeasePresent() {
         val frames = DHCPLeaseRunner.run()
-        assert(frames.any { it.phase == "lease" }, "Should explain lease mechanism")
+        assertTrue(frames.any { it.phase == "lease" }, "Should explain lease mechanism")
     }
 }

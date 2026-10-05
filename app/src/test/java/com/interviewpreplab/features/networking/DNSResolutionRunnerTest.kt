@@ -1,6 +1,7 @@
 package com.interviewpreplab.features.networking
 
 import org.junit.Test
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -23,12 +24,12 @@ class DNSResolutionRunnerTest {
     @Test
     fun testHierarchyPresent() {
         val frames = DNSResolutionRunner.run()
-        assert(frames.any { it.phase.contains("step") }, "Should explain DNS resolution steps")
+        assertTrue(frames.any { it.phase.contains("step") }, "Should explain DNS resolution steps")
     }
 
     @Test
     fun testRecordTypesPresent() {
         val frames = DNSResolutionRunner.run()
-        assert(frames.any { it.phase == "record_types" }, "Should explain DNS record types")
+        assertTrue(frames.any { it.phase == "record_types" }, "Should explain DNS record types")
     }
 }
