@@ -37,7 +37,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
+        kotlinCompilerExtensionVersion = "1.5.7"
     }
 }
 
@@ -83,7 +83,7 @@ dependencies {
 
     // Testing
     testImplementation("junit:junit:4.13.2")
-    testImplementation("kotlin.test:kotlin-test:1.9.22")
+    testImplementation("org.jetbrains.kotlin:kotlin-test:1.9.21")
     testImplementation("org.mockito:mockito-core:5.6.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.1.0")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
