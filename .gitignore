@@ -1,11 +1,79 @@
-*.iml
-.gradle
-.idea/
+# Gradle files
+.gradle/
 build/
 *.apk
-*.jks
-local.properties
-*.swp
-*.swo
-*~
+*.aar
+*.ap_
+*.aab
+
+# Android Studio
+.idea/
+.classpath
+.project
+.settings/
+*.iml
+*.iws
+*.ipr
 .DS_Store
+local.properties
+
+# Kotlin
+*.kt.bak
+out/
+
+# Build outputs
+bin/
+gen/
+
+# Gradle wrapper
+gradle/wrapper/gradle-wrapper.jar
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+pom.xml.bak
+release.properties
+dependency-reduced-pom.xml
+
+# Node (for frontend assets if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# IDE
+.vscode/
+.swp
+.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Test coverage
+coverage/
+*.coverage
+
+# Firebase
+google-services.json
+
+# Signing
+keystore.properties
+*.keystore
+*.jks
+
+# Lint
+lint-results.xml
+lint-results.json
+
+# Room database
+*.db
+*.sqlite
+
+# Temporary files
+*.tmp
+*.temp
