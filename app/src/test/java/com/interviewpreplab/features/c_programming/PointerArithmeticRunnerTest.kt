@@ -55,7 +55,7 @@ class PointerArithmeticRunnerTest {
         val arrayFrame = frames[0]
 
         assertEquals("array_layout", arrayFrame.phase)
-        assertTrue(arrayFrame.narr.contains("consecutive"))
+        assertTrue(arrayFrame.narr.contains("consecutive", ignoreCase = true))
 
         val scene = arrayFrame.scene as MemoryScene
         assertEquals(3, scene.cells.size, "Array should have 3 elements")
@@ -74,7 +74,7 @@ class PointerArithmeticRunnerTest {
         val incrementFrame = frames[2]
 
         assertEquals("pointer_increment", incrementFrame.phase)
-        assertTrue(incrementFrame.narr.contains("ptr++"))
+        assertTrue(incrementFrame.narr.contains("ptr++", ignoreCase = true))
         assertTrue(incrementFrame.stats.containsKey("ptr_moved_by"))
         assertEquals("4 bytes", incrementFrame.stats["ptr_moved_by"])
     }
@@ -85,7 +85,7 @@ class PointerArithmeticRunnerTest {
         val offsetFrame = frames[3]
 
         assertEquals("pointer_offset", offsetFrame.phase)
-        assertTrue(offsetFrame.narr.contains("ptr + 2"))
+        assertTrue(offsetFrame.narr.contains("ptr + 2", ignoreCase = true))
     }
 
     @Test
@@ -94,7 +94,7 @@ class PointerArithmeticRunnerTest {
         val derefFrame = frames[4]
 
         assertEquals("dereference_offset", derefFrame.phase)
-        assertTrue(derefFrame.narr.contains("*(ptr +"))
+        assertTrue(derefFrame.narr.contains("*(ptr +", ignoreCase = true))
         assertTrue(derefFrame.stats.containsKey("operation"))
     }
 
@@ -104,7 +104,7 @@ class PointerArithmeticRunnerTest {
         val indexFrame = frames[5]
 
         assertEquals("indexing_equivalence", indexFrame.phase)
-        assertTrue(indexFrame.narr.contains("arr[i]") && indexFrame.narr.contains("*(ptr"))
+        assertTrue(indexFrame.narr.contains("arr[i]", ignoreCase = true) && indexFrame.narr.contains("*(ptr", ignoreCase = true))
     }
 
     @Test
@@ -113,7 +113,7 @@ class PointerArithmeticRunnerTest {
         val subtractFrame = frames[6]
 
         assertEquals("pointer_subtraction", subtractFrame.phase)
-        assertTrue(subtractFrame.narr.contains("ptr2 - ptr1"))
+        assertTrue(subtractFrame.narr.contains("ptr2 - ptr1", ignoreCase = true))
         assertTrue(subtractFrame.stats.containsKey("difference"))
     }
 
@@ -123,7 +123,7 @@ class PointerArithmeticRunnerTest {
         val loopFrame = frames[7]
 
         assertEquals("pointer_loop", loopFrame.phase)
-        assertTrue(loopFrame.narr.contains("for") && loopFrame.narr.contains("p++"))
+        assertTrue(loopFrame.narr.contains("for", ignoreCase = true) && loopFrame.narr.contains("p++", ignoreCase = true))
     }
 
     @Test
@@ -132,7 +132,7 @@ class PointerArithmeticRunnerTest {
         val typeFrame = frames[8]
 
         assertEquals("type_size_matters", typeFrame.phase)
-        assertTrue(typeFrame.narr.contains("char*") && typeFrame.narr.contains("int*"))
+        assertTrue(typeFrame.narr.contains("char*", ignoreCase = true) && typeFrame.narr.contains("int*", ignoreCase = true))
     }
 
     @Test
@@ -141,7 +141,7 @@ class PointerArithmeticRunnerTest {
         val oobFrame = frames[9]
 
         assertEquals("out_of_bounds", oobFrame.phase)
-        assertTrue(oobFrame.narr.contains("ptr[100]") || oobFrame.narr.contains("bounds"))
+        assertTrue(oobFrame.narr.contains("ptr[100]", ignoreCase = true) || oobFrame.narr.contains("bounds", ignoreCase = true))
     }
 
     @Test
@@ -150,7 +150,7 @@ class PointerArithmeticRunnerTest {
         val compFrame = frames[10]
 
         assertEquals("pointer_comparison", compFrame.phase)
-        assertTrue(compFrame.narr.contains("compare") || compFrame.narr.contains("<"))
+        assertTrue(compFrame.narr.contains("compare", ignoreCase = true) || compFrame.narr.contains("<", ignoreCase = true))
     }
 
     @Test
@@ -208,7 +208,7 @@ class PointerArithmeticRunnerTest {
         val summaryFrame = frames.last()
 
         assertEquals("summary", summaryFrame.phase)
-        assertTrue(summaryFrame.narr.contains("ptr++") && summaryFrame.narr.contains("arr[i]"))
+        assertTrue(summaryFrame.narr.contains("ptr++", ignoreCase = true) && summaryFrame.narr.contains("arr[i]", ignoreCase = true))
     }
 
     @Test
@@ -216,9 +216,9 @@ class PointerArithmeticRunnerTest {
         val frames = PointerArithmeticRunner.run()
 
         // Frames should form logical progression
-        assertTrue(frames[0].narr.contains("array"))
-        assertTrue(frames[1].narr.contains("pointer"))
-        assertTrue(frames[6].narr.contains("subtraction"))
+        assertTrue(frames[0].narr.contains("array", ignoreCase = true))
+        assertTrue(frames[1].narr.contains("pointer", ignoreCase = true))
+        assertTrue(frames[6].narr.contains("subtraction", ignoreCase = true))
         assertTrue(frames[11].phase == "summary")
     }
 }

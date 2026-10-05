@@ -40,7 +40,7 @@ object UndefinedBehaviorRunner {
 
         // Frame 3: Signed integer overflow
         frames.add(Frame(
-            narr = "int x = 2147483647; x++; UNDEFINED! Result could be negative, wrap, or crash.",
+            narr = "Signed overflow: int x = 2147483647; x++; UNDEFINED! Result could be negative, wrap, or crash.",
             phase = "signed_overflow",
             stats = mapOf("value" to "INT_MAX", "operation" to "increment", "behavior" to "undefined"),
             scene = MemoryScene(
@@ -54,7 +54,7 @@ object UndefinedBehaviorRunner {
 
         // Frame 4: Uninitialized variable
         frames.add(Frame(
-            narr = "int x; (no initialization). x contains garbage (previous stack contents).",
+            narr = "Uninitialized variable: int x; (no initialization). x contains garbage (previous stack contents).",
             phase = "uninitialized",
             stats = mapOf("value" to "garbage", "predictable" to "no"),
             scene = MemoryScene(

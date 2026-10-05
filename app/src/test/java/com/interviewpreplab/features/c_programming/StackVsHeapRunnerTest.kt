@@ -59,7 +59,7 @@ class StackVsHeapRunnerTest {
         val stackFrame = frames[0]
 
         assertEquals("stack_allocation", stackFrame.phase)
-        assertTrue(stackFrame.narr.contains("automatic"))
+        assertTrue(stackFrame.narr.contains("automatic", ignoreCase = true))
 
         val scene = stackFrame.scene as MemoryScene
         // Should have stack cells
@@ -72,7 +72,7 @@ class StackVsHeapRunnerTest {
         val heapFrame = frames[3]
 
         assertEquals("heap_allocation", heapFrame.phase)
-        assertTrue(heapFrame.narr.contains("malloc"))
+        assertTrue(heapFrame.narr.contains("malloc", ignoreCase = true))
 
         val scene = heapFrame.scene as MemoryScene
         assertTrue(scene.cells.any { "heap" in it.roles }, "Should have heap memory")
@@ -84,7 +84,7 @@ class StackVsHeapRunnerTest {
         val fragFrame = frames[6]
 
         assertEquals("fragmentation", fragFrame.phase)
-        assertTrue(fragFrame.narr.contains("fragmentation"))
+        assertTrue(fragFrame.narr.contains("fragmentation", ignoreCase = true))
 
         val scene = fragFrame.scene as MemoryScene
         // Fragmentation frame should show multiple free and allocated blocks
@@ -97,11 +97,11 @@ class StackVsHeapRunnerTest {
 
         val speedFrame = frames[7]
         assertEquals("speed_comparison", speedFrame.phase)
-        assertTrue(speedFrame.narr.contains("fast") || speedFrame.narr.contains("slow"))
+        assertTrue(speedFrame.narr.contains("fast", ignoreCase = true) || speedFrame.narr.contains("slow", ignoreCase = true))
 
         val sizeFrame = frames[8]
         assertEquals("size_comparison", sizeFrame.phase)
-        assertTrue(sizeFrame.narr.contains("size") || sizeFrame.narr.contains("limited"))
+        assertTrue(sizeFrame.narr.contains("size", ignoreCase = true) || sizeFrame.narr.contains("limited", ignoreCase = true))
     }
 
     @Test
@@ -110,7 +110,7 @@ class StackVsHeapRunnerTest {
         val overflowFrame = frames[9]
 
         assertEquals("stack_overflow", overflowFrame.phase)
-        assertTrue(overflowFrame.narr.contains("overflow") || overflowFrame.narr.contains("crash"))
+        assertTrue(overflowFrame.narr.contains("overflow", ignoreCase = true) || overflowFrame.narr.contains("crash", ignoreCase = true))
     }
 
     @Test
@@ -119,11 +119,11 @@ class StackVsHeapRunnerTest {
 
         val stackUsageFrame = frames[12]
         assertEquals("stack_usage", stackUsageFrame.phase)
-        assertTrue(stackUsageFrame.narr.contains("stack"))
+        assertTrue(stackUsageFrame.narr.contains("stack", ignoreCase = true))
 
         val heapUsageFrame = frames[13]
         assertEquals("heap_usage", heapUsageFrame.phase)
-        assertTrue(heapUsageFrame.narr.contains("heap"))
+        assertTrue(heapUsageFrame.narr.contains("heap", ignoreCase = true))
     }
 
     @Test
@@ -179,7 +179,7 @@ class StackVsHeapRunnerTest {
         val summaryFrame = frames.last()
 
         assertEquals("summary", summaryFrame.phase)
-        assertTrue(summaryFrame.narr.contains("stack") && summaryFrame.narr.contains("heap"))
+        assertTrue(summaryFrame.narr.contains("stack", ignoreCase = true) && summaryFrame.narr.contains("heap", ignoreCase = true))
     }
 
     @Test

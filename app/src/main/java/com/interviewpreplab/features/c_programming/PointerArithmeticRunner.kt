@@ -30,7 +30,7 @@ object PointerArithmeticRunner {
 
         // Frame 2: Pointer to first element
         frames.add(Frame(
-            narr = "ptr = &arr[0] points to the first element. arr[0] == *ptr.",
+            narr = "Pointer ptr = &arr[0] points to the first element. arr[0] == *ptr.",
             phase = "pointer_to_array",
             stats = mapOf("ptr_equals" to "&arr[0]", "ptr_value" to "0x7FFF0010"),
             scene = MemoryScene(
@@ -119,7 +119,7 @@ object PointerArithmeticRunner {
 
         // Frame 7: Pointer subtraction
         frames.add(Frame(
-            narr = "ptr2 - ptr1 gives the NUMBER OF ELEMENTS between pointers (not bytes).",
+            narr = "Pointer subtraction: ptr2 - ptr1 gives the NUMBER OF ELEMENTS between pointers (not bytes).",
             phase = "pointer_subtraction",
             stats = mapOf("ptr2" to "0x7FFF0018", "ptr1" to "0x7FFF0010", "difference" to "2"),
             scene = MemoryScene(
@@ -128,6 +128,7 @@ object PointerArithmeticRunner {
                     MemoryCell("0x7FFF0014", "20", "arr[1]", setOf("stack")),
                     MemoryCell("0x7FFF0018", "30", "arr[2] (ptr2)", setOf("stack", "active"))
                 ),
+                pointers = listOf(MemoryPointer("0x7FFF0010", "0x7FFF0018", "ptr2 - ptr1 = 2")),
                 legend = "Pointer subtraction: ptr2 - ptr1 = 2 elements"
             )
         ))
@@ -190,6 +191,7 @@ object PointerArithmeticRunner {
                     MemoryCell("0x7FFF0010", "ptr1", "first", setOf("stack", "active")),
                     MemoryCell("0x7FFF0018", "ptr2", "later", setOf("stack"))
                 ),
+                pointers = listOf(MemoryPointer("0x7FFF0010", "0x7FFF0018", "ptr1 < ptr2")),
                 legend = "Pointer comparison (relative positions)"
             )
         ))

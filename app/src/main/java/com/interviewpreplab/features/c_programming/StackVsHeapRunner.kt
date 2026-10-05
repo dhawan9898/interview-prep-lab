@@ -2,6 +2,7 @@ package com.interviewpreplab.features.c_programming
 
 import com.interviewpreplab.core.model.Frame
 import com.interviewpreplab.core.model.MemoryCell
+import com.interviewpreplab.core.model.MemoryPointer
 import com.interviewpreplab.core.model.MemoryScene
 
 /**
@@ -64,6 +65,7 @@ object StackVsHeapRunner {
                     MemoryCell("0x7FFF0010", "0x55558000", "int* ptr", setOf("stack", "pointer")),
                     MemoryCell("0x55558000", "[100 bytes]", "malloc(100)", setOf("heap", "active"))
                 ),
+                pointers = listOf(MemoryPointer("0x7FFF0010", "0x55558000", "ptr")),
                 legend = "Pointer on stack, data on heap"
             )
         ))
@@ -117,7 +119,7 @@ object StackVsHeapRunner {
 
         // Frame 8: Stack vs Heap - Speed
         frames.add(Frame(
-            narr = "Stack: O(1) allocation (just move pointer). Heap: O(log n) search for free block.",
+            narr = "Stack is fast: O(1) allocation (just move pointer). Heap is slow: O(log n) search for free block.",
             phase = "speed_comparison",
             stats = mapOf("stack_speed" to "nanoseconds", "heap_speed" to "microseconds"),
             scene = MemoryScene(
@@ -210,6 +212,7 @@ object StackVsHeapRunner {
                     MemoryCell("0x7FFF0010", "0x55558000", "int* arr", setOf("stack", "pointer")),
                     MemoryCell("0x55558000", "[1000 ints]", "malloc(4000)", setOf("heap", "active"))
                 ),
+                pointers = listOf(MemoryPointer("0x7FFF0010", "0x55558000", "arr")),
                 legend = "Heap for large, variable-size data"
             )
         ))

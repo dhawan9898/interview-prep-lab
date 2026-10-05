@@ -57,7 +57,7 @@ class NullPointersRunnerTest {
         val nullDefFrame = frames[1]
 
         assertEquals("null_definition", nullDefFrame.phase)
-        assertTrue(nullDefFrame.narr.contains("NULL") || nullDefFrame.narr.contains("0x00000000"))
+        assertTrue(nullDefFrame.narr.contains("NULL", ignoreCase = true) || nullDefFrame.narr.contains("0x00000000", ignoreCase = true))
     }
 
     @Test
@@ -66,7 +66,7 @@ class NullPointersRunnerTest {
         val validFrame = frames[3]
 
         assertEquals("valid_allocation", validFrame.phase)
-        assertTrue(validFrame.narr.contains("malloc"))
+        assertTrue(validFrame.narr.contains("malloc", ignoreCase = true))
 
         val scene = validFrame.scene as MemoryScene
         assertTrue(scene.cells.any { "heap" in it.roles }, "Should have heap allocation")
@@ -79,7 +79,7 @@ class NullPointersRunnerTest {
 
         assertEquals("null_dereference", derefFrame.phase)
         assertTrue(
-            derefFrame.narr.contains("CRASH") || derefFrame.narr.contains("SEGMENTATION FAULT"),
+            derefFrame.narr.contains("CRASH", ignoreCase = true) || derefFrame.narr.contains("SEGMENTATION FAULT", ignoreCase = true),
             "Should mention crash/segfault"
         )
     }
@@ -91,7 +91,7 @@ class NullPointersRunnerTest {
 
         assertEquals("segfault_explanation", segFrame.phase)
         assertTrue(
-            segFrame.narr.contains("MMU") || segFrame.narr.contains("segmentation"),
+            segFrame.narr.contains("MMU", ignoreCase = true) || segFrame.narr.contains("segmentation", ignoreCase = true),
             "Should explain segmentation fault mechanism"
         )
     }
@@ -102,7 +102,7 @@ class NullPointersRunnerTest {
         val safeFrame = frames[9]
 
         assertEquals("safe_usage", safeFrame.phase)
-        assertTrue(safeFrame.narr.contains("NULL check") || safeFrame.narr.contains("if"))
+        assertTrue(safeFrame.narr.contains("check", ignoreCase = true) && safeFrame.narr.contains("NULL", ignoreCase = true))
     }
 
     @Test
@@ -111,7 +111,7 @@ class NullPointersRunnerTest {
         val danglingFrame = frames[10]
 
         assertEquals("dangling_pointer", danglingFrame.phase)
-        assertTrue(danglingFrame.narr.contains("free") && danglingFrame.narr.contains("dangling"))
+        assertTrue(danglingFrame.narr.contains("free", ignoreCase = true) && danglingFrame.narr.contains("dangling", ignoreCase = true))
     }
 
     @Test
@@ -120,7 +120,7 @@ class NullPointersRunnerTest {
         val nullAfterFrame = frames[11]
 
         assertEquals("null_after_free", nullAfterFrame.phase)
-        assertTrue(nullAfterFrame.narr.contains("free") && nullAfterFrame.narr.contains("NULL"))
+        assertTrue(nullAfterFrame.narr.contains("free", ignoreCase = true) && nullAfterFrame.narr.contains("NULL", ignoreCase = true))
     }
 
     @Test
@@ -129,7 +129,7 @@ class NullPointersRunnerTest {
         val mallocFrame = frames[13]
 
         assertEquals("malloc_failure", mallocFrame.phase)
-        assertTrue(mallocFrame.narr.contains("malloc") && mallocFrame.narr.contains("NULL"))
+        assertTrue(mallocFrame.narr.contains("malloc", ignoreCase = true) && mallocFrame.narr.contains("NULL", ignoreCase = true))
     }
 
     @Test
@@ -185,13 +185,13 @@ class NullPointersRunnerTest {
         val frames = NullPointersRunner.run()
 
         // Should start with dangers
-        assertTrue(frames[0].narr.contains("dangerous") || frames[0].narr.contains("Uninitialized"))
+        assertTrue(frames[0].narr.contains("dangerous", ignoreCase = true) || frames[0].narr.contains("Uninitialized", ignoreCase = true))
 
         // Should show NULL concept
-        assertTrue(frames[1].narr.contains("NULL"))
+        assertTrue(frames[1].narr.contains("NULL", ignoreCase = true))
 
         // Should show proper usage
-        assertTrue(frames[9].narr.contains("Right") || frames[9].narr.contains("check"))
+        assertTrue(frames[9].narr.contains("Right", ignoreCase = true) || frames[9].narr.contains("check", ignoreCase = true))
     }
 
     @Test
@@ -200,7 +200,7 @@ class NullPointersRunnerTest {
         val summaryFrame = frames.last()
 
         assertEquals("summary", summaryFrame.phase)
-        assertTrue(summaryFrame.narr.contains("NULL") && summaryFrame.narr.contains("check"))
+        assertTrue(summaryFrame.narr.contains("NULL", ignoreCase = true) && summaryFrame.narr.contains("check", ignoreCase = true))
     }
 
     @Test

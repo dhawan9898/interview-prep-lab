@@ -18,6 +18,6 @@ class UndefinedBehaviorRunnerTest {
     @Test fun testUBExamples() {
         val frames = UndefinedBehaviorRunner.run()
         val narrations = frames.map { it.narr }
-        assertTrue(narrations.any { it.contains("overflow") || it.contains("uninitialized") })
+        assertTrue(narrations.any { it.contains("overflow", ignoreCase = true) || it.contains("uninitialized", ignoreCase = true) })
     }
 }

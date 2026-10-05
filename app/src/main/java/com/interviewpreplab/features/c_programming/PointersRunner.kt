@@ -34,7 +34,7 @@ object PointersRunner {
             stats = mapOf("variable" to "x", "address" to "0x7FFF0010"),
             scene = MemoryScene(
                 cells = listOf(
-                    MemoryCell("0x7FFF0010", "42", "int x", setOf("stack", "pointer")),
+                    MemoryCell("0x7FFF0010", "42", "int x", setOf("stack", "active")),
                     MemoryCell("0x7FFF0014", "?", "&x = 0x7FFF0010", setOf("stack"))
                 ),
                 legend = "Address-of operator (&x)"
@@ -79,7 +79,7 @@ object PointersRunner {
             stats = mapOf("ptr_value" to "0x7FFF0010", "dereferenced" to "42"),
             scene = MemoryScene(
                 cells = listOf(
-                    MemoryCell("0x7FFF0010", "42", "int x (*ptr)", setOf("stack", "pointer")),
+                    MemoryCell("0x7FFF0010", "42", "int x (*ptr)", setOf("stack", "active")),
                     MemoryCell("0x7FFF0018", "0x7FFF0010", "int* ptr", setOf("stack", "active"))
                 ),
                 pointers = listOf(
@@ -113,7 +113,7 @@ object PointersRunner {
             stats = mapOf("pointers" to "2", "all_point_to" to "x"),
             scene = MemoryScene(
                 cells = listOf(
-                    MemoryCell("0x7FFF0010", "100", "int x", setOf("stack", "pointer")),
+                    MemoryCell("0x7FFF0010", "100", "int x", setOf("stack", "active")),
                     MemoryCell("0x7FFF0018", "0x7FFF0010", "int* ptr1", setOf("stack")),
                     MemoryCell("0x7FFF001C", "0x7FFF0010", "int* ptr2", setOf("stack", "active"))
                 ),
