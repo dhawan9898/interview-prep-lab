@@ -38,16 +38,23 @@ import com.interviewpreplab.core.model.ListScene
 import com.interviewpreplab.core.model.SlotsScene
 import com.interviewpreplab.core.player.PlayerViewModel
 import com.interviewpreplab.core.ui.BarsRenderer
+import com.interviewpreplab.core.ui.GraphRenderer
 import com.interviewpreplab.core.ui.ListRenderer
 import com.interviewpreplab.core.ui.PlayerControls
 import com.interviewpreplab.core.ui.SlotsRenderer
 import com.interviewpreplab.core.ui.TreeRenderer
 import com.interviewpreplab.features.data_structures.BSTRunner
 import com.interviewpreplab.features.data_structures.CircularQueueRunner
+import com.interviewpreplab.features.data_structures.GraphRunner
+import com.interviewpreplab.features.data_structures.HeapRunner
 import com.interviewpreplab.features.data_structures.LinkedListRunner
 import com.interviewpreplab.features.data_structures.QueueRunner
 import com.interviewpreplab.features.data_structures.StackRunner
+import com.interviewpreplab.features.searches.BinarySearchRunner
 import com.interviewpreplab.features.sorts.BubbleSortRunner
+import com.interviewpreplab.features.sorts.InsertionSortRunner
+import com.interviewpreplab.features.sorts.QuickSortRunner
+import com.interviewpreplab.features.sorts.SelectionSortRunner
 import com.interviewpreplab.ui.theme.InterviewPrepLabTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -102,6 +109,12 @@ fun TopicListScreen(onTopicSelected: (Topic) -> Unit) {
     val topics = listOf(
         // Sorting
         Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
+        Topic("selection-sort", "Selection Sort", "Sorting", "Find minimum and swap"),
+        Topic("insertion-sort", "Insertion Sort", "Sorting", "Build sorted array incrementally"),
+        Topic("quick-sort", "Quick Sort", "Sorting", "Divide and conquer with pivot"),
+
+        // Searching
+        Topic("binary-search", "Binary Search", "Searching", "Halve search space each iteration"),
 
         // Data Structures
         Topic("stack", "Stack", "Data Structures", "LIFO data structure"),
@@ -109,6 +122,8 @@ fun TopicListScreen(onTopicSelected: (Topic) -> Unit) {
         Topic("circular-queue", "Circular Queue", "Data Structures", "FIFO with modulo wraparound"),
         Topic("linked-list", "Singly Linked List", "Data Structures", "Dynamic list with pointers"),
         Topic("bst", "Binary Search Tree", "Data Structures", "Ordered tree for efficient search"),
+        Topic("heap", "Min Heap", "Data Structures", "Priority queue with heap property"),
+        Topic("graph", "Graph (BFS/DFS)", "Data Structures", "Node and edge traversal"),
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -214,6 +229,18 @@ fun TopicDetailScreen(
                             TreeRenderer(scene)
                         }
                     }
+                    "heap" -> {
+                        val scene = state.currentFrame?.scene as? SlotsScene
+                        if (scene != null) {
+                            SlotsRenderer(scene, direction = "v")
+                        }
+                    }
+                    "graph" -> {
+                        val scene = state.currentFrame?.scene as? com.interviewpreplab.core.model.GraphScene
+                        if (scene != null) {
+                            GraphRenderer(scene)
+                        }
+                    }
                 }
             }
 
@@ -267,94 +294,100 @@ fun TopicDetailScreen(
 private fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
     val frames = when (topic.id) {
         "bubble-sort" -> BubbleSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
+        "selection-sort" -> SelectionSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
+        "insertion-sort" -> InsertionSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
+        "quick-sort" -> QuickSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
+        "binary-search" -> BinarySearchRunner.run(listOf(1, 2, 3, 5, 8, 9), 5)
         "stack" -> {
-            // Interactive stack demo: push 10, push 20, pop
             val frames = mutableListOf(StackRunner.buildInitial())
             var state = StackRunner.StackState()
-
             val (f1, s1) = StackRunner.runPush(state, 10)
             frames.addAll(f1)
             state = s1
-
             val (f2, s2) = StackRunner.runPush(state, 20)
             frames.addAll(f2)
             state = s2
-
             val (f3, s3) = StackRunner.runPop(state)
             frames.addAll(f3)
-
             frames
         }
         "queue" -> {
-            // Interactive queue demo: enqueue 10, 20, dequeue
             val frames = mutableListOf(QueueRunner.buildInitial())
             var state = QueueRunner.QueueState(mutableListOf(), 0, -1)
-
             val (f1, s1) = QueueRunner.enqueue(state, 10)
             frames.addAll(f1)
             state = s1
-
             val (f2, s2) = QueueRunner.enqueue(state, 20)
             frames.addAll(f2)
             state = s2
-
             val (f3, s3) = QueueRunner.dequeue(state)
             frames.addAll(f3)
-
             frames
         }
         "circular-queue" -> {
-            // Interactive circular queue demo: enqueue values, show wraparound
             val frames = mutableListOf(CircularQueueRunner.buildInitial())
             var state = CircularQueueRunner.CircularQueueState(MutableList(5) { null }, 0, 0)
-
             for (i in 1..3) {
                 val (f, s) = CircularQueueRunner.enqueue(state, i * 10)
                 frames.addAll(f)
                 state = s
             }
-
             val (fd, sd) = CircularQueueRunner.dequeue(state)
             frames.addAll(fd)
-
             frames
         }
         "linked-list" -> {
             val frames = mutableListOf(LinkedListRunner.buildInitial())
             var state = LinkedListRunner.LinkedListState()
-
             val (f1, s1) = LinkedListRunner.insertAtHead(state, 10)
             frames.addAll(f1)
             state = s1
-
             val (f2, s2) = LinkedListRunner.insertAtHead(state, 20)
             frames.addAll(f2)
             state = s2
-
             val (f3, s3) = LinkedListRunner.insertAtHead(state, 30)
             frames.addAll(f3)
-
             frames
         }
         "bst" -> {
             val frames = mutableListOf(BSTRunner.buildInitial())
             var state = BSTRunner.BSTState(null, 0)
-
             val (f1, s1) = BSTRunner.insert(state, 50)
             frames.addAll(f1)
             state = s1
-
             val (f2, s2) = BSTRunner.insert(state, 30)
             frames.addAll(f2)
             state = s2
-
             val (f3, s3) = BSTRunner.insert(state, 70)
             frames.addAll(f3)
             state = s3
-
             val (f4, s4) = BSTRunner.search(state, 30)
             frames.addAll(f4)
-
+            frames
+        }
+        "heap" -> {
+            val frames = mutableListOf(HeapRunner.buildInitial())
+            var state = HeapRunner.HeapState()
+            for (v in listOf(10, 5, 20, 3)) {
+                val (f, s) = HeapRunner.insert(state, v)
+                frames.addAll(f)
+                state = s
+            }
+            val (fe, se) = HeapRunner.extractMin(state)
+            frames.addAll(fe)
+            frames
+        }
+        "graph" -> {
+            val graph = GraphRunner.createSimpleGraph()
+            val frames = mutableListOf<Frame>(
+                Frame(
+                    narr = "BFS from node A",
+                    phase = "start",
+                    stats = mapOf("nodes_visited" to "0"),
+                    scene = com.interviewpreplab.core.model.GraphScene(graph.nodes, graph.edges)
+                )
+            )
+            frames.addAll(GraphRunner.bfs(graph, "A"))
             frames
         }
         else -> emptyList()
