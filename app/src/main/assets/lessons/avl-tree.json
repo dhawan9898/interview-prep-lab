@@ -1,0 +1,137 @@
+{
+  "summary": "An AVL tree is a binary search tree that keeps itself balanced: for every node the heights of its left and right subtrees differ by at most one. Rotations after inserts and deletes restore the invariant, guaranteeing O(log n) search, insert, and delete.",
+  "sections": [
+    {
+      "heading": "Balance factor",
+      "body": "balance(node) = height(left) - height(right). In an AVL tree every node has balance -1, 0, or +1. Each node stores its height so balance is O(1) to compute. An AVL tree of n nodes has height at most about 1.44 log2(n).",
+      "code": "int height(Node *n) { return n ? n->h : 0; }\nint balance(Node *n) { return n ? height(n->left) - height(n->right) : 0; }\nvoid update(Node *n) { n->h = 1 + max(height(n->left), height(n->right)); }"
+    },
+    {
+      "heading": "Rotations",
+      "body": "A rotation is a local pointer rearrangement that changes heights but preserves BST order.",
+      "code": "Node *rotate_right(Node *y) {      //     y          x\n  Node *x = y->left;               //    / \\        / \\\n  y->left = x->right;              //   x   C  ->  A   y\n  x->right = y;                    //  / \\            / \\\n  update(y); update(x); return x;  // A   B          B   C\n}\nNode *rotate_left(Node *x) {\n  Node *y = x->right;\n  x->right = y->left; y->left = x;\n  update(x); update(y); return y;\n}"
+    },
+    {
+      "heading": "The four imbalance cases",
+      "body": "After inserting, walk back up. At the first node z with |balance| = 2:",
+      "bullets": [
+        "Left-Left (balance > 1, new key in left child's left): rotate right at z.",
+        "Right-Right (balance < -1, key in right child's right): rotate left at z.",
+        "Left-Right (balance > 1, key in left child's right): rotate left at the left child, then right at z.",
+        "Right-Left (balance < -1, key in right child's left): rotate right at the right child, then left at z."
+      ]
+    },
+    {
+      "heading": "Insertion",
+      "body": "Insert as in a normal BST, then recompute heights on the way back up and rebalance.",
+      "code": "Node *insert(Node *n, int k) {\n  if (!n) return new_node(k);\n  if (k < n->key) n->left = insert(n->left, k);\n  else if (k > n->key) n->right = insert(n->right, k);\n  else return n;\n  update(n);\n  int b = balance(n);\n  if (b > 1 && k < n->left->key)  return rotate_right(n);\n  if (b < -1 && k > n->right->key) return rotate_left(n);\n  if (b > 1 && k > n->left->key)  { n->left = rotate_left(n->left); return rotate_right(n); }\n  if (b < -1 && k < n->right->key) { n->right = rotate_right(n->right); return rotate_left(n); }\n  return n;\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Search, insert, delete: O(log n) worst case.",
+        "An insertion needs at most one single or double rotation.",
+        "A deletion may need O(log n) rotations along the path.",
+        "Space: O(n), plus a height field per node."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Deletion",
+      "summary": "Same cases, possibly many times.",
+      "sections": [
+        {
+          "body": "Delete like a BST (replace a two-child node by its in-order successor), then rebalance every ancestor on the way up. Unlike insertion, one fix may not be enough because the subtree height can shrink and propagate upward."
+        }
+      ]
+    },
+    {
+      "title": "AVL versus red-black trees",
+      "summary": "Which is better?",
+      "sections": [
+        {
+          "bullets": [
+            "AVL is more strictly balanced: faster lookups, slower inserts/deletes (more rotations).",
+            "Red-black trees allow a looser height (up to 2 log n) with fewer rotations; used in std::map, TreeMap, and the Linux scheduler.",
+            "Choose AVL for read-heavy workloads, red-black for write-heavy ones."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Building from sorted input",
+      "summary": "The motivation.",
+      "sections": [
+        {
+          "body": "A plain BST fed 1, 2, 3, ... becomes a linked list with O(n) operations. An AVL tree rotates at each step and stays near log n height, so sorted input is safe."
+        }
+      ]
+    },
+    {
+      "title": "Verifying an AVL tree",
+      "summary": "Tests worth writing.",
+      "sections": [
+        {
+          "body": "Check three invariants after each operation: BST ordering via inorder traversal, stored heights equal the recomputed heights, and every balance factor lies in [-1, 1]."
+        }
+      ]
+    },
+    {
+      "title": "Applications",
+      "summary": "Where balance matters.",
+      "sections": [
+        {
+          "bullets": [
+            "In-memory ordered indexes and dictionaries.",
+            "Real-time systems needing predictable lookup time.",
+            "Order statistics when augmented with subtree sizes.",
+            "Interval and range queries when augmented."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Balance factor must stay in {-1, 0, +1} at every node.",
+    "Fix imbalance with single (LL, RR) or double (LR, RL) rotations.",
+    "Guarantees O(log n) search, insert, delete.",
+    "More strictly balanced than red-black trees: faster reads, costlier updates."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: AVL tree (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Insert keys 10 20 30 40 50 25 and draw the tree after each step",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement LL and RR rotations",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement full AVL insertion with all four cases",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement AVL deletion",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Check whether a binary tree is height-balanced",
+      "difficulty": "Easy"
+    }
+  ]
+}

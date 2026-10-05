@@ -1,0 +1,126 @@
+{
+  "summary": "Jump search finds a target in a sorted array by jumping ahead in fixed-size blocks of about √n until it passes the target, then scanning linearly inside the last block. It takes O(√n) time: between linear and binary search.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Choose a block size m = √n.",
+        "Jump forward m positions at a time while a[min(step, n) - 1] < target.",
+        "When the block that could contain the target is found, scan it linearly.",
+        "Return the index or -1."
+      ],
+      "code": "int jump_search(const int a[], int n, int x) {\n  int step = (int)sqrt(n), prev = 0;\n  while (a[(step < n ? step : n) - 1] < x) {\n    prev = step; step += (int)sqrt(n);\n    if (prev >= n) return -1;\n  }\n  for (int i = prev; i < (step < n ? step : n); i++)\n    if (a[i] == x) return i;\n  return -1;\n}"
+    },
+    {
+      "heading": "Why √n",
+      "body": "With block size m, the cost is about n/m jumps plus up to m-1 linear steps. n/m + m is minimized when m = √n, giving roughly 2√n comparisons in the worst case."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Time: O(√n).",
+        "Space: O(1).",
+        "Requires a sorted array.",
+        "Ordering of speed: linear O(n) > jump O(√n) > binary O(log n)."
+      ]
+    },
+    {
+      "heading": "When it makes sense",
+      "bullets": [
+        "Jumping backward is expensive (e.g. tape or some storage), so jump search moves forward only except for one short scan.",
+        "Simpler to implement than binary search.",
+        "Otherwise binary search is almost always better on arrays."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Walkthrough",
+      "summary": "Find 55 in [0,1,1,2,3,5,8,13,21,34,55,89,144,233,377,610].",
+      "sections": [
+        {
+          "body": "n = 16, step 4. Check a[3]=2 < 55, a[7]=13 < 55, a[11]=89 >= 55. Scan indices 8..11: 21, 34, 55 found at index 10. About 3 jumps plus 3 linear steps."
+        }
+      ]
+    },
+    {
+      "title": "Comparison with binary and interpolation search",
+      "summary": "Which to choose.",
+      "sections": [
+        {
+          "bullets": [
+            "Binary search: O(log n), needs random access.",
+            "Interpolation search: O(log log n) average on uniformly distributed keys, O(n) worst.",
+            "Jump search: O(√n), forward-only friendly."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Two-level and exponential variants",
+      "summary": "Reducing the linear phase.",
+      "sections": [
+        {
+          "body": "Applying jump search inside each block (a multi-level jump) approaches binary search's cost. Exponential (galloping) search doubles the step until it overshoots, then binary searches the last interval."
+        }
+      ]
+    },
+    {
+      "title": "Block devices",
+      "summary": "A practical angle.",
+      "sections": [
+        {
+          "body": "On disks or tapes where sequential reads of a block are cheap and seeks are costly, skipping ahead in blocks and scanning one block mirrors how index structures like B-trees work."
+        }
+      ]
+    },
+    {
+      "title": "Edge cases",
+      "summary": "Things that break implementations.",
+      "sections": [
+        {
+          "bullets": [
+            "Clamp the jump to n - 1.",
+            "Handle empty arrays.",
+            "Use integer sqrt and avoid floating error for large n.",
+            "Target larger than every element."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Jump ahead by √n, then scan the block linearly.",
+    "O(√n) time, O(1) space, sorted input only.",
+    "Faster than linear, slower than binary search.",
+    "Useful when moving backward is costly."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Jump search (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/jump-search/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement jump search on a sorted array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the optimal block size and verify with a count",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compare comparison counts of linear, jump, and binary search",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Handle a target larger than every element",
+      "difficulty": "Easy"
+    }
+  ]
+}

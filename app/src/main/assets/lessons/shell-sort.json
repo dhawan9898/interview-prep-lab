@@ -1,0 +1,124 @@
+{
+  "summary": "Shell sort is insertion sort with a head start: it first sorts elements that are far apart, using a shrinking gap, so small values travel long distances quickly. When the gap reaches 1 the array is nearly sorted and the final insertion-sort pass is cheap.",
+  "sections": [
+    {
+      "heading": "Idea",
+      "body": "Plain insertion sort moves an element one position per swap, so a small value near the end takes O(n) steps. Shell sort sorts every h-th element for a decreasing sequence of gaps h, ending with h = 1. An array that is h-sorted stays h-sorted after being k-sorted, so earlier passes are never undone."
+    },
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Choose a gap sequence, e.g. n/2, n/4, ..., 1.",
+        "For each gap, do an insertion sort on the elements gap apart.",
+        "Finish with gap = 1, a normal insertion sort on a nearly sorted array."
+      ],
+      "code": "void shell_sort(int a[], int n) {\n  for (int gap = n / 2; gap > 0; gap /= 2)\n    for (int i = gap; i < n; i++) {\n      int t = a[i], j = i;\n      for (; j >= gap && a[j - gap] > t; j -= gap) a[j] = a[j - gap];\n      a[j] = t;\n    }\n}"
+    },
+    {
+      "heading": "Gap sequences",
+      "bullets": [
+        "Shell's original n/2, n/4, ...: simple, worst case O(n²).",
+        "Knuth's 1, 4, 13, 40, ... (3k+1): about O(n^1.5).",
+        "Sedgewick's and Ciura's sequences: better in practice (Ciura: 1, 4, 10, 23, 57, 132, 301, 701)."
+      ]
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Depends on the gap sequence: from about O(n^1.25) to O(n^1.5) typical, O(n²) worst for poor gaps.",
+        "Best case near O(n log n) for already sorted data.",
+        "Space: O(1), in place.",
+        "Not stable."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Walkthrough",
+      "summary": "Sorting [23, 29, 15, 19, 31, 7, 9, 5, 2].",
+      "sections": [
+        {
+          "body": "With gap 4, compare positions (0,4), (1,5), ... and swap out-of-order pairs; with gap 2 the array is closer to sorted; with gap 1 a final insertion pass finishes with few shifts."
+        }
+      ]
+    },
+    {
+      "title": "Why it beats insertion sort",
+      "summary": "Fewer total moves.",
+      "sections": [
+        {
+          "body": "Large-gap passes remove many inversions at once (each swap fixes several), so the final pass sees few inversions and is near O(n). That is why Shell sort is far faster than insertion sort on mid-sized random data."
+        }
+      ]
+    },
+    {
+      "title": "Where it is used",
+      "summary": "Embedded and constrained systems.",
+      "sections": [
+        {
+          "body": "It needs no recursion or extra memory and is short to implement, so it appears in embedded code and libraries such as uClibc's qsort. Large systems prefer O(n log n) sorts."
+        }
+      ]
+    },
+    {
+      "title": "Open problems",
+      "summary": "No closed-form optimum.",
+      "sections": [
+        {
+          "body": "The best possible gap sequence is still unknown; analyses give bounds for specific sequences, and Ciura's was found by experiment."
+        }
+      ]
+    },
+    {
+      "title": "Relation to other sorts",
+      "summary": "Where it sits.",
+      "sections": [
+        {
+          "bullets": [
+            "Insertion sort with gap 1 is a special case.",
+            "Comb sort applies the same idea to bubble sort.",
+            "Both trade stability for speed."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Insertion sort over elements a gap apart, shrinking the gap to 1.",
+    "Complexity depends on the gap sequence; Knuth/Ciura beat n/2.",
+    "In place, not stable, short code.",
+    "Fixes many inversions per move."
+  ],
+  "references": [
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Shell sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/shell-sort/"
+    },
+    {
+      "label": "Ciura: Best Increments for the Average Case of Shellsort",
+      "url": "https://oeis.org/A102549"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement Shell sort with n/2 gaps",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count shifts for gap sequences n/2 versus Knuth",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Show that a 2-sorted array stays 2-sorted after 3-sorting",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Compare Shell sort and insertion sort on a reversed array",
+      "difficulty": "Medium"
+    }
+  ]
+}

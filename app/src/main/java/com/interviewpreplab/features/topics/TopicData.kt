@@ -35,18 +35,28 @@ val topicList = listOf(
     Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
     Topic("selection-sort", "Selection Sort", "Sorting", "Find minimum and swap"),
     Topic("insertion-sort", "Insertion Sort", "Sorting", "Build sorted array incrementally"),
+    Topic("shell-sort", "Shell Sort", "Sorting", "Insertion sort with shrinking gaps"),
+    Topic("merge-sort", "Merge Sort", "Sorting", "Divide, sort halves, merge; stable O(n log n)"),
     Topic("quick-sort", "Quick Sort", "Sorting", "Divide and conquer with pivot"),
+    Topic("heap-sort", "Heap Sort", "Sorting", "Max-heap extraction, in place"),
+    Topic("counting-sort", "Counting Sort", "Sorting", "Non-comparison sort for small key ranges"),
 
     // Searching
+    Topic("linear-search", "Linear Search", "Searching", "Check every element in order"),
     Topic("binary-search", "Binary Search", "Searching", "Halve search space each iteration"),
+    Topic("jump-search", "Jump Search", "Searching", "Jump sqrt(n) blocks, then scan"),
 
     // Data Structures
     Topic("stack", "Stack", "Data Structures", "LIFO data structure"),
     Topic("queue", "Queue", "Data Structures", "FIFO data structure with dead space"),
     Topic("circular-queue", "Circular Queue", "Data Structures", "FIFO with modulo wraparound"),
     Topic("linked-list", "Singly Linked List", "Data Structures", "Dynamic list with pointers"),
+    Topic("doubly-linked-list", "Doubly Linked List", "Data Structures", "prev/next links, O(1) unlink"),
+    Topic("hash-table", "Hash Table", "Data Structures", "Hashing, collisions, load factor"),
     Topic("bst", "Binary Search Tree", "Data Structures", "Ordered tree for efficient search"),
+    Topic("avl-tree", "AVL Tree", "Data Structures", "Self-balancing BST with rotations"),
     Topic("heap", "Min Heap", "Data Structures", "Priority queue with heap property"),
+    Topic("trie", "Trie", "Data Structures", "Prefix tree for strings"),
     Topic("graph", "Graph (BFS/DFS)", "Data Structures", "Node and edge traversal"),
 
     // Networking L2/L3

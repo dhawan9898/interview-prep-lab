@@ -1,0 +1,131 @@
+{
+  "summary": "A doubly linked list gives every node both a next and a previous pointer. That allows traversal in both directions and O(1) insertion or deletion at a node you already hold, at the price of one extra pointer per node.",
+  "sections": [
+    {
+      "heading": "Node structure",
+      "code": "typedef struct DNode {\n  int val;\n  struct DNode *prev, *next;\n} DNode;\n\nDNode *head = NULL, *tail = NULL;"
+    },
+    {
+      "heading": "Insertion",
+      "body": "Update four pointers carefully, in an order that does not lose references.",
+      "code": "/* insert n after node p (p != NULL) */\nvoid insert_after(DNode *p, DNode *n) {\n  n->prev = p; n->next = p->next;\n  if (p->next) p->next->prev = n;\n  p->next = n;\n}\n/* push at front */\nvoid push_front(DNode **head, DNode *n) {\n  n->prev = NULL; n->next = *head;\n  if (*head) (*head)->prev = n;\n  *head = n;\n}"
+    },
+    {
+      "heading": "Deletion in O(1)",
+      "body": "With a pointer to the node you can unlink it directly, no search for the predecessor needed (unlike a singly linked list).",
+      "code": "void unlink_node(DNode **head, DNode *n) {\n  if (n->prev) n->prev->next = n->next; else *head = n->next;\n  if (n->next) n->next->prev = n->prev;\n  free(n);\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Insert/delete at head or tail (with a tail pointer): O(1).",
+        "Insert/delete given the node: O(1).",
+        "Search and access by index: O(n).",
+        "Memory: two pointers per node."
+      ]
+    },
+    {
+      "heading": "Versus singly linked lists",
+      "bullets": [
+        "Pros: backward traversal, O(1) delete of a known node, simpler tail operations.",
+        "Cons: more memory per node, more pointer updates (more bugs), poor cache locality like all linked lists."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Sentinel (dummy) nodes",
+      "summary": "Remove the edge cases.",
+      "sections": [
+        {
+          "body": "A circular list with a dummy head node means insert and delete never test for NULL at the ends: every real node always has a non-NULL prev and next. The Linux kernel's `struct list_head` is exactly this.",
+          "code": "struct list_head { struct list_head *next, *prev; };\n/* the list is circular; an empty list points to itself */"
+        }
+      ]
+    },
+    {
+      "title": "Intrusive lists in the kernel",
+      "summary": "Embedding the links in your struct.",
+      "sections": [
+        {
+          "body": "Instead of nodes that hold data, put a `list_head` inside your own struct and recover the container with `container_of`. One node type serves every list and no extra allocation is needed."
+        }
+      ]
+    },
+    {
+      "title": "LRU cache",
+      "summary": "Classic application.",
+      "sections": [
+        {
+          "body": "Pair a hash map (key to node) with a doubly linked list ordered by recency. On access, unlink the node and move it to the front in O(1); evict from the tail when full. Both get and put run in O(1)."
+        }
+      ]
+    },
+    {
+      "title": "Other uses",
+      "summary": "Where doubly linked lists appear.",
+      "sections": [
+        {
+          "bullets": [
+            "Undo/redo stacks and browser history (back/forward).",
+            "Music playlists with previous/next.",
+            "Text editors storing lines.",
+            "Deques implemented as linked lists."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Common bugs",
+      "summary": "What to check.",
+      "sections": [
+        {
+          "bullets": [
+            "Forgetting to update prev of the old head or next of the old tail.",
+            "Dereferencing NULL at the ends.",
+            "Freeing a node while another pointer still references it.",
+            "Breaking circular links in sentinel designs."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Each node links both ways; delete a known node in O(1).",
+    "Costs an extra pointer per node and more pointer updates.",
+    "Sentinel nodes remove NULL edge cases.",
+    "Backs LRU caches, kernel lists, and undo history."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Doubly linked list (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/doubly-linked-list/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Insert and delete at both ends",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse a doubly linked list",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Delete a node given only a pointer to it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement an LRU cache with a hash map and a doubly linked list",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Convert a doubly linked list to a balanced BST",
+      "difficulty": "Hard"
+    }
+  ]
+}

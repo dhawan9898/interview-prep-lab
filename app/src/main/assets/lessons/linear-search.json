@@ -1,0 +1,123 @@
+{
+  "summary": "Linear search checks elements one by one from the start until it finds the target or runs out. It needs no ordering and no random access, so it works on unsorted arrays and linked lists, at O(n) cost.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Start at index 0.",
+        "Compare the element with the target.",
+        "If equal, return the index.",
+        "Otherwise advance; if the end is reached, return -1."
+      ],
+      "code": "int linear_search(const int a[], int n, int target) {\n  for (int i = 0; i < n; i++)\n    if (a[i] == target) return i;\n  return -1;\n}"
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Best case: O(1), target is first.",
+        "Average: about n/2 comparisons, O(n).",
+        "Worst: n comparisons, O(n): target last or absent.",
+        "Space: O(1)."
+      ]
+    },
+    {
+      "heading": "When to use it",
+      "bullets": [
+        "Unsorted or small data, where sorting first would cost more.",
+        "Linked lists and streams, which allow only sequential access.",
+        "A single search on data you will not search again.",
+        "When simplicity matters more than speed."
+      ]
+    },
+    {
+      "heading": "Sentinel optimization",
+      "body": "Put the target at the end of the array as a sentinel so the loop needs only one comparison per element (no index bound check). Afterward, restore the last element and decide whether the match was real.",
+      "code": "int sentinel_search(int a[], int n, int target) {\n  int last = a[n - 1]; a[n - 1] = target;\n  int i = 0; while (a[i] != target) i++;\n  a[n - 1] = last;\n  return (i < n - 1 || last == target) ? i : -1;\n}"
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Searching for all occurrences",
+      "summary": "Collecting matches.",
+      "sections": [
+        {
+          "body": "Do not return on the first match; record every index (or count). Time stays O(n)."
+        }
+      ]
+    },
+    {
+      "title": "Self-organizing lists",
+      "summary": "Move-to-front and transpose.",
+      "sections": [
+        {
+          "body": "If some items are searched far more often, moving a found item toward the front makes future searches cheaper. Effective on skewed access patterns such as caches of recent keys."
+        }
+      ]
+    },
+    {
+      "title": "Linear versus binary search",
+      "summary": "The trade-off.",
+      "sections": [
+        {
+          "body": "Binary search is O(log n) but requires sorted data with random access. If you search once, linear search is cheaper than sorting (O(n log n)) plus binary search. If you search many times, sort once and use binary search or a hash table."
+        }
+      ]
+    },
+    {
+      "title": "Search in a linked list",
+      "summary": "Pointer walk.",
+      "sections": [
+        {
+          "code": "Node *find(Node *head, int key) {\n  for (Node *p = head; p; p = p->next) if (p->val == key) return p;\n  return NULL;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Early termination on sorted data",
+      "summary": "A small gain.",
+      "sections": [
+        {
+          "body": "If the data is sorted ascending, stop as soon as an element exceeds the target. This halves the average cost for absent targets but is still O(n)."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Check each element in order: O(n) time, O(1) space.",
+    "Works on unsorted data and linked lists.",
+    "Best for small or one-off searches.",
+    "Sentinels and move-to-front are micro-optimizations."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Linear search (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/linear-search/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Return the index of the first occurrence",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count all occurrences of a value",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement sentinel linear search",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the second occurrence",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Search a linked list for a key",
+      "difficulty": "Easy"
+    }
+  ]
+}

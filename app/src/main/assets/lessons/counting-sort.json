@@ -1,0 +1,123 @@
+{
+  "summary": "Counting sort sorts integers without comparing them. It counts how many times each key occurs, turns the counts into positions with prefix sums, and places each element directly. Running time is O(n + k) for keys in the range 0..k, so it beats comparison sorts when k is small.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Find the maximum key k and make a count array of size k + 1, all zeros.",
+        "Count: for each x, count[x]++.",
+        "Prefix sums: count[i] += count[i-1], so count[x] is the number of elements <= x.",
+        "Place: walk the input from right to left; put x at output[--count[x]]."
+      ],
+      "code": "void counting_sort(const int in[], int out[], int n, int k) {\n  int *count = calloc(k + 1, sizeof *count);\n  for (int i = 0; i < n; i++) count[in[i]]++;\n  for (int v = 1; v <= k; v++) count[v] += count[v - 1];\n  for (int i = n - 1; i >= 0; i--) out[--count[in[i]]] = in[i];   // right to left = stable\n  free(count);\n}"
+    },
+    {
+      "heading": "Why right to left",
+      "body": "Equal keys occupy a range of output positions. Scanning the input from the end and filling that range from its top keeps equal elements in their original order, so counting sort is stable. Stability is what lets it serve as the digit sort inside radix sort."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Time: O(n + k).",
+        "Space: O(n + k): the output array plus the counts.",
+        "Stable (with the right-to-left placement).",
+        "Not comparison-based, so the O(n log n) lower bound does not apply."
+      ]
+    },
+    {
+      "heading": "Limits",
+      "bullets": [
+        "Keys must be integers (or mappable to small integers).",
+        "A huge range k makes it slow and memory-hungry; sorting 10 numbers in 0..10^9 is a bad use.",
+        "Negative numbers need an offset by the minimum.",
+        "Not in place."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Walkthrough",
+      "summary": "Sorting [4, 2, 2, 8, 3, 3, 1].",
+      "sections": [
+        {
+          "body": "Counts for 0..8: [0,1,2,2,1,0,0,0,1]. Prefix sums: [0,1,3,5,6,6,6,6,7]. Placing right to left yields [1, 2, 2, 3, 3, 4, 8]."
+        }
+      ]
+    },
+    {
+      "title": "Radix sort",
+      "summary": "Sorting by digits.",
+      "sections": [
+        {
+          "body": "Radix sort applies a stable counting sort to each digit from least to most significant. For d-digit numbers in base b it runs in O(d (n + b)), which can beat O(n log n) for fixed-width keys such as 32-bit integers (4 passes of base 256)."
+        }
+      ]
+    },
+    {
+      "title": "Bucket sort",
+      "summary": "The related idea for real numbers.",
+      "sections": [
+        {
+          "body": "Distribute values into buckets by range, sort each bucket (often with insertion sort), and concatenate. Expected O(n) when input is uniformly distributed."
+        }
+      ]
+    },
+    {
+      "title": "Counting sort for frequencies",
+      "summary": "Not only sorting.",
+      "sections": [
+        {
+          "body": "The counting phase alone gives character frequencies, histograms, and anagram checks in O(n), and the prefix sums answer 'how many elements are <= x?' queries instantly."
+        }
+      ]
+    },
+    {
+      "title": "Negative values and offsets",
+      "summary": "Handling a shifted range.",
+      "sections": [
+        {
+          "body": "Subtract the minimum from every key, sort in 0..(max-min), and add it back on output. The count array then spans max - min + 1 entries.",
+          "code": "int off = min; count[in[i] - off]++;"
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Count occurrences, prefix-sum, place right to left.",
+    "O(n + k) time and space; stable.",
+    "Great for small integer ranges; poor for large ones.",
+    "Stable counting sort powers radix sort."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Counting sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/counting-sort/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Sort characters of a string by frequency",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement stable counting sort and verify stability",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort an array containing negative numbers",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement LSD radix sort with a counting-sort digit pass",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort 0s, 1s, and 2s in one pass",
+      "difficulty": "Easy"
+    }
+  ]
+}

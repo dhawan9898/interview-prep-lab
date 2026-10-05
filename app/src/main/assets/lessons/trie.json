@@ -1,0 +1,130 @@
+{
+  "summary": "A trie (prefix tree) stores strings along root-to-node paths, one character per edge. Inserting, searching, and prefix-searching a string of length L all take O(L) time regardless of how many strings are stored, which makes tries ideal for autocomplete and dictionaries.",
+  "sections": [
+    {
+      "heading": "Structure",
+      "body": "Each node has links to children (an array of 26 for lowercase letters, or a map for larger alphabets) and a flag marking that a word ends here. The root represents the empty prefix.",
+      "code": "typedef struct TrieNode {\n  struct TrieNode *child[26];\n  int is_end;\n} TrieNode;\n\nTrieNode *node_new(void) { return calloc(1, sizeof(TrieNode)); }"
+    },
+    {
+      "heading": "Insert and search",
+      "body": "Walk the characters, creating missing nodes on insert. Search succeeds only if the walk completes and the final node's end flag is set.",
+      "code": "void insert(TrieNode *root, const char *w) {\n  for (; *w; w++) {\n    int c = *w - 'a';\n    if (!root->child[c]) root->child[c] = node_new();\n    root = root->child[c];\n  }\n  root->is_end = 1;\n}\nint search(TrieNode *root, const char *w) {\n  for (; *w; w++) { root = root->child[*w - 'a']; if (!root) return 0; }\n  return root->is_end;\n}"
+    },
+    {
+      "heading": "Prefix queries",
+      "body": "To test whether any word starts with a prefix, walk the prefix and succeed if all nodes exist (ignore the end flag). To autocomplete, walk the prefix, then depth-first collect every word below that node."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Insert, search, prefix check: O(L) where L is the string length, independent of the number of words.",
+        "Space: O(total characters × alphabet size) in the array form; can be large.",
+        "No hashing or collision handling needed; keys come out in lexicographic order."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Deletion",
+      "summary": "Prune unused branches.",
+      "sections": [
+        {
+          "body": "Unmark the end flag, then walk back up freeing nodes that have no children and are not the end of another word. Recursion makes this natural."
+        }
+      ]
+    },
+    {
+      "title": "Reducing memory",
+      "summary": "Compressed tries and maps.",
+      "sections": [
+        {
+          "bullets": [
+            "Store children in a hash map or sorted list instead of a fixed array.",
+            "Compressed (radix/Patricia) trie: merge chains of single-child nodes into one edge labelled with a substring.",
+            "Ternary search tries: three-way BST nodes per character, compact and still prefix-friendly."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Applications",
+      "summary": "Where tries are used.",
+      "sections": [
+        {
+          "bullets": [
+            "Autocomplete and typeahead.",
+            "Spell checkers and dictionary lookups.",
+            "IP routing tables: a binary trie over address bits implements longest-prefix match.",
+            "T9 text prediction and word games.",
+            "Longest common prefix of many strings."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Trie versus hash table",
+      "summary": "Trade-offs.",
+      "sections": [
+        {
+          "bullets": [
+            "Trie supports prefix search and sorted iteration; hash tables do not.",
+            "Hash tables use less memory and have better constants for exact lookups.",
+            "Trie lookup time depends on key length, not table size."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Binary tries for numbers",
+      "summary": "Bitwise tries.",
+      "sections": [
+        {
+          "body": "Store integers bit by bit to answer queries like 'maximum XOR with any stored number' in O(bits): at each bit choose the child that gives the opposite bit when possible."
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Paths from the root spell strings; a flag marks word ends.",
+    "Insert, search, and prefix queries are O(L).",
+    "Great for autocomplete and longest-prefix problems; memory can be large.",
+    "Compressed tries cut memory by merging single-child chains."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Trie data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/trie-insert-and-search/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement insert, search, and startsWith",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Autocomplete: list all words with a given prefix",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest common prefix of an array of strings",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Word search II: find dictionary words in a grid",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Maximum XOR of two numbers using a binary trie",
+      "difficulty": "Hard"
+    }
+  ]
+}

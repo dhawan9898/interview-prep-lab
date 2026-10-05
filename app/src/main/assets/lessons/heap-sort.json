@@ -1,0 +1,131 @@
+{
+  "summary": "Heap sort turns the array into a max-heap, then repeatedly swaps the largest element (the root) to the end of the array and restores the heap on the remaining prefix. It sorts in place in O(n log n) worst-case time but is not stable.",
+  "sections": [
+    {
+      "heading": "Algorithm",
+      "bullets": [
+        "Build a max-heap from the array (heapify from the last parent down to index 0).",
+        "Swap the root (maximum) with the last element of the heap.",
+        "Shrink the heap by one and sift the new root down.",
+        "Repeat until the heap has one element."
+      ],
+      "code": "void sift_down(int a[], int n, int i) {\n  for (;;) {\n    int l = 2*i + 1, r = l + 1, big = i;\n    if (l < n && a[l] > a[big]) big = l;\n    if (r < n && a[r] > a[big]) big = r;\n    if (big == i) return;\n    swap(&a[i], &a[big]); i = big;\n  }\n}\nvoid heap_sort(int a[], int n) {\n  for (int i = n/2 - 1; i >= 0; i--) sift_down(a, n, i);\n  for (int end = n - 1; end > 0; end--) { swap(&a[0], &a[end]); sift_down(a, end, 0); }\n}"
+    },
+    {
+      "heading": "Why it works",
+      "body": "The max-heap invariant puts the largest remaining value at index 0. Moving it to the end places it in its final position, and the shrinking heap region holds the unsorted rest. Each of the n extractions costs O(log n)."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Build-heap: O(n).",
+        "n sift-downs: O(n log n).",
+        "Total: O(n log n) in best, average, and worst cases.",
+        "Space: O(1) with the iterative sift-down (O(log n) if recursive).",
+        "Not stable: swapping the root to the end reorders equal keys."
+      ]
+    },
+    {
+      "heading": "Heap sort versus quick and merge sort",
+      "bullets": [
+        "Worst case beats quick sort's O(n²) and needs no extra memory unlike merge sort.",
+        "In practice it is 2-3x slower than a good quick sort because it jumps around memory (poor cache locality).",
+        "Used as the fallback in introsort when quick sort recursion gets too deep."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Why build-heap is O(n)",
+      "summary": "The sum converges.",
+      "sections": [
+        {
+          "body": "Sifting down from the last parent, most nodes are near the leaves and move a few levels at most. The total work is bounded by O(n), not O(n log n), which is why starting from the middle is faster than inserting n items."
+        }
+      ]
+    },
+    {
+      "title": "Min-heap variant",
+      "summary": "Sorting descending.",
+      "sections": [
+        {
+          "body": "Use a min-heap and the same extraction step to produce a descending array, or build a max-heap for ascending order. The choice only flips comparisons."
+        }
+      ]
+    },
+    {
+      "title": "Heap sort for top-k",
+      "summary": "Partial sorting.",
+      "sections": [
+        {
+          "body": "To get the k largest items, keep a min-heap of size k and push each element, popping the smallest when the heap exceeds k. That is O(n log k), cheaper than a full sort."
+        }
+      ]
+    },
+    {
+      "title": "Smoothsort and weak heaps",
+      "summary": "Variants.",
+      "sections": [
+        {
+          "body": "Smoothsort adapts heap sort to run in O(n) on nearly sorted input. Weak-heap sort reduces comparisons. Both trade code complexity for speed on special inputs."
+        }
+      ]
+    },
+    {
+      "title": "Choosing a sort",
+      "summary": "Decision guide.",
+      "sections": [
+        {
+          "bullets": [
+            "Need stability: merge sort or Timsort.",
+            "Need worst-case guarantee in O(1) space: heap sort.",
+            "Fastest in practice on arrays: introsort or quick sort.",
+            "Tiny arrays: insertion sort."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Build a max-heap, then repeatedly move the root to the end and sift down.",
+    "O(n log n) worst case, O(1) space, not stable.",
+    "Poor cache locality makes it slower than quick sort in practice.",
+    "Heaps give O(n log k) top-k selection."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Heap sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/heap-sort/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Implement heap sort in place",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort an array in descending order using a min-heap",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the k-th largest element with a size-k heap",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort a nearly sorted (k-sorted) array in O(n log k)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why heap sort is not stable with an example",
+      "difficulty": "Easy"
+    }
+  ]
+}

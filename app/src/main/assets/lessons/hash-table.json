@@ -1,0 +1,140 @@
+{
+  "summary": "A hash table stores key-value pairs and finds them in O(1) average time. A hash function maps each key to a bucket index; collisions, where two keys land in the same bucket, are resolved by chaining or probing, and the table is resized to keep the load factor low.",
+  "sections": [
+    {
+      "heading": "Hash functions",
+      "body": "A hash function turns a key into an integer, then `index = hash % table_size`. A good one is fast, deterministic, and spreads keys uniformly. For strings, a polynomial hash such as djb2 is a common simple choice.",
+      "code": "unsigned long djb2(const char *s) {\n  unsigned long h = 5381; int c;\n  while ((c = *s++)) h = h * 33 + c;\n  return h;\n}\nsize_t idx = djb2(key) % cap;"
+    },
+    {
+      "heading": "Separate chaining",
+      "body": "Each bucket holds a linked list of the entries that hash there. Insert at the head, search by walking the list. It degrades gracefully as the load factor rises.",
+      "code": "typedef struct Entry { char *key; int val; struct Entry *next; } Entry;\nEntry *table[CAP];\nvoid put(const char *k, int v) {\n  size_t i = djb2(k) % CAP;\n  for (Entry *e = table[i]; e; e = e->next) if (!strcmp(e->key, k)) { e->val = v; return; }\n  Entry *n = malloc(sizeof *n); n->key = strdup(k); n->val = v; n->next = table[i]; table[i] = n;\n}"
+    },
+    {
+      "heading": "Open addressing",
+      "body": "All entries live in the array itself. On a collision, probe for another slot.",
+      "bullets": [
+        "Linear probing: try i+1, i+2, ... Simple and cache friendly but forms clusters.",
+        "Quadratic probing: i + 1², i + 2², ... Reduces clustering.",
+        "Double hashing: step size from a second hash. Best distribution."
+      ]
+    },
+    {
+      "heading": "Load factor and resizing",
+      "body": "Load factor α = entries / buckets. Chaining works up to α around 1; open addressing needs α below roughly 0.7 to stay fast. When α passes a threshold, allocate a larger table (often 2x) and rehash every key; amortized cost per insert stays O(1)."
+    },
+    {
+      "heading": "Complexity",
+      "bullets": [
+        "Average insert, search, delete: O(1).",
+        "Worst case: O(n) when many keys collide (bad hash or adversarial input).",
+        "Space: O(n) plus unused buckets.",
+        "No ordered traversal."
+      ]
+    }
+  ],
+  "subtopics": [
+    {
+      "title": "Deletion in open addressing",
+      "summary": "Tombstones.",
+      "sections": [
+        {
+          "body": "Removing an entry by emptying its slot would break probe chains for keys inserted after it. Mark the slot as deleted (a tombstone) so searches continue past it, and clean up during resize."
+        }
+      ]
+    },
+    {
+      "title": "Choosing the table size",
+      "summary": "Primes and powers of two.",
+      "sections": [
+        {
+          "body": "A prime size spreads poor hash functions better under modulo; a power of two lets you replace `%` with a bit mask but requires a hash with good low bits. Many implementations mix the hash bits before masking."
+        }
+      ]
+    },
+    {
+      "title": "Hash flooding attacks",
+      "summary": "Security.",
+      "sections": [
+        {
+          "body": "If an attacker can choose keys that collide, lookups degrade to O(n) and can deny service. Languages defend with randomized per-process seeds and keyed hashes such as SipHash."
+        }
+      ]
+    },
+    {
+      "title": "Hash table versus tree map",
+      "summary": "Choosing a dictionary.",
+      "sections": [
+        {
+          "bullets": [
+            "Hash table: faster average lookups, unordered.",
+            "Balanced tree map (red-black, AVL): O(log n) with ordered iteration, range queries, predecessor/successor.",
+            "Use a hash table for pure lookup; a tree when order matters."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Applications",
+      "summary": "Everywhere.",
+      "sections": [
+        {
+          "bullets": [
+            "Symbol tables in compilers and interpreters.",
+            "Caches and memoization.",
+            "Counting frequencies and detecting duplicates.",
+            "Database indexes and sets.",
+            "Python dict, Java HashMap, C++ unordered_map."
+          ]
+        }
+      ]
+    }
+  ],
+  "takeaways": [
+    "Hash maps keys to buckets: O(1) average, O(n) worst.",
+    "Resolve collisions by chaining or open addressing (probing).",
+    "Keep the load factor low and rehash when it grows.",
+    "Use a good, ideally seeded, hash function."
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
+      "url": "https://algs4.cs.princeton.edu/home/"
+    },
+    {
+      "label": "Reference: Hash table data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/hash-table-data-structure/"
+    }
+  ],
+  "practice": [
+    {
+      "title": "Two Sum using a hash map",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count word frequencies in a text",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a hash table with chaining",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement open addressing with linear probing and tombstones",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest substring without repeating characters",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design an LRU cache",
+      "difficulty": "Hard"
+    }
+  ]
+}

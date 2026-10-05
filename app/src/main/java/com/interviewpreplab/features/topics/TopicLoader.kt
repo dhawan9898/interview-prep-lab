@@ -120,6 +120,11 @@ import com.interviewpreplab.features.data_structures.QueueRunner
 import com.interviewpreplab.features.data_structures.StackRunner
 import com.interviewpreplab.features.searches.BinarySearchRunner
 import com.interviewpreplab.features.sorts.BubbleSortRunner
+import com.interviewpreplab.features.sorts.HeapSortRunner
+import com.interviewpreplab.features.sorts.MergeSortRunner
+import com.interviewpreplab.features.sorts.ShellSortRunner
+import com.interviewpreplab.features.searches.JumpSearchRunner
+import com.interviewpreplab.features.searches.LinearSearchRunner
 import com.interviewpreplab.features.sorts.InsertionSortRunner
 import com.interviewpreplab.features.sorts.QuickSortRunner
 import com.interviewpreplab.features.sorts.SelectionSortRunner
@@ -145,6 +150,11 @@ fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
         "insertion-sort" -> InsertionSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
         "quick-sort" -> QuickSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
         "binary-search" -> BinarySearchRunner.run(listOf(1, 2, 3, 5, 8, 9), 5)
+        "shell-sort" -> ShellSortRunner.run(listOf(9, 4, 7, 1, 8, 2, 6, 3))
+        "merge-sort" -> MergeSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
+        "heap-sort" -> HeapSortRunner.run(listOf(5, 2, 8, 1, 9, 3))
+        "linear-search" -> LinearSearchRunner.run(listOf(4, 8, 2, 9, 5, 1), 9)
+        "jump-search" -> JumpSearchRunner.run(listOf(1, 3, 5, 7, 9, 11, 13, 15, 17), 13)
         "stack" -> {
             val frames = mutableListOf(StackRunner.buildInitial())
             var state = StackRunner.StackState()
