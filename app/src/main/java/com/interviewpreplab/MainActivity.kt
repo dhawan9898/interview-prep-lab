@@ -98,6 +98,8 @@ fun TopicListScreen(onTopicSelected: (Topic) -> Unit) {
     val topics = listOf(
         Topic("bubble-sort", "Bubble Sort", "Sorting", "Simple comparison-based sort"),
         Topic("stack", "Stack", "Data Structures", "LIFO data structure"),
+        Topic("queue", "Queue", "Data Structures", "FIFO data structure with dead space"),
+        Topic("circular-queue", "Circular Queue", "Data Structures", "FIFO with modulo wraparound"),
         Topic("linked-list", "Singly Linked List", "Data Structures", "Dynamic list with pointers"),
     )
 
@@ -266,6 +268,40 @@ private fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
 
             val (f3, s3) = StackRunner.runPop(state)
             frames.addAll(f3)
+
+            frames
+        }
+        "queue" -> {
+            // Interactive queue demo: enqueue 10, 20, dequeue
+            val frames = mutableListOf(QueueRunner.buildInitial())
+            var state = QueueRunner.QueueState(mutableListOf(), 0, -1)
+
+            val (f1, s1) = QueueRunner.enqueue(state, 10)
+            frames.addAll(f1)
+            state = s1
+
+            val (f2, s2) = QueueRunner.enqueue(state, 20)
+            frames.addAll(f2)
+            state = s2
+
+            val (f3, s3) = QueueRunner.dequeue(state)
+            frames.addAll(f3)
+
+            frames
+        }
+        "circular-queue" -> {
+            // Interactive circular queue demo: enqueue values, show wraparound
+            val frames = mutableListOf(CircularQueueRunner.buildInitial())
+            var state = CircularQueueRunner.CircularQueueState(MutableList(5) { null }, 0, 0)
+
+            for (i in 1..3) {
+                val (f, s) = CircularQueueRunner.enqueue(state, i * 10)
+                frames.addAll(f)
+                state = s
+            }
+
+            val (fd, sd) = CircularQueueRunner.dequeue(state)
+            frames.addAll(fd)
 
             frames
         }
