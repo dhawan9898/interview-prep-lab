@@ -1,88 +1,270 @@
 {
-  "summary": "TCP opens a connection with a three-way handshake: SYN, SYN-ACK, ACK. It agrees initial sequence numbers and confirms that both sides can send and receive before any data flows.",
+  "summary": "The TCP three-way handshake (SYN, SYN-ACK, ACK) opens a connection by letting each side pick an initial sequence number, have it acknowledged, and agree on options such as MSS, window scaling, SACK and timestamps. It costs one round trip before the client may rely on the connection, which is why connection reuse and TCP Fast Open matter for latency. It underpins every HTTP, TLS, SSH and database session you open, and its half-open state is the target of SYN floods that SYN cookies were invented to defeat. You need it for networking interviews, for reading tcpdump output, and for tuning listen backlogs.",
   "sections": [
     {
-      "heading": "The exchange (RFC 9293, section 3.5)",
-      "body": "Client calls connect(); server is in LISTEN. Example initial sequence numbers 100 (client) and 300 (server):",
-      "code": "Client                          Server\nCLOSED                          LISTEN\n  --- SYN seq=100 ----------->  \nSYN-SENT                        SYN-RECEIVED\n  <-- SYN+ACK seq=300 ack=101 -- \nESTABLISHED                     \n  --- ACK seq=101 ack=301 ----->  \n                                ESTABLISHED"
+      "heading": "Overview",
+      "body": "TCP is a byte-stream protocol that promises ordered, reliable delivery. To keep that promise both ends need shared state: where each byte stream starts (the initial sequence number, ISN), how much the peer can buffer (the window), and which optional features are enabled. The three-way handshake creates that state. It is defined in RFC 9293, section 3.5, which replaced the older RFC 793.\n\nThe client does an **active open** (it calls `connect()`), and the server does a **passive open** (it called `listen()` and is waiting). Each side must send a SYN (synchronize) segment carrying its ISN and must see that SYN acknowledged. Because the server's acknowledgment of the client's SYN and the server's own SYN can ride in one segment, four logical messages collapse into three packets. After the third packet both sides are in ESTABLISHED and data can flow in both directions.\n\nIt also guards against old duplicate segments. If a delayed SYN from an earlier connection shows up at the server, the server answers with SYN-ACK, but the real client has no matching state, so it replies with RST and the bogus half-open attempt is discarded. This is the original reason the designers chose a three-way exchange over a two-way one."
     },
     {
-      "heading": "Why three steps",
-      "body": "Each side must send a SYN and have it acknowledged. The server's SYN and its ACK of the client's SYN are combined into one packet (SYN+ACK), so four messages become three. Both directions are thereby synchronized."
-    },
-    {
-      "heading": "What is negotiated",
+      "heading": "Core Concepts",
       "bullets": [
-        "Initial sequence numbers (ISNs), one per direction.",
-        "Maximum Segment Size (MSS) option.",
-        "Window scale factor, SACK-permitted, and timestamps options.",
-        "Receive windows."
+        "**SYN**: a header flag meaning synchronize sequence numbers. A segment with SYN set carries the sender's ISN in the sequence number field and consumes one unit of sequence space.",
+        "**ACK**: a flag meaning the acknowledgment number field is valid. It holds the next sequence number the sender expects to receive. After the first SYN every segment has ACK set.",
+        "**ISN**: the initial sequence number. It is 32 bits, chosen separately by each side, so there are two independent byte streams.",
+        "**Sequence space**: SYN and FIN each count as one byte. That is why the ACK to a SYN with seq=100 carries ack=101 even though no data was sent.",
+        "**Active open and passive open**: `connect()` versus `listen()` plus `accept()`. A simultaneous open (both sides active) is legal but rare.",
+        "**Half-open connection**: a server in SYN-RECEIVED that has sent SYN-ACK but not yet seen the final ACK. It occupies kernel memory, which is what a SYN flood abuses.",
+        "**4-tuple**: source IP, source port, destination IP, destination port. It uniquely names a TCP connection; the listening socket is shared and each established connection gets its own 4-tuple.",
+        "**MSS**: maximum segment size, the largest TCP payload a side will accept per segment. Typically 1460 on Ethernet with IPv4 (1500 MTU minus 20 IP minus 20 TCP) and 1440 with IPv6.",
+        "**Window**: the 16-bit receive window field in the header, how many bytes the sender of this segment can currently accept. Scaled by the window scale option.",
+        "**Backlog**: the bound passed to `listen()`. On Linux it limits the accept queue of fully established connections that your program has not yet picked up with `accept()`."
       ]
     },
     {
-      "heading": "Initial sequence numbers",
-      "body": "ISNs must be unpredictable, otherwise an attacker can forge segments. RFC 9293 describes ISN = a 4-microsecond clock + a keyed hash of the connection 4-tuple and a secret that outsiders cannot compute."
+      "heading": "How It Works",
+      "body": "Take a client at 10.0.0.5:51514 connecting to a server at 203.0.113.7:443. The client picks ISN 1000 and the server picks ISN 5000. The exchange is: The numbers you should be able to recompute in an interview: the SYN consumed one sequence number, so the client's first data byte has sequence number ISN+1 (1001) and the server's first data byte has 5001. If the client sends 100 bytes starting at 1001, the server's ACK says 1101.",
+      "code": "Client                                     Server\nCLOSED                                     LISTEN\n  -- SYN   seq=1000 ------------------>     (server records peer, ISN)\nSYN-SENT                                   SYN-RECEIVED\n  <- SYN+ACK seq=5000 ack=1001 ---------\nESTABLISHED\n  -- ACK   seq=1001 ack=5001 ---------->\n                                           ESTABLISHED\n  -- data  seq=1001 len=100 ------------>   (data may ride on the 3rd packet)",
+      "bullets": [
+        "**1. SYN**: the client sends a segment with only SYN set, seq=1000, window, and options (MSS, window scale, SACK permitted, timestamps). It moves from CLOSED to SYN-SENT and starts a retransmission timer, with the initial timeout normally 1 second.",
+        "**2. SYN-ACK**: the server, in LISTEN, sees the SYN, picks its own ISN (5000), and replies with SYN and ACK set, seq=5000, ack=1001. It moves to SYN-RECEIVED and keeps a small record of the pending connection.",
+        "**3. ACK**: the client receives the SYN-ACK, which proves the server can receive and respond. It moves to ESTABLISHED and sends ACK with seq=1001, ack=5001. The server, on receiving it, also reaches ESTABLISHED and the connection is placed in the accept queue so `accept()` can return it.",
+        "**Data**: the client may send application bytes as soon as it enters ESTABLISHED, including in the third packet itself. The server cannot send application data until it has the final ACK, so a client-speaks-first protocol such as HTTP costs one RTT for the handshake before the request goes out, plus one more RTT for the first response."
+      ]
     },
     {
-      "heading": "SYN consumes a sequence number",
-      "body": "A SYN counts as one byte of sequence space, which is why the acknowledgment is ISN+1 (101 and 301 above)."
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Simultaneous open**: both ends send SYN at once. Each moves SYN-SENT to SYN-RECEIVED on seeing the other's SYN, each sends SYN-ACK, and each reaches ESTABLISHED on receiving it. Four segments, one connection.",
+        "**SYN cookies**: a server defence that stores no state after receiving a SYN. The ISN in the SYN-ACK encodes a hash, and the connection is rebuilt from the returning ACK.",
+        "**TCP Fast Open (RFC 7413)**: the client gets a cookie from a previous connection and then puts data in the SYN. The server may deliver it to the application at once, saving one RTT on repeat connections.",
+        "**Reset on closed port**: if nothing is listening, the host answers a SYN with RST+ACK, and `connect()` fails fast with ECONNREFUSED.",
+        "**ECN setup**: a client that supports Explicit Congestion Notification sets ECE and CWR on the SYN; a supporting server answers SYN-ACK with ECE only.",
+        "**Multipath TCP and QUIC**: MPTCP uses the same handshake with extra options to join subflows. QUIC skips TCP entirely and merges transport and TLS setup into one flight."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Latency**: one RTT before the client can send useful data and a second before the response arrives. At 100 ms RTT that is 100 ms of pure setup, and TLS 1.3 on top adds another RTT.",
+        "**Packets**: 3 for setup, all small (about 60 to 80 bytes with options on the wire, plus link headers).",
+        "**Server memory**: one request-sock entry per half-open connection, on the order of a few hundred bytes. Millions of spoofed SYNs can exhaust the queue.",
+        "**Retransmission**: the SYN is resent with exponential backoff, 1, 2, 4, 8, 16, 32 seconds. Linux `tcp_syn_retries` defaults to 6, so a connect to a black hole fails after about 127 seconds.",
+        "**Server side retries**: `tcp_synack_retries` defaults to 5 on Linux, roughly 63 seconds of resending SYN-ACK to a client that never completes.",
+        "**Queues**: the SYN queue is sized by `tcp_max_syn_backlog`, and the accept queue by `min(listen backlog, net.core.somaxconn)`. `somaxconn` defaults to 4096 on recent kernels and 128 on old ones.",
+        "**Initial window**: modern stacks send 10 segments (RFC 6928) in the first flight after the handshake, about 14.6 KB."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Counting the wrong ACK**: the SYN-ACK acknowledges ISN+1, not ISN. Forgetting that SYN occupies a sequence number is the most common arithmetic slip.",
+        "**Predictable ISNs**: sequential or clock-only ISNs let an off-path attacker guess sequence numbers and inject segments or hijack sessions. RFC 6528 mandates a keyed hash per 4-tuple.",
+        "**SYN flood**: spoofed SYNs fill the half-open queue; legitimate clients see timeouts. Mitigate with SYN cookies, bigger backlog, shorter SYN-RECEIVED lifetime and upstream filtering.",
+        "**Backlog confusion**: a full accept queue makes Linux drop the final ACK (or the SYN), so the client believes it is connected while the server has not accepted. Symptoms are slow first requests and the `ListenOverflows` counter in `nstat`.",
+        "**Assuming SYN-ACK means the app is ready**: the kernel completes the handshake before your process calls `accept()`. A busy or hung server still accepts connections into the queue.",
+        "**Firewalls dropping instead of rejecting**: DROP gives a 127 second timeout; REJECT gives an immediate error. Both look like connectivity failures but diagnose differently.",
+        "**Options asymmetry**: window scale is only active if both SYN and SYN-ACK carry it. A middlebox that strips options leaves you with a 64 KB window and poor throughput on fast links.",
+        "**Port reuse after close**: reconnecting to the same 4-tuple soon after a close can collide with TIME-WAIT, covered in the teardown lesson."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Every TCP service**: HTTP/1.1 and HTTP/2, SSH, SMTP, PostgreSQL and Redis all begin with this handshake. Browsers keep connections alive and pool them to pay for it once.",
+        "**Load balancers**: L4 balancers either proxy the handshake (terminating then reconnecting) or pass it through while tracking the 4-tuple in a connection table.",
+        "**Diagnostics**: `ss -tan state syn-sent` shows stuck outbound connects, `ss -tan state syn-recv` shows half-open ones, and `nstat -az TcpExtListenOverflows` reveals accept queue overflow.",
+        "**Port scanning**: `nmap -sS` sends a SYN and treats SYN-ACK as open and RST as closed, then sends RST rather than completing, so it stays half-open.",
+        "**DDoS defence**: CDNs and cloud providers absorb SYN floods with cookies and proxying at their edge.",
+        "**Latency tuning**: TFO, TLS 1.3 and HTTP/3 over QUIC all exist largely to cut handshake round trips."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why three packets, not two?** Each direction needs its own ISN acknowledged, and the third packet proves the client received the server's SYN, which also protects against stale duplicate SYNs.",
+        "**Why not four?** The server's ACK and SYN are sent together, so 4 collapses to 3.",
+        "**What does a SYN consume?** One sequence number. Same for FIN.",
+        "**What is ISN randomisation for?** Stop off-path spoofing and avoid confusion with old segments of an earlier incarnation of the same 4-tuple.",
+        "**What is a SYN flood and how do SYN cookies help?** Floods fill the half-open queue; cookies encode state in the ISN so nothing is stored until a valid ACK returns.",
+        "**Which states does each side pass through?** Client: CLOSED, SYN-SENT, ESTABLISHED. Server: CLOSED, LISTEN, SYN-RECEIVED, ESTABLISHED.",
+        "**Can data go in the SYN?** Not in standard TCP semantics for delivery; with TFO, yes, using a cookie.",
+        "**Is connect() success proof the server application is running?** It proves the kernel accepted the connection, not that a process will serve it."
+      ]
     }
   ],
   "subtopics": [
     {
       "title": "TCP states during setup",
-      "summary": "Client and server views.",
+      "summary": "Client and server state transitions in RFC 9293.",
       "sections": [
         {
+          "body": "The client moves CLOSED to SYN-SENT when `connect()` sends the SYN, then to ESTABLISHED on receiving a valid SYN-ACK. The server moves CLOSED to LISTEN on `listen()`, to SYN-RECEIVED on a SYN, and to ESTABLISHED on the ACK.",
           "bullets": [
-            "Client: CLOSED -> SYN-SENT -> ESTABLISHED.",
-            "Server: CLOSED -> LISTEN -> SYN-RECEIVED -> ESTABLISHED."
+            "**CLOSED**: no connection state exists.",
+            "**LISTEN**: waiting for any SYN on the bound port.",
+            "**SYN-SENT**: SYN sent, waiting for SYN-ACK. If a bare SYN arrives instead, that is a simultaneous open.",
+            "**SYN-RECEIVED**: SYN-ACK sent, waiting for the confirming ACK. A RST from the peer returns a passive-opened socket to LISTEN.",
+            "**ESTABLISHED**: data transfer state."
           ]
         }
       ]
     },
     {
-      "title": "SYN flood and SYN cookies",
-      "summary": "Attack on the half-open state.",
+      "title": "Initial sequence number selection",
+      "summary": "Why ISNs are unpredictable and how they are built.",
       "sections": [
         {
-          "body": "A flood of SYNs fills the server's half-open queue. SYN cookies encode state in the server's ISN so no memory is held until the final ACK returns with a valid cookie, letting the connection be rebuilt."
+          "body": "RFC 9293 describes ISN = M + F(local IP, local port, remote IP, remote port, secret key), where M is a clock that ticks about every 4 microseconds (so it wraps roughly every 4.55 hours) and F is a keyed pseudorandom function such as SipHash. The clock term keeps successive connections on one 4-tuple from overlapping within the MSL. The hash term stops an attacker who can see one of your ISNs from predicting the next for a different 4-tuple.\n\nOld stacks used a counter that stepped by a fixed amount, which enabled the Mitnick-style spoofing attack of 1994: guess the server's next ISN, forge the third ACK, and obtain a trusted session without ever seeing the SYN-ACK."
+        }
+      ]
+    },
+    {
+      "title": "SYN flood and SYN cookies",
+      "summary": "Attack on the half-open state and the stateless defence.",
+      "sections": [
+        {
+          "body": "A SYN flood sends many SYNs, often with spoofed source addresses. The server answers each with SYN-ACK and holds a request entry for about a minute while waiting for an ACK that never comes. When the SYN queue is full, new legitimate SYNs are dropped.\n\nWith SYN cookies enabled (`net.ipv4.tcp_syncookies=1`, which activates only under overflow), the server keeps nothing. It encodes a 5-bit time counter (64 second granularity), a 3-bit index into a small MSS table, and a 24-bit keyed hash of the 4-tuple and counter into the ISN of its SYN-ACK. A real client's ACK returns ack = cookie+1, so the server recomputes the hash, validates it, decodes the MSS and builds the connection. The cost is that options not encoded in the cookie (such as window scale and SACK) are lost unless carried in the timestamp field, which Linux does."
         }
       ]
     },
     {
       "title": "Simultaneous open",
-      "summary": "Both sides send SYN at once.",
+      "summary": "Both sides send SYN at the same time.",
       "sections": [
         {
-          "body": "Rare but required: each moves SYN-SENT -> SYN-RECEIVED on seeing the other's SYN and then to ESTABLISHED after the SYN+ACKs, using four segments."
+          "body": "Rare, but part of the specification and exercised in NAT hole-punching tricks. Each side sends SYN from SYN-SENT, then sees the other's SYN and moves to SYN-RECEIVED, replying SYN-ACK. When each receives the SYN-ACK it reaches ESTABLISHED. The result is a single connection and four segments, not two connections.",
+          "code": "A: SYN seq=100 ---->     <---- SYN seq=300 :B\nA: SYN-RECEIVED          B: SYN-RECEIVED\nA: SYN+ACK seq=100 ack=301 ->   <- SYN+ACK seq=300 ack=101 :B\nA: ESTABLISHED           B: ESTABLISHED"
         }
       ]
     },
     {
-      "title": "Connection refused and RST",
-      "summary": "When there is no listener.",
+      "title": "TCP options negotiated in SYN",
+      "summary": "MSS, window scale, SACK and timestamps.",
       "sections": [
         {
-          "body": "A SYN to a closed port draws a RST, and the client sees 'connection refused'. A silent timeout instead means a firewall dropped the SYN."
+          "body": "Options live in the header after byte 20 and can only be negotiated in the SYN and SYN-ACK. If one side omits an option, it is off for the whole connection.",
+          "bullets": [
+            "**MSS** (kind 2, length 4): the largest segment payload the sender will accept.",
+            "**Window scale** (kind 3, length 3): a shift count 0 to 14 applied to the 16-bit window, allowing windows up to about 1 GB.",
+            "**SACK permitted** (kind 4, length 2): allows selective acknowledgment blocks later (RFC 2018).",
+            "**Timestamps** (kind 8, length 10): enable RTT measurement and protection against wrapped sequence numbers (PAWS, RFC 7323).",
+            "**NOP and EOL**: padding options that keep fields 4-byte aligned."
+          ]
         }
       ]
     },
     {
-      "title": "TCP Fast Open and QUIC",
-      "summary": "Cutting round trips.",
+      "title": "Listen backlog and accept queue",
+      "summary": "Where connections wait inside the kernel.",
       "sections": [
         {
-          "body": "TCP Fast Open lets data ride in the SYN on repeat connections. QUIC merges transport and TLS setup, needing one round trip (or zero on resumption)."
+          "body": "Linux keeps two queues per listening socket. The SYN queue holds half-open entries in SYN-RECEIVED. When the final ACK arrives the entry moves to the accept queue of ESTABLISHED connections that `accept()` has not yet claimed. The accept queue length is capped at the smaller of your `listen()` argument and `net.core.somaxconn`. If it is full, the kernel by default silently drops the ACK, so the client retries and the SYN-ACK is resent, adding seconds of delay. Check with `ss -lnt`: for a LISTEN socket, Recv-Q is the current accept queue depth and Send-Q is its limit."
+        }
+      ]
+    },
+    {
+      "title": "TCP Fast Open",
+      "summary": "Data in the SYN for repeat connections.",
+      "sections": [
+        {
+          "body": "On the first connection the client sends a Fast Open Cookie request option in its SYN, and the server replies with a cookie (4 to 16 bytes) in its SYN-ACK, derived from the client address and a server secret. On later connections the client sends SYN with the cookie and the first bytes of data. The server validates it, hands the data to the application immediately, and replies SYN-ACK. That cuts one RTT. Caveats: the data in the SYN can be replayed, so only idempotent requests are safe, and some middleboxes drop SYNs carrying data, so deployment is limited. Linux enables it with `net.ipv4.tcp_fastopen` and the `MSG_FASTOPEN` flag or `TCP_FASTOPEN` socket option."
+        }
+      ]
+    },
+    {
+      "title": "Failed and refused connections",
+      "summary": "What the client sees when the handshake does not complete.",
+      "sections": [
+        {
+          "body": "The failure mode tells you where the problem is.",
+          "bullets": [
+            "**ECONNREFUSED**: the host answered with RST. The host is up but nothing listens on that port.",
+            "**ETIMEDOUT**: no reply after all SYN retries. A firewall is dropping, the host is down, or routing is broken.",
+            "**EHOSTUNREACH or ENETUNREACH**: an ICMP unreachable came back or no route exists locally.",
+            "**Success then reset**: the handshake completes (middlebox or proxy accepted it) but the backend then sends RST.",
+            "**Non-blocking connect**: returns EINPROGRESS; wait for writability and read `SO_ERROR` to learn the result."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TCP header fields in the handshake",
+      "summary": "The 20-byte header and the bits that matter.",
+      "sections": [
+        {
+          "body": "The TCP header that carries all of this is 20 bytes plus options. The fields that matter in the handshake are the ports, the sequence and acknowledgment numbers, the data offset, the flag bits and the window:",
+          "code": "  0                   1                   2                   3\n  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1\n +---------------------------------------------------------------+\n |        Source Port (16)       |     Destination Port (16)     |\n +---------------------------------------------------------------+\n |                   Sequence Number (32)                        |\n +---------------------------------------------------------------+\n |                Acknowledgment Number (32)                     |\n +---------------------------------------------------------------+\n | Off(4)| Rsv(4)|CWR|ECE|URG|ACK|PSH|RST|SYN|FIN|  Window (16)  |\n +---------------------------------------------------------------+\n |        Checksum (16)          |      Urgent Pointer (16)      |\n +---------------------------------------------------------------+\n |                   Options (0 to 40 bytes)                     |\n +---------------------------------------------------------------+"
+        }
+      ]
+    },
+    {
+      "title": "Reading a handshake in tcpdump",
+      "summary": "What the three packets look like on the wire.",
+      "sections": [
+        {
+          "body": "A typical capture from `tcpdump -n -S` shows the three packets with the options negotiated in the SYN and SYN-ACK:",
+          "code": "10.0.0.5.51514 > 203.0.113.7.443: Flags [S],  seq 1000, win 64240,\n    options [mss 1460,sackOK,TS val 11 ecr 0,nop,wscale 7], length 0\n203.0.113.7.443 > 10.0.0.5.51514: Flags [S.], seq 5000, ack 1001, win 65160,\n    options [mss 1440,sackOK,TS val 90 ecr 11,nop,wscale 8], length 0\n10.0.0.5.51514 > 203.0.113.7.443: Flags [.],  seq 1001, ack 5001, win 502,\n    length 0"
+        }
+      ]
+    },
+    {
+      "title": "The handshake in C sockets",
+      "summary": "Which call returns at which step.",
+      "sections": [
+        {
+          "body": "In C the kernel runs the whole exchange for you. The client's `connect()` blocks until step 3 is sent; the server's `accept()` returns only after step 3 is received:",
+          "code": "/* client */\nint fd = socket(AF_INET, SOCK_STREAM, 0);\nstruct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons(443)};\ninet_pton(AF_INET, \"203.0.113.7\", &a.sin_addr);\nif (connect(fd, (struct sockaddr *)&a, sizeof a) < 0)\n    perror(\"connect\");          /* ETIMEDOUT, ECONNREFUSED, ... */\n\n/* server */\nint ls = socket(AF_INET, SOCK_STREAM, 0);\nbind(ls, (struct sockaddr *)&addr, sizeof addr);\nlisten(ls, 128);                /* kernel now answers SYNs */\nint c = accept(ls, NULL, NULL); /* returns after the 3rd packet */"
         }
       ]
     }
   ],
   "takeaways": [
-    "SYN, SYN+ACK, ACK synchronizes sequence numbers in both directions.",
-    "SYN consumes one sequence number; ACK = ISN + 1.",
-    "Options like MSS, window scale, and SACK are negotiated in the SYNs.",
-    "Randomized ISNs and SYN cookies defend against spoofing and floods."
+    "SYN, SYN-ACK, ACK synchronizes a sequence number and options in each direction using three packets.",
+    "A SYN (and a FIN) consumes one sequence number, so the ACK is ISN+1.",
+    "ISNs must be unpredictable: a 4 microsecond clock plus a keyed hash of the 4-tuple (RFC 9293, RFC 6528).",
+    "The client can send data from the third packet, so setup costs one RTT before data and a second before the reply.",
+    "SYN-RECEIVED is the half-open state SYN floods exhaust; SYN cookies avoid storing it.",
+    "Options such as MSS, window scale, SACK and timestamps can only be negotiated in the SYN and SYN-ACK.",
+    "RST means refused, silence means filtered: ECONNREFUSED versus ETIMEDOUT point to different faults.",
+    "`connect()` returns after the SYN-ACK, and `accept()` returns after the final ACK, both before any application bytes are read."
+  ],
+  "practice": [
+    {
+      "title": "Label seq and ack numbers in a captured handshake",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Watch connection states with ss during a connect",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why the SYN-ACK acknowledges ISN+1",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Capture a handshake with tcpdump and read the negotiated options",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Diagnose a client that gets ETIMEDOUT versus one that gets ECONNREFUSED",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reproduce accept queue overflow with a server that never calls accept and read ListenOverflows",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Work out the ISN a given 4 microsecond clock value produces and when it wraps",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design SYN cookie encoding and explain which TCP options it loses",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Trace a simultaneous open on paper with both state machines",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -96,24 +278,14 @@
     {
       "label": "RFC 7323: TCP Extensions for High Performance",
       "url": "https://www.rfc-editor.org/rfc/rfc7323"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Label seq and ack numbers in a captured handshake",
-      "difficulty": "Easy"
     },
     {
-      "title": "Watch connection states with ss during a connect",
-      "difficulty": "Easy"
+      "label": "RFC 7413: TCP Fast Open",
+      "url": "https://www.rfc-editor.org/rfc/rfc7413"
     },
     {
-      "title": "Explain SYN floods and SYN cookies",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Describe a simultaneous open",
-      "difficulty": "Hard"
+      "label": "RFC 6528: Defending against Sequence Number Attacks",
+      "url": "https://www.rfc-editor.org/rfc/rfc6528"
     }
   ]
 }

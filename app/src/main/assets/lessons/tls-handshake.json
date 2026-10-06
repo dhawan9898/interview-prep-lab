@@ -1,89 +1,276 @@
 {
-  "summary": "The TLS handshake lets a client and server agree on protocol parameters, authenticate the server (and optionally the client), and derive shared secret keys. In TLS 1.3 this takes one round trip, and everything after ServerHello is encrypted.",
+  "summary": "The TLS handshake lets a client and server agree on a protocol version and cipher suite, authenticate the server (and optionally the client) with certificates, and derive shared secret keys for encrypting the connection. In TLS 1.3 (RFC 8446) a full handshake takes one round trip and everything after the ServerHello is encrypted, with forward secrecy mandatory through ephemeral Diffie-Hellman. It sits between TCP and the application in HTTPS, SMTP over TLS, database connections and QUIC, and its latency, certificate validation, resumption and downgrade protections are favourite interview topics.",
   "sections": [
     {
-      "heading": "TLS 1.3 full handshake (RFC 8446)",
-      "code": "Client                                   Server\n ClientHello  (+key_share, supported_versions,\n               signature_algorithms) ------->\n                                      ServerHello (+key_share)\n                                     {EncryptedExtensions}\n                                     {Certificate}\n                                     {CertificateVerify}\n                          <-------   {Finished}\n {Finished} ------------------------>\n [Application Data] <--------------> [Application Data]\n  ({ } = encrypted with handshake keys)"
+      "heading": "Overview",
+      "body": "TCP delivers bytes reliably but in the clear. Anyone on the path can read or modify them, and nothing proves you reached the server you meant. TLS (Transport Layer Security) fixes both: it gives **confidentiality** (encryption), **integrity** (tampering is detected) and **authentication** (the server proves its identity with a certificate that chains to a trusted authority). It is the successor of SSL, and version 1.3 was published as RFC 8446 in 2018.\n\nThe handshake is the opening phase of a TLS connection. Its job is to negotiate parameters, run a key exchange, prove identity and confirm that both sides computed the same keys and saw the same messages. After that the connection switches to the **record protocol**, which carries application data under symmetric AEAD encryption such as AES-GCM or ChaCha20-Poly1305.\n\nTLS 1.3 was a clean-up. It removed everything weak (static RSA key transport, CBC modes, RC4, SHA-1, compression, renegotiation) and redesigned the handshake so a first-time connection needs only one round trip, a resumed one can use a pre-shared key, and a repeat visitor may even send early data in the first flight (0-RTT, with caveats)."
     },
     {
-      "heading": "What each message does",
+      "heading": "Core Concepts",
       "bullets": [
-        "ClientHello: random nonce, supported versions and cipher suites, and key shares for (EC)DHE.",
-        "ServerHello: chosen cipher suite and the server's key share; both sides can now derive handshake keys.",
-        "EncryptedExtensions: remaining extension responses.",
-        "Certificate: the server's certificate chain.",
-        "CertificateVerify: a signature over the transcript proving possession of the private key.",
-        "Finished: a MAC over the whole handshake confirming nothing was altered."
+        "**Cipher suite**: in TLS 1.3 only the AEAD and hash are named, for example `TLS_AES_128_GCM_SHA256` (0x1301), `TLS_AES_256_GCM_SHA384` (0x1302) and `TLS_CHACHA20_POLY1305_SHA256` (0x1303). Key exchange and signatures are negotiated separately.",
+        "**Key share**: the client's public ephemeral Diffie-Hellman value for one or more groups (X25519, secp256r1 and so on); the server answers with its own for the chosen group.",
+        "**(EC)DHE and forward secrecy**: ephemeral key pairs are used once and discarded, so stealing a long-term private key later cannot decrypt recorded traffic.",
+        "**Certificate**: an X.509 document binding a public key to a name, signed by a certificate authority (CA). The server sends a chain: leaf, intermediates. The root is already trusted by the client.",
+        "**CertificateVerify**: a signature, using the certificate's private key, over a hash of the handshake so far. It proves the server holds the key, not just a copy of the certificate.",
+        "**Finished**: an HMAC over the transcript with a key derived from the handshake secret. It confirms both sides saw identical messages, defeating downgrade and tampering.",
+        "**Transcript hash**: a running hash of all handshake messages, used in signatures, Finished and key derivation.",
+        "**HKDF key schedule**: Extract and Expand steps that turn the DH secret (and any PSK) into separate keys for handshake traffic, application traffic, resumption and exporters.",
+        "**SNI** (server_name extension): the client names the host it wants so one IP address can serve many certificates. In TLS 1.3 it is still sent in clear unless Encrypted Client Hello is used.",
+        "**ALPN**: application-layer protocol negotiation (for example `h2` or `http/1.1`) done in the hello extensions.",
+        "**Session ticket and PSK**: a ticket the server gives the client after the handshake, which later lets it resume without certificates.",
+        "**Record**: the unit of TLS framing, up to 2^14 = 16,384 bytes of plaintext, with a 5-byte header (content type, legacy version 0x0303, length)."
       ]
     },
     {
-      "heading": "Key exchange and forward secrecy",
-      "body": "Both sides exchange ephemeral Diffie-Hellman shares (X25519 or P-256) and compute the same shared secret. The keys are fed through HKDF in a key schedule to produce handshake and application traffic keys. Because the DH keys are discarded after use, recording traffic and later stealing the server's long-term key does not reveal past sessions: forward secrecy. TLS 1.3 removed static RSA and static DH key exchange."
+      "heading": "How It Works",
+      "body": "The full TLS 1.3 handshake, with `{}` meaning encrypted under handshake keys and `[]` meaning encrypted under application keys. Two flights, one round trip:",
+      "bullets": [
+        "**1. ClientHello**: 32 random bytes, a list of cipher suites, and extensions: `supported_versions` (must list 1.3), `supported_groups`, `key_share` (client's ephemeral public key, for example X25519, 32 bytes), `signature_algorithms`, `server_name`, `alpn`, `psk_key_exchange_modes`. The legacy version field says 1.2 for compatibility.",
+        "**2. ServerHello**: picks the cipher suite, echoes the version in `supported_versions`, and sends its key share. Now both sides can compute the DH shared secret, and derive handshake traffic keys. Everything after this is encrypted.",
+        "**3. EncryptedExtensions**: the server's answers to extensions that are not needed for key setup (such as ALPN choice).",
+        "**4. CertificateRequest** (optional): asks the client for a certificate, giving mutual TLS.",
+        "**5. Certificate**: the server's chain, with optional OCSP staple and signed certificate timestamps.",
+        "**6. CertificateVerify**: a signature over the transcript hash using the server's private key.",
+        "**7. Finished (server)**: HMAC over the transcript. The server can already compute application traffic keys and start sending data in the same flight.",
+        "**8. Client checks**: the client validates the chain, hostname and signature, and checks the server Finished. If anything fails it sends a fatal alert and closes.",
+        "**9. Finished (client)**: client's HMAC, plus Certificate and CertificateVerify first if requested. Application data may follow immediately; the first client request goes out together with or right after Finished.",
+        "**10. NewSessionTicket**: after the handshake the server sends tickets so later connections can resume."
+      ],
+      "code": "Client                                          Server\n ClientHello\n  + key_share + signature_algorithms\n  + supported_versions + server_name  ------->\n                                           ServerHello\n                                           + key_share\n                                           {EncryptedExtensions}\n                                           {CertificateRequest*}\n                                           {Certificate}\n                                           {CertificateVerify}\n                          <-------         {Finished}\n {Certificate*} {CertificateVerify*}\n {Finished}               ------->\n [Application Data]       <------->        [Application Data]\n                          <-------         [NewSessionTicket]"
     },
     {
-      "heading": "Authentication",
-      "body": "The client validates the certificate chain up to a trusted root, checks the hostname against the certificate's subject alternative names, validity dates, and revocation status. CertificateVerify proves the server actually holds the key."
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Full 1-RTT handshake**: the case above; one round trip, certificate authentication, ephemeral DH. Pairing with TCP, the request leaves after 2 RTT in total (1 for TCP, 1 for TLS).",
+        "**HelloRetryRequest**: if the client's key shares do not include a group the server supports, the server replies with a special ServerHello that asks for a different group and the client retries, costing one extra round trip.",
+        "**PSK resumption (1-RTT, no certificates)**: the client offers a `pre_shared_key` taken from an earlier ticket, usually with `psk_dhe_ke` mode so a fresh DH exchange keeps forward secrecy. Certificate messages are skipped.",
+        "**0-RTT early data**: with a ticket that allows it, the client sends application data in the first flight, encrypted under a key derived from the PSK. It saves a round trip but the data has no forward secrecy and can be replayed, so only idempotent requests should use it.",
+        "**Mutual TLS (mTLS)**: the server sends CertificateRequest and the client authenticates with a certificate. Common between services and in zero-trust setups.",
+        "**TLS 1.2 handshake**: two round trips. ClientHello, ServerHello, Certificate, ServerKeyExchange, ServerHelloDone, then ClientKeyExchange, ChangeCipherSpec, Finished, then the server's CCS and Finished. Server certificates are in clear and RSA key transport is allowed.",
+        "**DTLS and QUIC**: DTLS 1.3 runs the handshake over datagrams with retransmission; QUIC embeds the TLS 1.3 handshake in its own packets and merges transport and crypto setup into one round trip.",
+        "**Post-quantum hybrids**: deployments add hybrid key shares such as X25519 combined with ML-KEM so recorded traffic stays safe against a future quantum computer; they enlarge the ClientHello by about a kilobyte."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Round trips**: TLS 1.3 full: 1 RTT. TLS 1.2 full: 2 RTT. Resumption: 1 RTT in 1.3 (0-RTT possible), 1 RTT in 1.2 with session ID or ticket. On 100 ms RTT that is 100 ms for 1.3 against 200 ms for 1.2, on top of 100 ms for TCP.",
+        "**Bytes**: ClientHello is about 250 to 600 bytes (more with hybrid post-quantum shares); server flight is dominated by the certificate chain, typically 2 to 5 KB with RSA-2048 certificates, less with ECDSA P-256.",
+        "**CPU**: X25519 key exchange takes about 50 to 100 microseconds per side on a modern core; the server's signing costs more with RSA-2048 (about 1 ms) than with ECDSA P-256 (about 50 microseconds). Verification by the client is the reverse: RSA is faster than ECDSA.",
+        "**Record overhead**: 5-byte header plus a 1-byte inner content type plus a 16-byte AEAD tag, about 22 bytes per record. Large writes amortise it over 16 KB records.",
+        "**Bulk encryption**: AES-GCM with AES-NI and ChaCha20 on mobile CPUs reach multiple GB/s per core and 100s of MB/s on weak cores.",
+        "**Ticket size**: a few hundred bytes. Servers may use stateless tickets (encrypted state) or a session cache.",
+        "**Key limits**: AES-GCM must rekey before about 2^24.5 records under one key (RFC 8446, section 5.5); TLS 1.3 offers KeyUpdate for this."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Disabling certificate validation**: setting `verify=false` or accepting any certificate makes TLS encrypt traffic to anybody. Always validate the chain and match the hostname against the Subject Alternative Name, never the common name alone.",
+        "**Missing intermediates**: a server that sends only the leaf works in browsers with cached intermediates and fails in curl and mobile apps. Send the full chain minus the root.",
+        "**Expired certificates and clock skew**: validity dates are checked; a device with a wrong clock rejects good certificates. Automate renewal (ACME).",
+        "**Downgrade attacks**: TLS 1.3 servers put a sentinel (`DOWNGRD` plus 0x01 or 0x00) in the last eight bytes of ServerHello.random when negotiating an older version, and a 1.3-capable client aborts if it sees it. The Finished MAC covers the whole exchange.",
+        "**0-RTT replay**: early data can be replayed by an attacker; use it only for safe requests and enable server-side anti-replay.",
+        "**SNI leaks the hostname**: observers see the name you connect to unless Encrypted Client Hello is used.",
+        "**Revocation is weak**: CRLs are large, OCSP leaks queries and often soft-fails. OCSP stapling and short-lived certificates help.",
+        "**Old protocol versions**: TLS 1.0 and 1.1 are deprecated (RFC 8996) and SSL 3.0 is broken (POODLE). Disable them.",
+        "**Cipher choices in 1.2**: avoid RSA key exchange (no forward secrecy), CBC (padding oracles), RC4, 3DES and export suites.",
+        "**Interception middleboxes**: some break TLS 1.3 by mishandling unknown extensions or fragmented ClientHellos, the reason for the legacy_version and compatibility ChangeCipherSpec messages."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**HTTPS**: every browser connection; HTTP/2 negotiates `h2` via ALPN and HTTP/3 uses TLS 1.3 inside QUIC.",
+        "**Service meshes and mTLS**: Envoy and Istio authenticate every service call with short-lived certificates.",
+        "**Email and databases**: STARTTLS for SMTP, TLS for PostgreSQL, MySQL, Redis and Kafka.",
+        "**Certificate issuance**: Let's Encrypt via ACME issues 90 day certificates; Certificate Transparency logs make mis-issuance visible.",
+        "**Load balancers and CDNs**: terminate TLS at the edge, keep session ticket keys in sync across a fleet, and often re-encrypt to the origin.",
+        "**Tooling**: `openssl s_client -connect host:443 -tls1_3 -servername host`, `curl -v`, Wireshark with an `SSLKEYLOGFILE`, and testssl.sh or SSL Labs inspect versions, suites and chains."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How many round trips?** One for TLS 1.3 (two for 1.2), after the TCP handshake.",
+        "**What is forward secrecy and how is it achieved?** Ephemeral (EC)DHE keys discarded after use, so a leaked server key cannot decrypt old sessions.",
+        "**What does the server prove with CertificateVerify?** That it holds the private key of the certificate, and that it signed this transcript.",
+        "**What is in Finished?** An HMAC of the transcript under a handshake-derived key.",
+        "**What changed from TLS 1.2 to 1.3?** 1-RTT, encrypted certificate, only AEAD ciphers, mandatory ephemeral DH, no renegotiation or compression, simpler suites, 0-RTT.",
+        "**How is a certificate validated?** Chain to a trusted root, signatures, validity, hostname in SAN, key usage, and revocation status.",
+        "**What is 0-RTT and what is the risk?** Data in the first flight, replayable and not forward secret.",
+        "**What does SNI do?** Lets one IP serve many hostnames by naming the host in the ClientHello.",
+        "**Symmetric versus asymmetric roles?** Asymmetric crypto (DH, signatures) is used only in the handshake; bulk data uses a symmetric AEAD."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "What changed from TLS 1.2",
-      "summary": "Fewer round trips, fewer algorithms.",
+      "title": "TLS record layer",
+      "summary": "How TLS frames and protects bytes.",
       "sections": [
         {
+          "body": "Everything rides in records. Each has a 5-byte header: content type, legacy version (0x0303) and a 2-byte length. Content types are 20 change_cipher_spec (compatibility only in 1.3), 21 alert, 22 handshake, 23 application_data. After the handshake keys exist, a TLS 1.3 record is sent as type 23 with an encrypted body that hides the real content type as a trailing byte.",
           "bullets": [
-            "1-RTT instead of 2-RTT for a full handshake.",
-            "Only AEAD ciphers (AES-GCM, ChaCha20-Poly1305).",
-            "Handshake messages after ServerHello are encrypted.",
-            "Static RSA and DH, RC4, CBC, and compression removed.",
-            "Versions negotiated via the supported_versions extension."
+            "**Plaintext limit**: 2^14 = 16,384 bytes per record.",
+            "**AEAD nonce**: the 12-byte per-direction static IV XORed with the 64-bit record sequence number, so nonces never repeat.",
+            "**Padding**: optional, to hide message lengths.",
+            "**Alerts**: close_notify gives a clean end; fatal alerts such as bad_certificate or handshake_failure abort."
           ]
         }
       ]
     },
     {
-      "title": "Session resumption and 0-RTT",
-      "summary": "Faster reconnects.",
+      "title": "ClientHello in detail",
+      "summary": "The first message and its extensions.",
       "sections": [
         {
-          "body": "A server can issue a ticket derived from a previous session; the client sends a pre-shared key identity and can include early data in its first flight (0-RTT). Early data is not forward secret and can be replayed, so use it only for idempotent requests."
+          "body": "The ClientHello carries `legacy_version` 0x0303, a 32-byte random, a legacy session ID (kept for middlebox compatibility), the list of cipher suites, legacy compression methods (just null) and extensions. The extensions do the real work.",
+          "bullets": [
+            "**supported_versions** (43): lists 0x0304 for TLS 1.3.",
+            "**supported_groups** (10): x25519, secp256r1, secp384r1, ffdhe groups, and hybrids.",
+            "**key_share** (51): public values for the groups the client guesses the server will pick.",
+            "**signature_algorithms** (13): such as ecdsa_secp256r1_sha256, rsa_pss_rsae_sha256, ed25519.",
+            "**server_name** (0), **application_layer_protocol_negotiation** (16), **psk_key_exchange_modes** (45), **pre_shared_key** (41), **early_data** (42)."
+          ]
         }
       ]
     },
     {
-      "title": "SNI and ALPN",
-      "summary": "Extensions you meet daily.",
+      "title": "Key schedule",
+      "summary": "From the DH secret to traffic keys.",
       "sections": [
         {
-          "body": "Server Name Indication tells the server which hostname the client wants so one IP can host many certificates. ALPN negotiates the application protocol such as h2 or http/1.1. Encrypted Client Hello hides SNI."
+          "body": "TLS 1.3 chains HKDF operations so each phase gets independent keys. The stages are:",
+          "code": "Early Secret     = HKDF-Extract(salt=0, IKM=PSK or zeros)\nHandshake Secret = HKDF-Extract(Derive-Secret(Early, \"derived\"), ECDHE shared)\n  -> client/server_handshake_traffic_secret  (hash of ClientHello..ServerHello)\nMaster Secret    = HKDF-Extract(Derive-Secret(Handshake, \"derived\"), zeros)\n  -> client/server_application_traffic_secret (hash of ClientHello..server Finished)\n  -> resumption_master_secret, exporter_master_secret\ntraffic key/iv   = HKDF-Expand-Label(secret, \"key\"/\"iv\", \"\", length)"
         }
       ]
     },
     {
-      "title": "Record layer",
-      "summary": "Protecting application data.",
+      "title": "Certificate validation",
+      "summary": "What the client checks before trusting a server.",
       "sections": [
         {
-          "body": "Data is split into records, encrypted and authenticated with AEAD using per-record nonces, and padded optionally. The TCP segment sizes then reveal little about the content."
+          "body": "A conforming client builds a path from the server's leaf certificate to a root in its trust store and verifies each signature. It then checks validity dates, that the leaf's SAN list matches the hostname requested (wildcards cover exactly one label), that key usage and extended key usage permit TLS server authentication, that no certificate in the chain is revoked (OCSP staple, CRL or CRLite-style lists), and often that Certificate Transparency SCTs are present. Only then does it accept CertificateVerify as proof of identity.\n\nPinning the leaf or public key is possible but brittle; most systems rely on the CA ecosystem plus CT monitoring."
         }
       ]
     },
     {
-      "title": "Inspecting a handshake",
-      "summary": "OpenSSL.",
+      "title": "Session resumption and tickets",
+      "summary": "Skipping certificates on the second visit.",
       "sections": [
         {
-          "body": "`openssl s_client -connect example.com:443 -tls1_3` prints the negotiated version, cipher, and certificate chain; Wireshark shows the ClientHello fields until encryption begins.",
-          "code": "$ openssl s_client -connect example.com:443 -tls1_3 </dev/null"
+          "body": "After the handshake the server sends a NewSessionTicket carrying an opaque ticket, a lifetime (up to 7 days), an age-add value and optionally an early-data limit. On a later connection the client puts the ticket in `pre_shared_key` and a binder (an HMAC proving it knows the PSK) in the ClientHello. If the server accepts, both sides derive keys from the PSK (plus fresh DHE if `psk_dhe_ke` is used) and skip Certificate and CertificateVerify. Tickets must be encrypted with keys the server rotates, and sharing those keys across servers lets a fleet resume anywhere, at the cost of a wider blast radius if they leak."
+        }
+      ]
+    },
+    {
+      "title": "0-RTT and replay",
+      "summary": "Data in the first flight and its price.",
+      "sections": [
+        {
+          "body": "The client encrypts early data under a key derived from the resumption PSK and sends it right after the ClientHello, before any server response. The server may accept or reject it; on rejection the client resends after the handshake. Because the server has no fresh randomness from the client in that data, an attacker can replay the whole first flight. RFC 8446 section 8 describes defences: single-use tickets, client-hello recording and freshness windows. Servers should expose 0-RTT only for idempotent requests, and clients should mark which requests are safe."
+        }
+      ]
+    },
+    {
+      "title": "TLS 1.2 versus 1.3 side by side",
+      "summary": "What changed and why.",
+      "sections": [
+        {
+          "body": "Quick comparison of the two designs.",
+          "bullets": [
+            "**Round trips**: 2 versus 1.",
+            "**Key exchange**: RSA transport, static DH or ECDHE (1.2) versus ephemeral DHE or ECDHE only (1.3).",
+            "**Ciphers**: CBC, RC4, GCM (1.2) versus AEAD only (1.3).",
+            "**Encryption of handshake**: Certificate in clear (1.2) versus encrypted (1.3).",
+            "**Renegotiation and compression**: allowed in 1.2, removed in 1.3 (CRIME and renegotiation attacks).",
+            "**Resumption**: session IDs or tickets (1.2) versus PSK tickets, with 0-RTT (1.3).",
+            "**Signature**: ServerKeyExchange signs only randoms and DH values (1.2); CertificateVerify signs the whole transcript (1.3)."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Using TLS from C with OpenSSL",
+      "summary": "The minimal client with verification on.",
+      "sections": [
+        {
+          "body": "The key point is verification: set the trust store, request peer verification, and set the hostname to check, or you get encryption without authentication.",
+          "code": "SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());\nSSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);\nSSL_CTX_set_default_verify_paths(ctx);          /* system CA bundle */\nSSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);\nSSL *ssl = SSL_new(ctx);\nSSL_set_fd(ssl, fd);                            /* connected TCP socket */\nSSL_set_tlsext_host_name(ssl, \"www.example.com\"); /* SNI */\nSSL_set1_host(ssl, \"www.example.com\");          /* hostname check */\nif (SSL_connect(ssl) != 1) { ERR_print_errors_fp(stderr); }\nSSL_write(ssl, req, reqlen);\nSSL_shutdown(ssl);                              /* sends close_notify */"
+        }
+      ]
+    },
+    {
+      "title": "Debugging a handshake",
+      "summary": "Tools and typical failures.",
+      "sections": [
+        {
+          "body": "Start with `openssl s_client -connect host:443 -servername host -showcerts` to see the chain and negotiated version. Typical failures and their alerts:",
+          "bullets": [
+            "**handshake_failure** (40): no shared cipher suite, group or signature algorithm.",
+            "**protocol_version** (70): client and server share no version.",
+            "**bad_certificate** (42), **certificate_expired** (45), **unknown_ca** (48): chain or date problems.",
+            "**Hostname mismatch**: the client library reports it, not the server.",
+            "**Reset after ClientHello**: a middlebox or a non-TLS port; check with `curl -v` and packet captures.",
+            "**Decrypting captures**: set `SSLKEYLOGFILE` in the client and give the file to Wireshark."
+          ]
         }
       ]
     }
   ],
   "takeaways": [
-    "Client and server exchange ephemeral key shares to derive shared secrets.",
-    "TLS 1.3 handshakes in 1 RTT and encrypts everything after ServerHello.",
-    "Certificate + CertificateVerify + Finished authenticate the server and the transcript.",
-    "Forward secrecy is mandatory; 0-RTT trades safety for speed."
+    "The TLS 1.3 full handshake takes 1 RTT: ClientHello with key share, then ServerHello plus encrypted certificate flight, then client Finished.",
+    "Ephemeral (EC)DHE is mandatory in 1.3, giving forward secrecy; static RSA key transport is gone.",
+    "CertificateVerify proves possession of the private key; Finished authenticates the entire transcript and defeats downgrade and tampering.",
+    "Validate the chain, the validity dates and the hostname (SAN); skipping any step defeats authentication.",
+    "After the handshake, bulk data uses an AEAD cipher such as AES-GCM or ChaCha20-Poly1305 in records of up to 16 KB.",
+    "Resumption with PSK tickets skips certificates; 0-RTT early data saves another round trip but is replayable.",
+    "SNI and ALPN ride in the ClientHello; SNI is visible unless Encrypted Client Hello is used.",
+    "TLS 1.2 needs 2 RTT, sends certificates in clear and permits weak legacy options that 1.3 removed."
+  ],
+  "practice": [
+    {
+      "title": "List each TLS 1.3 handshake message in order and say which are encrypted",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Run openssl s_client against a site and read the version, cipher and chain",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain forward secrecy and why static RSA key exchange lacks it",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count total round trips before the first HTTP byte for TCP plus TLS 1.2 versus 1.3 versus resumption",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Capture a handshake in Wireshark using SSLKEYLOGFILE and identify key_share and server_name",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write C code with OpenSSL that verifies the certificate and hostname before sending data",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Debug a client that works in a browser but fails in curl because of a missing intermediate",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Walk through the HKDF key schedule from PSK and ECDHE to the application traffic secrets",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a safe 0-RTT policy for an API and explain the replay defences",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain how the downgrade sentinel and Finished MAC prevent a version rollback attack",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -91,30 +278,16 @@
       "url": "https://www.rfc-editor.org/rfc/rfc8446"
     },
     {
+      "label": "RFC 5246: TLS Protocol Version 1.2",
+      "url": "https://www.rfc-editor.org/rfc/rfc5246"
+    },
+    {
+      "label": "RFC 8996: Deprecating TLS 1.0 and TLS 1.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc8996"
+    },
+    {
       "label": "RFC 5280: Internet X.509 PKI Certificate and CRL Profile",
       "url": "https://www.rfc-editor.org/rfc/rfc5280"
-    },
-    {
-      "label": "RFC 7301: TLS ALPN Extension",
-      "url": "https://www.rfc-editor.org/rfc/rfc7301"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Explain forward secrecy",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Inspect a certificate chain with openssl s_client",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Identify TLS 1.3 handshake messages in a capture",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Compare the security of 1-RTT and 0-RTT",
-      "difficulty": "Hard"
     }
   ]
 }

@@ -1,110 +1,246 @@
 {
-  "summary": "A Layer 2 switch builds its forwarding table automatically by watching source MAC addresses. It then forwards frames only to the port where the destination lives and floods when it does not know.",
+  "summary": "A Layer 2 switch (an IEEE 802.1D MAC bridge) builds its forwarding table on its own by watching the source MAC address of every frame it receives. It then sends each frame only out of the port where the destination lives, and floods when it has never heard from the destination. This learn-and-forward loop is what turned shared Ethernet into the point-to-point, collision-free network used in every office, data center and home today. Knowing exactly how the table is filled, aged and attacked is the basis for troubleshooting almost every Layer 2 problem.",
   "sections": [
     {
-      "heading": "Learning from the source address",
-      "body": "For every frame that arrives, the switch records (source MAC, ingress port, VLAN) in its MAC address table (often kept in CAM hardware). This is how it discovers where each device is, with no configuration."
+      "heading": "Overview",
+      "body": "A hub repeats every bit out of every other port, so every device sees every frame and all of them share one collision domain. A switch instead reads the Ethernet header, decides which port leads to the destination, and sends the frame only there. To make that decision it needs a map from MAC address to port. Nobody types that map in. The switch learns it from live traffic, which is why an unmanaged switch is plug and play.\n\nThe idea comes from the transparent bridge. The first MAC bridge was invented at Digital Equipment Corporation in 1983, and the multiport version that Kalpana shipped around 1990 became the Ethernet switch. IEEE standardized the behavior as 802.1D, and the same logic now lives in 802.1Q. A switch operates at the data link layer: it never looks at IP addresses (unless it is a Layer 3 or multilayer switch), only at destination MAC, source MAC and, on trunks, the VLAN tag.\n\nThe result is called micro-segmentation. Each port is its own collision domain, links run full duplex so collisions cannot happen at all, and a conversation between ports 1 and 2 does not consume bandwidth on port 3. What a switch does not split is the broadcast domain: every port in a VLAN still receives broadcasts, unknown unicast and (without snooping) multicast. Splitting broadcast domains takes VLANs or a router."
     },
     {
-      "heading": "Forwarding decision",
-      "body": "The switch then looks up the destination MAC:",
+      "heading": "Core Concepts",
       "bullets": [
-        "Known unicast: forward out the single learned port.",
-        "Destination on the same port it arrived: filter (drop), no need to forward.",
-        "Unknown unicast: flood out all ports in the VLAN except the ingress port.",
-        "Broadcast (ff:ff:ff:ff:ff:ff): flood.",
-        "Multicast: flood unless IGMP/MLD snooping limits it."
+        "**MAC address table**: the switch's map of (VLAN, MAC address) to port. Also called the forwarding database (FDB), filtering database, or CAM table, because high-speed switches keep it in content-addressable memory that returns a port in a single lookup.",
+        "**Learning**: reading the source MAC of an incoming frame and recording it against the ingress port and VLAN. Only the source address is ever learned, never the destination.",
+        "**Forwarding**: sending a frame out one specific port because the destination MAC is in the table.",
+        "**Filtering**: dropping a frame because the destination is on the same segment (the same port) it came in on, so forwarding it would be pointless.",
+        "**Flooding**: sending a frame out all ports in the VLAN except the ingress port. Used for broadcast, unknown unicast and, by default, multicast.",
+        "**Unknown unicast**: a frame whose destination MAC is a unicast address that is not in the table. It is flooded as a discovery mechanism.",
+        "**Aging time**: how long an idle dynamic entry is kept. Commonly 300 seconds on Cisco and on the Linux bridge.",
+        "**Dynamic vs static entry**: dynamic entries are learned and age out; static entries are typed in by an administrator, do not age and survive until removed.",
+        "**Independent VLAN learning (IVL)**: the table key includes the VLAN, so the same MAC can exist in two VLANs on different ports. This is what almost all modern switches do.",
+        "**Collision domain**: the set of ports whose transmissions can collide. One per switch port. **Broadcast domain**: the set of ports that receive a broadcast. One per VLAN.",
+        "**Broadcast address**: ff:ff:ff:ff:ff:ff. **Multicast**: any address whose first octet has the least significant bit set (the I/G bit), such as 01:00:5e:xx:xx:xx for IPv4 multicast.",
+        "**Bridge control addresses**: frames to 01:80:C2:00:00:00 through 01:80:C2:00:00:0F (STP BPDUs, LACP, pause, LLDP) are consumed by the bridge and never forwarded like ordinary traffic."
       ]
     },
     {
-      "heading": "Worked example",
-      "code": "Switch with hosts A (port 1), B (port 2), C (port 3); table empty.\n1. A -> B: learn A=port1. B unknown -> flood to ports 2,3.\n2. B -> A: learn B=port2. A known -> forward only to port 1.\n3. A -> B again: B known -> forward only to port 2. C no longer sees it."
+      "heading": "How It Works",
+      "body": "Every frame that enters a port goes through the same short pipeline. The order matters: the switch learns first, then decides.\n\nWorked example. Host A (port 1), B (port 2) and C (port 3) hang off a switch with an empty table. A has MAC aa:aa, B has bb:bb, C has cc:cc. A sends a frame to B for the first time (in practice an ARP request first, which is a broadcast).\n\nReal hardware does not walk a linked list. The table is a hash table in SRAM or a CAM. A 48-bit MAC plus a 12-bit VLAN ID form a 60-bit key that is hashed to a bucket; the bucket holds a few ways and the lookup finishes in one clock cycle. Learning is done in hardware at line rate, but writing a new entry may be handed to the CPU on cheaper designs. The same idea in software, from the Linux bridge, looks like this:",
+      "bullets": [
+        "Step 1, receive: the frame arrives on ingress port P in VLAN V (the access VLAN of P, or the tag on a trunk). Frames with a bad FCS are discarded in store-and-forward mode.",
+        "Step 2, learn: if the source MAC is not a group address, look up (V, source). If missing, insert (V, source, P). If present on port P, refresh its age timer. If present on a different port, move it to P. This move is how a roaming laptop is tracked.",
+        "Step 3, classify the destination: broadcast, multicast, or unicast.",
+        "Step 4, unicast lookup: a hit on port Q means forward out Q only. If Q equals P, filter (drop). A miss means flood to every forwarding port in V except P.",
+        "Step 5, egress: ports that are blocked by spanning tree, disabled, or that do not carry V are excluded from the flood. On a trunk the tag is added or removed as needed."
+      ],
+      "code": "Table: empty.\n1. A -> B  (src aa:aa, dst bb:bb) arrives on port 1\n   learn   aa:aa = port 1\n   lookup  bb:bb -> miss, unknown unicast\n   action  flood out ports 2 and 3 (C sees it, ignores it)\n2. B -> A  (src bb:bb, dst aa:aa) arrives on port 2\n   learn   bb:bb = port 2\n   lookup  aa:aa -> hit, port 1\n   action  forward out port 1 only\n3. A -> B again\n   refresh aa:aa\n   lookup  bb:bb -> hit, port 2\n   action  forward out port 2 only; C no longer sees it\n4. B plugs into port 5 (moved), sends anything\n   learn   bb:bb = port 5   (entry moves, old port 2 is forgotten)\n\n#include <stdint.h>\n#include <string.h>\n#include <time.h>\n\n#define FDB_SIZE 8192\n#define AGING_SEC 300\n#define FLOOD (-1)\n\nstruct fdb_entry {\n    uint8_t  mac[6];\n    uint16_t vlan;\n    int      port;\n    time_t   last_seen;\n    int      valid;\n};\nstatic struct fdb_entry fdb[FDB_SIZE];\n\nstatic unsigned hash(const uint8_t *mac, uint16_t vlan) {\n    unsigned h = vlan;\n    for (int i = 0; i < 6; i++) h = h * 31 + mac[i];\n    return h % FDB_SIZE;\n}\n\nvoid learn(const uint8_t *src, uint16_t vlan, int port, time_t now) {\n    if (src[0] & 1) return;              /* never learn group addresses */\n    struct fdb_entry *e = &fdb[hash(src, vlan)];\n    memcpy(e->mac, src, 6);              /* collision simply overwrites */\n    e->vlan = vlan; e->port = port;\n    e->last_seen = now; e->valid = 1;\n}\n\nint lookup(const uint8_t *dst, uint16_t vlan, time_t now) {\n    struct fdb_entry *e = &fdb[hash(dst, vlan)];\n    if (dst[0] & 1) return FLOOD;        /* broadcast or multicast */\n    if (e->valid && e->vlan == vlan && memcmp(e->mac, dst, 6) == 0 &&\n        now - e->last_seen < AGING_SEC)\n        return e->port;\n    return FLOOD;                        /* unknown unicast */\n}"
     },
     {
-      "heading": "Aging",
-      "body": "Entries are removed after an idle aging time (commonly 300 seconds) so the table does not fill with stale devices and moved hosts are relearned. If a MAC appears on a different port, the entry is updated; that is how a laptop moving between ports is tracked."
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Store-and-forward**: the switch buffers the whole frame, verifies the 32-bit FCS, then forwards. Bad frames are dropped, and the switch can adapt between port speeds (a 10 Gbit/s uplink feeding 1 Gbit/s ports). Latency grows with frame size.",
+        "**Cut-through**: forwarding starts as soon as the destination MAC (the first 6 bytes) has been read. Latency is a few microseconds regardless of frame size, but corrupted frames are propagated. Common in low-latency data center and trading switches.",
+        "**Fragment-free**: a compromise that waits for the first 64 bytes, enough to filter collision fragments, before forwarding.",
+        "**Static MAC entries**: pinned entries for servers, firewalls or to blackhole a MAC. They never age and are immune to learning.",
+        "**Sticky MAC (port security)**: addresses learned on a port are converted to configuration, so a given port will only ever accept those devices.",
+        "**Shared vs independent VLAN learning**: independent learning (the norm) keys on VLAN plus MAC. Shared learning uses one table for all VLANs and appears in odd legacy designs.",
+        "**Layer 3 (multilayer) switch**: adds a routing table and a Layer 3 forwarding path next to the MAC table. Inter-VLAN traffic is routed in hardware, while same-VLAN traffic is still switched by MAC.",
+        "**Unmanaged, smart and managed switches**: unmanaged has no interface; smart offers a web UI with VLANs and basic settings; managed adds CLI, SNMP, STP tuning, ACLs and mirroring.",
+        "**MAC learning in other forms**: Wi-Fi access points track clients per association, and EVPN/VXLAN fabrics learn MACs from BGP control plane advertisements instead of data plane flooding."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Lookup cost**: O(1) with hashing or CAM, one lookup per frame at wire speed. A 48-port 10 Gbit/s switch must perform roughly 700 million lookups per second at minimum frame size (64-byte frame plus 20 bytes of preamble and gap is 84 bytes, giving 14.88 million frames per second per 10 Gbit/s port).",
+        "**Table size**: small access switches hold about 8,000 to 16,000 entries, campus switches 32,000 to 128,000, and large data center ASICs several hundred thousand. Each entry costs roughly 8 to 16 bytes of CAM or SRAM.",
+        "**Aging**: default 300 s on Cisco IOS and the Linux bridge (`ageing_time` of 30000 in centiseconds). On a spanning tree topology change the switch shortens aging to forward delay (15 s) so stale paths clear quickly.",
+        "**Flooding cost**: a flooded frame is copied to N minus 1 ports, so unknown unicast on a 48-port switch can multiply load by up to 47. This is why a full or flapping table hurts performance.",
+        "**Latency**: store-and-forward adds frame transmission time (about 12 microseconds for a 1500-byte frame at 1 Gbit/s); cut-through adds only the time to read the header.",
+        "**Frame size**: minimum 64 bytes, standard maximum 1518 bytes untagged, 1522 with an 802.1Q tag, and jumbo frames around 9000 bytes where configured end to end."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**MAC flooding attack**: a tool such as macof sends tens of thousands of frames per second with random source MACs. The table fills, legitimate entries are evicted, and unknown unicast is flooded so the attacker can sniff. Defend with port security (maximum MACs per port), 802.1X, and storm control.",
+        "**MAC spoofing**: an attacker copies a victim MAC, which makes the table move the entry to the attacker port and steals traffic. Sticky MAC, DHCP snooping with dynamic ARP inspection and 802.1X reduce the risk.",
+        "**MAC flapping**: the same MAC alternating between two ports is nearly always a Layer 2 loop, a duplicate MAC, or a misconfigured NIC team or VM host. The log message looks like `%SW_MATM-4-MACFLAP_NOTIF`. Check spanning tree first.",
+        "**Silent hosts**: a one-way sender (some IoT, UDP multicast sources, a server whose replies take another path) never has its MAC learned or ages out, so traffic to it floods. Asymmetric routing causes the same effect.",
+        "**Aging versus ARP timers**: ARP entries on hosts commonly last 60 s to 4 hours but the switch forgets after 300 s. If the host stays silent, the first packet floods, which is expected, not a fault.",
+        "**Table too small**: virtualization hosts, containers and VM migration can add thousands of MACs per port, exhausting access switch capacity. Watch the MAC count per VLAN.",
+        "**Learning on blocked ports**: a port in STP blocking or listening does not learn; in learning state it learns but does not forward. Misreading this explains many 'port is up but silent' puzzles.",
+        "**Reading the wrong table**: the destination is looked up, the source is learned. A frame never teaches the switch about its destination."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "Every access and distribution switch in an enterprise LAN, and the top-of-rack switches in data centers, run exactly this loop.",
+        "Linux `bridge` and Open vSwitch implement the same learning logic in software for virtual machines and containers; `docker0` and libvirt bridges are ordinary learning bridges.",
+        "Port security on campus access ports caps a port at one to three MACs to stop rogue hubs, unauthorized switches and flooding tools.",
+        "Network forensics: the table tells you which physical port a MAC (and so a host, using ARP to map IP to MAC) is plugged into. Locating a rogue device is usually `show mac address-table address <mac>` and walking uplinks.",
+        "Data center fabrics replace data-plane flooding with EVPN route type 2 advertisements so that table size and flooding stay under control at scale."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How does a switch learn?** From the source MAC of every incoming frame, recorded with the ingress port and VLAN.",
+        "**What happens to an unknown unicast frame?** Flooded out all ports in the VLAN except the one it arrived on.",
+        "**What does the switch do if the destination is on the ingress port?** Filters (drops) it.",
+        "**Why do switches have one collision domain per port but one broadcast domain per VLAN?** Each port link is point to point and full duplex; broadcasts are forwarded to all ports in the same VLAN.",
+        "**What is the default aging time?** 300 seconds on Cisco; configurable from 10 to 1,000,000 seconds.",
+        "**What is MAC flooding and how do you stop it?** Filling the table with fake sources so the switch acts as a hub; use port security and 802.1X.",
+        "**Why does the table hold VLAN as well as MAC?** Independent VLAN learning keeps VLANs isolated and allows the same MAC in several VLANs.",
+        "**Store-and-forward or cut-through?** Store-and-forward checks FCS and handles speed changes; cut-through lowers latency but forwards corrupted frames."
+      ]
     }
   ],
   "subtopics": [
     {
       "title": "Collision and broadcast domains",
-      "summary": "What a switch separates.",
+      "summary": "What a switch separates and what it does not.",
       "sections": [
         {
-          "body": "Each switch port is its own collision domain, but all ports in a VLAN share one broadcast domain. Routers or Layer 3 switches separate broadcast domains."
+          "body": "Each switch port is its own collision domain. With full duplex there is one transmitter and one receiver per link, so a collision cannot occur and CSMA/CD is effectively switched off. This is called micro-segmentation. All ports in the same VLAN still form one broadcast domain, so an ARP request or DHCP discover reaches every host in the VLAN. Routers, firewalls and Layer 3 switches separate broadcast domains, and so do VLANs, because a frame tagged with VLAN 10 is never forwarded to a port in VLAN 20."
+        }
+      ]
+    },
+    {
+      "title": "Hubs versus switches",
+      "summary": "Why replacing a hub changed Ethernet.",
+      "sections": [
+        {
+          "body": "A hub is a Layer 1 repeater: it regenerates bits and sends them out every other port, so 10 hosts share 10 Mbit/s and half duplex CSMA/CD limits cable length and throughput. A switch gives each host the full link rate in both directions at once, isolates errors, and prevents sniffing of other hosts' unicast traffic by simple promiscuous mode. The cost of that benefit is state: the switch must keep and age a table, and it can be attacked through that table."
         }
       ]
     },
     {
       "title": "Store-and-forward vs cut-through",
-      "summary": "Switching modes.",
+      "summary": "The two main switching modes and their trade-off.",
       "sections": [
         {
-          "body": "Store-and-forward receives the whole frame and checks the FCS before forwarding, discarding bad frames. Cut-through starts forwarding once the destination MAC is read, lowering latency but passing errors along."
+          "body": "Store-and-forward receives the whole frame, checks the FCS, and then sends it. It discards corrupt frames and can bridge a 10 Gbit/s port to a 1 Gbit/s port. Cut-through starts transmitting after the 6-byte destination address arrives, so latency is a constant, usually under 5 microseconds on modern ASICs. It cannot check the FCS before sending, so a corrupt frame is propagated (some switches track the error rate per port and fall back to store-and-forward when it rises). Cut-through also needs the ingress and egress speeds to match."
         }
       ]
     },
     {
       "title": "MAC flooding attack",
-      "summary": "Overflowing the table.",
+      "summary": "Overflowing the table to turn a switch into a hub.",
       "sections": [
         {
-          "body": "An attacker sends frames with thousands of fake source MACs until the table is full; the switch then floods unknown unicast like a hub, letting the attacker sniff. Port security (limit MACs per port) and dynamic ARP inspection mitigate it."
+          "body": "The attacker sends frames with thousands of random source MACs per second. Because the table is finite, the oldest entries are pushed out, legitimate hosts are no longer found, and unknown unicast is flooded, giving the attacker a copy of traffic in that VLAN. Mitigations are layered: `switchport port-security maximum 2` and `violation shutdown` limit MACs per port, 802.1X authenticates the device before it can send, storm control caps flooding, and monitoring of the per-VLAN MAC count alerts on sudden growth."
+        },
+        {
+          "body": "Example port security configuration on a Cisco access port.",
+          "code": "interface GigabitEthernet0/5\n switchport mode access\n switchport port-security\n switchport port-security maximum 2\n switchport port-security mac-address sticky\n switchport port-security violation restrict"
+        }
+      ]
+    },
+    {
+      "title": "Port security violation modes",
+      "summary": "What happens when the MAC limit is exceeded.",
+      "sections": [
+        {
+          "body": "**Protect** silently drops frames from unknown MACs once the limit is reached. **Restrict** drops them and also logs a message and increments the violation counter. **Shutdown** (the default) puts the port into err-disabled state until an administrator or an auto-recovery timer re-enables it. Shutdown is the safest but causes outages when a user plugs in a small switch or a phone with a PC behind it, so the maximum should reflect the real number of devices."
         }
       ]
     },
     {
       "title": "MAC flapping",
-      "summary": "A symptom of a loop.",
+      "summary": "A table entry that keeps jumping between ports.",
       "sections": [
         {
-          "body": "If the same MAC keeps jumping between ports, there is usually a Layer 2 loop or a duplicate MAC. Logs show 'MAC flapping'; check spanning tree."
+          "body": "If the same MAC is learned alternately on two ports, the switch logs a flap. The usual causes are a Layer 2 loop (the same frame returns on another port), a duplicate MAC on two hosts, a server NIC team using a mode that sends one MAC from several ports, or a VM that is being migrated. Find the two ports in the log, trace the topology, check `show spanning-tree` for a missing block, and look for an unmanaged switch or a patch cable plugged into both ends of one device."
         }
       ]
     },
     {
-      "title": "Viewing the table",
-      "summary": "Commands.",
+      "title": "Aging and topology changes",
+      "summary": "How the table forgets and why STP shortens it.",
       "sections": [
         {
-          "body": "Cisco: `show mac address-table`. Linux bridge: `bridge fdb show`. Both list MAC, VLAN, port, and whether it is dynamic or static.",
-          "code": "Switch# show mac address-table\nVlan  Mac Address       Type     Ports\n   1  aaaa.bbbb.0001    DYNAMIC  Gi0/1"
+          "body": "A dynamic entry is refreshed on each frame from that source and removed after 300 s of silence by default. When spanning tree changes the topology, a MAC that was reachable via the old path could be wrong for up to five minutes. To avoid that, a topology change makes switches age entries using only the forward delay (15 s), or in RSTP flush the entries on the affected ports immediately. A flood after a topology change is normal and short lived."
+        }
+      ]
+    },
+    {
+      "title": "Viewing and clearing the table",
+      "summary": "Commands on Cisco and Linux.",
+      "sections": [
+        {
+          "body": "Cisco IOS: `show mac address-table`, filtered by `address`, `interface` or `vlan`, and `show mac address-table count`. Clear with `clear mac address-table dynamic`. Linux: `bridge fdb show` lists entries and flags (permanent, self, master); `bridge fdb add` creates a static one; `bridge link` shows port state. Output columns are the same idea everywhere: VLAN, MAC, type (dynamic or static), port."
+        },
+        {
+          "code": "Switch# show mac address-table\nVlan  Mac Address       Type     Ports\n   1  aaaa.bbbb.0001    DYNAMIC  Gi0/1\n  10  aaaa.bbbb.0002    DYNAMIC  Gi0/2\n  10  aaaa.bbbb.00ff    STATIC   Gi0/24\n\n$ bridge fdb show br br0\naa:bb:cc:00:00:01 dev eth1 master br0\n33:33:00:00:00:01 dev eth1 self permanent"
+        }
+      ]
+    },
+    {
+      "title": "Multilayer switching and inter-VLAN routing",
+      "summary": "Where MAC learning meets IP forwarding.",
+      "sections": [
+        {
+          "body": "A Layer 3 switch has a switch virtual interface (SVI) per VLAN. Hosts in VLAN 10 send frames to the SVI MAC address when the destination IP is off-subnet. The switch finds that MAC in its table as its own, hands the packet to the routing engine, which looks up the destination in the FIB, rewrites the source and destination MAC addresses, and sends it out the VLAN 20 side. So the MAC table is still consulted for same-VLAN traffic, while the routing table decides between VLANs, all at line rate in hardware."
         }
       ]
     }
   ],
   "takeaways": [
-    "Switches learn source MAC to port mappings automatically.",
-    "Known unicast goes out one port; unknown unicast and broadcast are flooded.",
-    "Entries age out (about 300 s) and update when a host moves.",
-    "A full MAC table makes a switch behave like a hub; limit it with port security."
-  ],
-  "references": [
-    {
-      "label": "IEEE 802.1D MAC Bridges",
-      "url": "https://1.ieee802.org/"
-    },
-    {
-      "label": "Reference: Network switch (Wikipedia)",
-      "url": "https://en.wikipedia.org/wiki/Network_switch"
-    }
+    "Switches learn source MAC to port mappings from every frame; the destination is only looked up, never learned.",
+    "Known unicast goes out one port; unknown unicast and broadcast are flooded to the whole VLAN except the ingress port.",
+    "Entries age out after about 300 seconds idle and move automatically when a host appears on a new port.",
+    "Each port is a collision domain; each VLAN is a broadcast domain.",
+    "A full or poisoned table makes a switch behave like a hub, so limit MACs per port with port security.",
+    "MAC flapping between two ports almost always means a loop or duplicate MAC: check spanning tree.",
+    "Store-and-forward checks the FCS; cut-through forwards after 6 bytes for lower latency."
   ],
   "practice": [
     {
-      "title": "Trace the MAC table after four frames",
+      "title": "Trace the MAC table after four frames on a three-port switch",
       "difficulty": "Easy"
     },
     {
-      "title": "Explain unknown-unicast flooding",
+      "title": "Explain unknown-unicast flooding and when it is normal",
       "difficulty": "Easy"
     },
     {
-      "title": "Diagnose MAC flapping",
+      "title": "Why does a switch never learn the destination address?",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Diagnose a MAC flapping log between two uplinks",
       "difficulty": "Medium"
     },
     {
-      "title": "Simulate MAC flooding and apply port security",
+      "title": "Configure port security with sticky MACs and restrict violations",
       "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why a silent server receives flooded traffic and fix it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a C learn and lookup routine with aging and VLAN keys",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design table sizing and flood control for a 2,000 VM host cluster",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Network switch (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Network_switch"
+    },
+    {
+      "label": "IEEE 802.1D / 802.1Q MAC Bridges and Bridged Networks",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Linux man-pages: bridge(8)",
+      "url": "https://man7.org/linux/man-pages/man8/bridge.8.html"
     }
   ]
 }

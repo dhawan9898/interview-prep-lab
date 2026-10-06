@@ -1,136 +1,231 @@
 {
-  "summary": "OSPF is a link-state interior gateway protocol. Every router learns the full topology of its area, then independently runs Dijkstra's shortest-path-first algorithm to build its routing table, so all routers converge on consistent loop-free routes.",
+  "summary": "OSPF (Open Shortest Path First, version 2 in RFC 2328) is the link-state interior gateway protocol: every router floods descriptions of its own links, all routers in an area build an identical map, and each runs Dijkstra's shortest-path algorithm on it to compute routes. It converges in seconds, scales through areas, and supports multi-access networks via a designated router. It is the standard IGP inside enterprises, data centres and many ISPs, and a favourite interview topic because its states, LSA types and DR election are concrete and testable.",
   "sections": [
     {
-      "heading": "Link-state idea",
-      "body": "Each router describes its own links and neighbours in Link State Advertisements (LSAs) and floods them. All routers in an area end up with an identical link-state database (LSDB), then each computes a shortest-path tree rooted at itself (RFC 2328). OSPF uses a single dimensionless cost metric summed along the path; a common convention is cost = reference bandwidth / interface bandwidth."
+      "heading": "Overview",
+      "body": "Routing protocols inside one organisation (an autonomous system) are called interior gateway protocols. Early ones such as RIP were distance-vector: each router told its neighbours what it believed the distances to destinations were, which converges slowly and counts to infinity on failures. OSPF takes the other approach, link state. Each router discovers its neighbours, describes its own links and their costs in a link-state advertisement (LSA), and floods that LSA reliably to every router in the area. All routers end up with the same link-state database (LSDB), which is a complete graph of the area. Each router then runs Dijkstra's algorithm with itself as the root to produce a shortest-path tree, and installs the best next hop for every prefix in the routing table. OSPF runs directly over IP using protocol number 89, not over TCP or UDP, and implements its own reliability with acknowledgements and retransmission. For scale, an AS is divided into areas: area 0, the backbone, connects all other areas, and LSAs are summarised at area borders so a topology change in one area does not force every router in the AS to recompute. This lesson covers the packet types, neighbour state machine, DR election, LSA types, areas, costs and operational pitfalls."
     },
     {
-      "heading": "Neighbour discovery: Hello protocol",
-      "body": "Routers send Hello packets (to multicast 224.0.0.5, IP protocol 89) at the hello interval (10 s on broadcast links by default). Neighbours must agree on area, hello and dead intervals, and authentication. The dead interval (default 40 s) declares a silent neighbour down.",
+      "heading": "Core Concepts",
       "bullets": [
-        "Down: no Hello received.",
-        "Init: Hello received but our router ID not yet seen in it.",
-        "2-Way: bidirectional communication confirmed; DR/BDR election happens here.",
-        "ExStart / Exchange: master/slave negotiation, then database descriptions are swapped.",
-        "Loading: missing LSAs are requested.",
-        "Full: databases are synchronized; the routers are adjacent."
+        "**Router ID**: a 32-bit number written like an IPv4 address that uniquely names a router in the OSPF domain. Chosen manually, or the highest loopback address, or the highest interface address.",
+        "**Area and area ID**: a group of routers and links sharing one LSDB. Area 0 (0.0.0.0) is the backbone. Every non-backbone area must attach to area 0, directly or through a virtual link.",
+        "**Neighbour and adjacency**: neighbours are routers that hear each other's Hellos on a shared link; an adjacency is the stronger relationship in which they synchronise their databases (state Full).",
+        "**LSA, LSDB**: a link-state advertisement describes part of the topology; the link-state database is the set of all LSAs known in an area.",
+        "**Cost**: the per-interface metric, an unsigned 16-bit number. Path cost is the sum of outgoing interface costs. Cisco's default is reference bandwidth (100 Mbps) divided by interface bandwidth.",
+        "**SPF**: the shortest-path-first calculation, Dijkstra, run per area whenever the LSDB changes.",
+        "**DR and BDR**: the designated router and backup designated router of a multi-access segment, elected to cut the number of adjacencies from n(n-1)/2 to about 2n.",
+        "**ABR and ASBR**: an area border router connects two or more areas; an AS boundary router injects routes from outside OSPF (static, BGP, other IGPs).",
+        "**Hello and dead intervals**: Hello packets are sent every HelloInterval (10 seconds on broadcast and point-to-point links); a neighbour silent for RouterDeadInterval (40 seconds, four hellos) is declared down.",
+        "**Link-state sequence number**: a signed 32-bit counter starting at 0x80000001 that identifies the newest instance of an LSA.",
+        "**LS age**: seconds since the LSA was originated; the age field reaching MaxAge (3600 seconds) removes the LSA from the database."
       ]
     },
     {
-      "heading": "Designated Router",
-      "body": "On a broadcast segment every router forming a full mesh of adjacencies would flood needlessly. Instead, a Designated Router (DR) and Backup (BDR) are elected by highest priority, then highest router ID; other routers form adjacencies only with the DR and BDR. DR/BDR listen on 224.0.0.6."
+      "heading": "How It Works",
+      "body": "Take two routers R1 and R2 connected by an Ethernet link and walk through bring-up. Both start in Down. R1 sends a Hello to the multicast address 224.0.0.5 (AllSPFRouters). R2 receives it and records R1 as a neighbour in state Init. R2's next Hello lists R1's router ID in its neighbour field, so R1 sees itself in the list and moves to 2-Way. On a broadcast network a DR and BDR are elected at this point; only routers that must form an adjacency continue. Next is ExStart, where the two routers decide a master and a slave using empty Database Description packets and choose initial sequence numbers; the router with the higher router ID becomes master. In Exchange they send DBD packets containing LSA headers (not the whole LSAs), and each side notes the LSAs it lacks or holds only older copies of. In Loading they send Link State Requests (type 3) for those LSAs, answered by Link State Updates (type 4), each acknowledged with a Link State Acknowledgment (type 5). When the request list is empty the adjacency is Full. From then on every topology change is flooded as a new LSA, and each router reruns SPF.\n\nThe Hello packet body follows the header: network mask (32 bits), HelloInterval (16), options (8), router priority (8), RouterDeadInterval (32), the DR address (32), the BDR address (32), and then a list of the router IDs of neighbours seen. Two routers form an adjacency only if their Hello interval, dead interval, area ID, subnet mask (on broadcast links), authentication and stub-area flag all match. A mismatch is the most common reason for neighbours that never reach 2-Way. DR election works on each broadcast or NBMA network: the router with the highest priority (default 1) wins, ties are broken by the highest router ID, and priority 0 means ineligible. The election is non-preemptive: once a DR exists, a new router with higher priority does not take over until the DR fails. DROther routers form full adjacencies only with the DR and BDR, send updates to 224.0.0.6 (AllDRouters), and the DR floods them to 224.0.0.5. SPF then runs on the database: the root puts itself in the tree at distance 0, repeatedly adds the closest unreached vertex from a candidate list, and relaxes the links of that vertex. Stub networks are leaves whose prefixes are attached at their router's cost.",
+      "code": "OSPF packet header (24 bytes), IP protocol 89\n 0               1               2               3\n+-------+-------+---------------+-------------------------------+\n|  Ver=2|  Type |            Packet length                      |\n+-------+-------+-----------------------------------------------+\n|                       Router ID                               |\n+---------------------------------------------------------------+\n|                       Area ID                                 |\n+-------------------------------+-------------------------------+\n|          Checksum             |            AuType             |\n+-------------------------------+-------------------------------+\n|                  Authentication (64 bits)                     |\n+---------------------------------------------------------------+\nType: 1 Hello  2 DB Description  3 LS Request  4 LS Update  5 LS Ack\n\nExample costs (reference bandwidth 100 Mbps, cost = 10^8 / bps):\n  10 Mbps Ethernet   -> 10\n  100 Mbps           -> 1\n  1 Gbps / 10 Gbps   -> 1   (clamped: raise auto-cost reference-bandwidth)\n\nR1 --(1)-- R2 --(1)-- R4 --(10)-- Net X\n R1 --(10)-- R3 --(1)-- R4\nBest R1->Net X: via R2,R4 total 1+1+10 = 12   vs  via R3: 10+1+10 = 21"
     },
     {
-      "heading": "Areas",
-      "body": "A large network is split into areas to limit flooding and SPF scope. Area 0, the backbone, must be contiguous and connect all other areas (virtual links can patch gaps). Area Border Routers (ABRs) summarize routes between areas; ASBRs inject external routes.",
+      "heading": "Variants & Types",
       "bullets": [
-        "Internal router: all interfaces in one area.",
-        "ABR: interfaces in multiple areas.",
-        "Backbone router: at least one interface in area 0.",
-        "ASBR: redistributes routes from outside the OSPF domain."
+        "**LSA type 1, router LSA**: every router describes its links (point-to-point, transit, stub, virtual) and costs; flooded within the area.",
+        "**LSA type 2, network LSA**: originated by the DR for a multi-access segment, listing all attached routers; flooded within the area.",
+        "**LSA type 3, summary LSA**: an ABR advertises an inter-area prefix and cost into another area.",
+        "**LSA type 4, ASBR summary**: tells other areas how to reach an ASBR.",
+        "**LSA type 5, AS-external LSA**: an ASBR advertises an external prefix; flooded throughout the AS except stub areas. External metric type 1 (E1) adds internal cost; type 2 (E2, default) keeps a constant external metric.",
+        "**LSA type 7, NSSA external**: used in not-so-stubby areas (RFC 3101) so an ASBR inside a stub-like area can inject externals; the ABR translates type 7 into type 5.",
+        "**Area types**: standard, stub (no type 5, default route injected), totally stubby (also no type 3 except the default; a Cisco extension), NSSA, totally NSSA.",
+        "**Network types**: broadcast (DR election), point-to-point (no DR), NBMA (Hello 30 s, dead 120 s), point-to-multipoint, and virtual links to join a disconnected area to area 0.",
+        "**Route preference**: intra-area, then inter-area, then E1, then E2, regardless of cost. Administrative distance for OSPF is 110 on Cisco.",
+        "**OSPFv3 (RFC 5340)**: version 3 for IPv6; runs per link instead of per subnet, uses link-local addresses, and moves addressing out of router and network LSAs into new LSA types."
       ]
     },
     {
-      "heading": "LSA types and flooding",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "Type 1 Router LSA: a router's links within an area.",
-        "Type 2 Network LSA: generated by the DR for a multi-access segment.",
-        "Type 3 Summary LSA: inter-area routes from an ABR.",
-        "Type 5 AS-external LSA: routes from an ASBR.",
-        "LSAs carry sequence numbers and an age; they are refreshed every 30 minutes and expire at 60 minutes.",
-        "Flooding is reliable: each LSA is acknowledged."
+        "**SPF time**: Dijkstra with a binary heap is O(E log V) where V is routers and E links; with Fibonacci heaps O(E + V log V). Thousands of routers per area compute in tens of milliseconds on modern CPUs.",
+        "**Database size**: one router LSA per router plus one network LSA per transit segment plus one summary per inter-area prefix; memory grows with the number of routers and prefixes in the area.",
+        "**Adjacencies**: full mesh on a segment of n routers needs n(n-1)/2 adjacencies; with a DR it needs 2(n-1) plus the n-2 two-way relationships.",
+        "**Flood overhead**: every LSA refreshes every 1800 seconds (LSRefreshTime) and expires at 3600 seconds (MaxAge). Minimum intervals: a router originates the same LSA no more than once per MinLSInterval (5 s) and accepts it no more than once per MinLSArrival (1 s).",
+        "**Convergence**: failure detected in about 40 seconds with default timers, or tens of milliseconds with BFD or fast hellos (sub-second dead interval), plus flooding and SPF throttle delays. Typical tuned networks converge in under a second.",
+        "**Hello bandwidth**: a Hello with 5 neighbours is about 24 + 20 + 20 bytes, negligible on any modern link.",
+        "**Scale guidance**: roughly 50 to 100 routers per area on older gear and several hundred today; ABR summarisation keeps the backbone small."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Neighbour stuck in Init**: Hellos arrive one way only; check ACLs blocking protocol 89 or multicast 224.0.0.5, and unidirectional links.",
+        "**Stuck in 2-Way**: normal between two DROther routers on a broadcast segment, not an error. Only DR and BDR pairs go Full.",
+        "**Stuck in ExStart or Exchange**: usually an MTU mismatch between the two interfaces, because DBD packets of different sizes are discarded. Fix the MTU or set `ip ospf mtu-ignore`.",
+        "**Mismatched parameters**: Hello and dead timers, area ID, subnet mask, authentication key, area type (stub flag) must agree.",
+        "**Duplicate router IDs**: two routers with the same ID cause LSAs to overwrite each other, and routes flap. Hard-set the router ID rather than relying on interface addresses.",
+        "**Default reference bandwidth**: with 100 Mbps reference, 1 Gbps and 10 Gbps links cost 1, same as 100 Mbps, so OSPF cannot prefer the faster link. Raise `auto-cost reference-bandwidth` consistently on all routers.",
+        "**Non-contiguous area 0**: if the backbone splits, areas lose inter-area routes. Use a virtual link as a temporary repair.",
+        "**Flapping links**: each flap triggers LSA floods and SPF across the whole area; use SPF and LSA throttling, interface dampening, and BFD sensibly.",
+        "**Redistribution loops**: mutual redistribution between OSPF and another protocol without tags and filters can create loops and suboptimal paths.",
+        "**Unauthenticated OSPF**: a rogue router can inject LSAs. Use cryptographic authentication (HMAC-SHA, RFC 5709) or IPsec."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Enterprise campus and WAN**: the default IGP on Cisco, Juniper, Arista and open-source routers (FRRouting, BIRD).",
+        "**Data-centre underlay**: OSPF or IS-IS provides loopback reachability for iBGP and VXLAN overlays in leaf-spine fabrics.",
+        "**Service-provider core**: loopback reachability for MPLS and iBGP next hops, together with segment routing extensions (RFC 8665) and traffic engineering (RFC 3630).",
+        "**Cloud and hybrid**: OSPF over IPsec or GRE tunnels between branch routers; cloud gateways usually speak BGP instead.",
+        "**Embedded and industrial networks**: a small OSPF area across a few routers gives fast failover without manual routes.",
+        "**Operational tooling**: `show ip ospf neighbor`, `show ip ospf database`, `vtysh -c 'show ip ospf route'` on FRR, and packet captures filtered by `ip proto 89`."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What kind of protocol is OSPF?** A link-state interior gateway protocol using Dijkstra's SPF, with cost as the metric, running over IP protocol 89 and multicast 224.0.0.5 and 224.0.0.6.",
+        "**Name the packet types.** Hello, Database Description, Link State Request, Link State Update, Link State Acknowledgment.",
+        "**Name the neighbour states.** Down, Attempt (NBMA only), Init, 2-Way, ExStart, Exchange, Loading, Full.",
+        "**How is the DR elected?** Highest priority, then highest router ID; priority 0 is ineligible; non-preemptive.",
+        "**Why areas?** To limit LSDB size, flooding scope and SPF runs; ABRs summarise between areas through the backbone.",
+        "**Which LSA types?** 1 router, 2 network, 3 summary, 4 ASBR summary, 5 external, 7 NSSA external.",
+        "**OSPF versus RIP?** Link state with full topology, cost metric, fast convergence, VLSM support, no 15-hop limit.",
+        "**OSPF versus BGP?** OSPF finds shortest paths inside one AS; BGP applies policy between ASes."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "SPF calculation",
-      "summary": "Dijkstra on the LSDB.",
+      "title": "Neighbour state machine",
+      "summary": "Down to Full and what each state means.",
       "sections": [
         {
-          "body": "Start with the router itself at cost 0; repeatedly add the unvisited vertex with the lowest cumulative cost and relax its neighbours. The result is a shortest-path tree from which next hops are derived. A topology change triggers a rerun, often throttled to avoid churn."
+          "body": "Down means no Hellos have been heard. Attempt is used only on NBMA links where a neighbour is configured manually. Init means a Hello was received but the sender has not yet listed this router. 2-Way means both directions work; DR and BDR are elected here and non-adjacent neighbours stay in this state. ExStart negotiates master and slave for the database exchange. Exchange swaps summaries of the database in DBD packets, each carrying the Initialise, More and Master flags and a sequence number that the slave echoes. Loading requests the missing or newer LSAs with Link State Requests. Full means the databases are synchronised and the adjacency is advertised in the router LSA. When the dead timer fires, the neighbour returns to Down and a new LSA is flooded without that link."
         }
       ]
     },
     {
-      "title": "Why OSPF converges quickly",
-      "summary": "Compared with distance-vector.",
+      "title": "Designated router election",
+      "summary": "How broadcast segments avoid a full mesh of adjacencies.",
       "sections": [
         {
-          "body": "Changes are flooded immediately and each router recomputes locally, rather than routes propagating hop by hop with counting-to-infinity risks. Features like fast hello and BFD shorten failure detection to sub-second."
+          "body": "On a segment with 10 routers a full mesh would be 45 adjacencies, each flooding every update to every other. Electing a DR makes every router form an adjacency only with the DR and BDR (about 17 here), and the DR originates the type 2 network LSA on behalf of the segment. Election uses Hello fields: each Hello carries priority and the current DR and BDR. After the wait timer (equal to the dead interval), the BDR is chosen first from routers not claiming to be DR, then the DR; if no DR exists, the BDR is promoted. The result is stable until failure. Operational advice: set priority 255 on the intended DR, 0 on edge routers that should never be DR, and on point-to-point links use the point-to-point network type so no election occurs."
         }
       ]
     },
     {
-      "title": "Network types",
-      "summary": "Broadcast, point-to-point, NBMA.",
+      "title": "LSA flooding and reliability",
+      "summary": "How updates reach every router exactly once and are acknowledged.",
       "sections": [
         {
-          "body": "Broadcast and NBMA networks elect a DR; point-to-point links do not. Mismatched network types are a common cause of neighbours stuck in a state."
+          "body": "Every LSA is identified by its type, link state ID and advertising router, and versioned by sequence number, checksum and age. When a Link State Update arrives, the router compares it with its database copy: higher sequence number wins; if equal, a higher checksum, then an age of MaxAge, then an age difference larger than 15 minutes (MaxAgeDiff). A newer LSA is installed, acknowledged, flooded out all other eligible interfaces and triggers SPF. An old one is answered with the database copy. Unacknowledged updates are retransmitted every RxmtInterval (5 s by default). Routers refresh their own LSAs every 30 minutes by incrementing the sequence number, and can flush an LSA by flooding it with age set to MaxAge. Flooding stays inside the LSA's scope: type 1 and 2 within the area, type 5 across the AS."
         }
       ]
     },
     {
-      "title": "Troubleshooting stuck neighbours",
-      "summary": "Checklist.",
+      "title": "Area design and the backbone",
+      "summary": "Why area 0 exists and how traffic crosses areas.",
       "sections": [
         {
-          "bullets": [
-            "Stuck in Init: one-way communication; check ACLs and multicast.",
-            "Stuck in ExStart/Exchange: usually an MTU mismatch.",
-            "No neighbour: mismatched area ID, hello/dead timers, subnet mask, or authentication.",
-            "Useful commands: show ip ospf neighbor, show ip ospf database, show ip route ospf."
-          ]
+          "body": "Area 0 is the hub of a hub-and-spoke design: inter-area traffic always flows through it, which prevents the loops that distance-vector behaviour could create between areas. An ABR with interfaces in area 1 and area 0 keeps a separate LSDB per area, runs SPF in each, and turns the intra-area routes of one area into type 3 LSAs in the other, with cost equal to the distance to the prefix. Because the receiving area only sees prefix and cost, not topology, link flaps in a leaf area do not trigger SPF elsewhere (only the type 3 changes, and with summarisation `area 1 range 10.1.0.0/16` even those are hidden). If an area cannot physically touch area 0, a virtual link through a transit area stitches it in. Good designs align areas with address blocks so summarisation works."
         }
       ]
     },
     {
-      "title": "OSPFv3 and IS-IS",
-      "summary": "Alternatives.",
+      "title": "Stub, totally stubby and NSSA areas",
+      "summary": "Trimming LSAs for small or edge areas.",
       "sections": [
         {
-          "body": "OSPFv3 (RFC 5340) carries IPv6 and runs per link. IS-IS is a similar link-state protocol popular in service-provider backbones."
+          "body": "A stub area blocks type 4 and 5 LSAs; the ABR injects a default route (0.0.0.0/0, cost configurable) so internal routers still reach the outside. A totally stubby area also blocks type 3 summaries, leaving only the default route, minimal state for leaf routers; this is a Cisco feature. A not-so-stubby area (NSSA) is a stub area that contains an ASBR: the ASBR originates type 7 LSAs, which flood inside the NSSA and are converted to type 5 at the ABR. All routers in the area must agree on the stub flag in their Hello options or adjacencies will not form. Virtual links cannot cross stub areas."
+        }
+      ]
+    },
+    {
+      "title": "Cost and path selection",
+      "summary": "How metrics add up and which route class wins.",
+      "sections": [
+        {
+          "body": "OSPF cost is configured per interface; the default derives from bandwidth, so a 10 Mbps link costs 10 and 100 Mbps costs 1 with the classic 100 Mbps reference. Path cost is the sum of costs of outgoing interfaces along the path, plus for external routes the external metric. Equal-cost paths are installed together (ECMP), commonly up to 4 or 8 on older code and 64 or more on modern routers. Route class decides before cost: a worse intra-area route beats a better inter-area route, and E1 beats E2. For E2 routes, ties are broken by the forward cost to the ASBR. Because cost is a number you set, tune it rather than rely on bandwidth when you want traffic engineering, for instance to keep a backup link at cost 1000."
+        }
+      ]
+    },
+    {
+      "title": "Authentication and security",
+      "summary": "Protecting adjacencies from spoofed packets.",
+      "sections": [
+        {
+          "body": "The packet header carries an AuType and a 64-bit authentication field. Type 0 is none, type 1 is a clear-text password, type 2 is cryptographic: a key ID, length and sequence number let the router append an MD5 digest to the packet. RFC 5709 adds HMAC-SHA-1 through HMAC-SHA-512, and RFC 7474 adds protection against replay. OSPFv3 drops its own authentication fields and relies on IPsec (RFC 4552) or the authentication trailer of RFC 7166. Other hardening steps: passive-interface on user-facing ports so no Hellos go out, TTL security (RFC 5082) with hop count 255 on point-to-point links, and ACLs for protocol 89. A hostile router that joins an area can inject LSAs that blackhole traffic, so adjacency authentication is a baseline, not an extra."
+        }
+      ]
+    },
+    {
+      "title": "Fast convergence and tuning",
+      "summary": "Timers, throttles and BFD.",
+      "sections": [
+        {
+          "body": "Default failure detection of 40 seconds is too slow for voice and trading networks. Options: use BFD, which detects loss in tens of milliseconds and tells OSPF to tear down the neighbour; shorten the dead interval with fast Hellos (hello-multiplier of 4 per second); and rely on interface link-down signalling on point-to-point links. After detection, a router originates a new LSA, floods it, and waits an SPF delay before computing, controlled by the exponential back-off throttle (initial wait, hold, maximum wait). Incremental SPF recalculates only the affected subtree, and loop-free alternates (LFA) or TI-LFA precompute backup next hops so forwarding can switch before SPF finishes. With these, convergence below 50 ms is realistic on provider networks."
         }
       ]
     }
   ],
   "takeaways": [
-    "Link-state: flood LSAs, build the same LSDB everywhere, run SPF locally.",
-    "Neighbour states: Down, Init, 2-Way, ExStart, Exchange, Loading, Full.",
-    "Area 0 is the backbone; ABRs connect areas; a DR/BDR reduces adjacencies on LANs.",
-    "Cost is the metric; MTU, timers, and area mismatches break adjacency."
+    "OSPF is a link-state IGP: routers flood LSAs, build identical LSDBs per area and run Dijkstra to compute shortest paths by cost.",
+    "It runs directly over IP protocol 89 using multicast 224.0.0.5 (all SPF routers) and 224.0.0.6 (DR and BDR).",
+    "The five packet types are Hello, DBD, LS Request, LS Update and LS Acknowledgment.",
+    "Neighbour states are Down, Init, 2-Way, ExStart, Exchange, Loading and Full; DROther pairs stay in 2-Way.",
+    "Hello 10 s and dead 40 s on broadcast links; the DR is highest priority, then highest router ID, and non-preemptive.",
+    "Areas contain flooding: area 0 is the backbone, ABRs summarise with type 3 LSAs, stub and NSSA areas cut external LSAs.",
+    "Typical faults are mismatched timers or area IDs, MTU mismatch (ExStart), duplicate router IDs and the 100 Mbps default reference bandwidth."
+  ],
+  "practice": [
+    {
+      "title": "Write the five OSPF packet types and the multicast addresses they use",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Why does a router on a broadcast segment show some neighbours in 2-Way and others in Full",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute OSPF costs for 10 Mbps, 100 Mbps, 1 Gbps and 10 Gbps with a 100 Mbps and a 100 Gbps reference bandwidth",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Run Dijkstra by hand on a six-router topology and list the resulting routing table for the root",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Neighbours are stuck in ExStart: list the likely causes and the commands you would run",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Elect the DR and BDR for routers with priorities 1, 1, 100, 0 and router IDs given, then add a new priority 200 router and explain the result",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design areas for a 40-router network with three regions, including summaries, a stub area and an NSSA with a redistributing ASBR",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain how an LSA with sequence number wraparound or a duplicate router ID can destabilise a domain, and how routers resolve conflicting LSAs",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
       "label": "RFC 2328: OSPF Version 2",
-      "url": "https://www.rfc-editor.org/rfc/rfc2328"
+      "url": "https://www.rfc-editor.org/rfc/rfc2328.txt"
     },
     {
       "label": "RFC 5340: OSPF for IPv6",
       "url": "https://www.rfc-editor.org/rfc/rfc5340"
     },
     {
-      "label": "Reference: Dijkstra routing animation background",
-      "url": "https://en.wikipedia.org/wiki/Open_Shortest_Path_First"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Elect the DR and BDR from priorities and router IDs",
-      "difficulty": "Easy"
+      "label": "RFC 3101: The OSPF Not-So-Stubby Area (NSSA) Option",
+      "url": "https://www.rfc-editor.org/rfc/rfc3101"
     },
     {
-      "title": "Compute the SPF tree and costs for a five-router graph",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Diagnose a neighbour stuck in ExStart",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Design areas for three sites",
-      "difficulty": "Medium"
+      "label": "RFC 5709: OSPFv2 HMAC-SHA Cryptographic Authentication",
+      "url": "https://www.rfc-editor.org/rfc/rfc5709"
     }
   ]
 }

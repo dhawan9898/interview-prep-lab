@@ -1,85 +1,188 @@
 {
-  "summary": "Switch diagnostics means using show commands and counters to locate problems quickly: link state, MAC learning, VLANs, trunks, spanning tree, and bundles. Work from the physical layer upward.",
+  "summary": "Switch diagnostics is the discipline of finding Layer 1 and Layer 2 faults quickly using interface status, error counters, the MAC table, VLAN and trunk state, spanning tree, bundles and packet captures. The method is to work up the stack from the cable to the VLAN to the loop-prevention state, changing one thing at a time and comparing against a known good baseline. Most outages in a switched LAN trace back to a handful of causes: bad cabling or optics, duplex or speed mismatch, VLAN or trunk misconfiguration, a spanning tree loop, or an err-disabled port. The same questions apply on Cisco IOS, other vendors and Linux bridges, which is why this is a standard interview topic.",
   "sections": [
     {
-      "heading": "A systematic approach",
+      "heading": "Overview",
+      "body": "A network switch looks simple from the outside: ports, lights, cables. Inside, it is a managed computer with a data plane (ASIC, MAC table, buffers) and a control plane (spanning tree, LACP, VLAN database, management stack). Faults show up as symptoms such as a dead port, a slow link, a host that cannot reach its gateway, or an entire floor that goes down at once. Diagnostics is the routine for turning a symptom into a cause with the shortest sequence of checks.\n\nThe principle is bottom-up. Check the physical link first, because everything above it depends on it. Next check Layer 2 state: is the port in the expected VLAN, is the MAC learned where it should be, is the trunk carrying the VLAN, is spanning tree forwarding, is the bundle healthy. Then check Layer 3 adjacency such as ARP and the default gateway. At each step, one observation either clears a layer or isolates the fault.\n\nTools fall into four groups. Status and counters (`show interfaces`, `ethtool`) tell what the port believes. Tables (MAC, VLAN, ARP, spanning tree) tell what the switch knows. Neighbor discovery (CDP, LLDP) tells what is attached. Visibility tools (port mirroring or SPAN, packet capture, sFlow, SNMP and syslog) show what is actually on the wire. A managed switch normally supports all of them, and consumer unmanaged switches support none, which is the main reason enterprises avoid them."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Layer 1: is the link up, at the right speed and duplex, with clean counters?",
-        "Layer 2: are MACs learned, is the port in the right VLAN, is the trunk allowing it, is spanning tree forwarding?",
-        "Layer 3: do the host and gateway share the subnet, and is the ARP entry present?",
-        "Change one thing at a time and re-test."
+        "**Link state**: up/up means physical link and line protocol are fine; up/down is a Layer 2 problem (for example encapsulation or keepalive); down/down is a Layer 1 problem; administratively down means someone shut the port.",
+        "**Err-disabled**: a protective state in which the switch shuts a port because a policy was violated: BPDU guard, port security, UDLD, link flap, storm control, loopback or channel misconfiguration.",
+        "**Speed and duplex**: negotiated by autonegotiation (802.3u, Clause 28/37). Mismatched settings (one side fixed, the other auto) cause duplex mismatch and heavy errors.",
+        "**CRC / FCS error**: a received frame failed the 32-bit frame check sequence. Usually a bad cable, connector, optic, EMI or duplex mismatch.",
+        "**Runt**: a frame shorter than 64 bytes (a collision fragment or faulty NIC). **Giant**: longer than the allowed MTU (1518, or 1522 with a VLAN tag, or jumbo).",
+        "**Collisions and late collisions**: collisions are normal only in half duplex; a late collision (after the first 64 bytes) points to duplex mismatch or an over-long cable.",
+        "**Output drops**: frames discarded because the egress queue is full. A sign of congestion or an oversubscribed uplink, not of a faulty link.",
+        "**Input errors vs drops**: errors are damaged frames received; drops are good frames that the switch could not accept or queue.",
+        "**SPAN / port mirroring**: copies traffic from source ports or VLANs to a destination port where an analyzer is attached. RSPAN and ERSPAN carry the copy across the network.",
+        "**Digital optical monitoring (DOM/DDM)**: SFP transceiver telemetry: transmit and receive power in dBm, temperature, voltage, bias current.",
+        "**LLDP and CDP**: neighbor discovery protocols (LLDP is IEEE 802.1AB, using multicast 01:80:C2:00:00:0E; CDP is Cisco's) that advertise name, port, capabilities and VLAN.",
+        "**Baseline**: the known normal values of utilization, error counters, MAC count and topology, used as the comparison for any measurement."
       ]
     },
     {
-      "heading": "Core show commands (Cisco IOS style)",
+      "heading": "How It Works",
+      "body": "A structured method beats guessing. The sequence below works for a host that cannot connect, and each step either rules out a layer or points at the next command. Change one thing at a time and record what you did.",
       "bullets": [
-        "show interfaces status: port up/down, VLAN, duplex, speed at a glance.",
-        "show interfaces GigabitEthernet0/1: detailed counters.",
-        "show mac address-table [address|interface|vlan]: where a device was learned.",
-        "show vlan brief: VLANs and their access ports.",
-        "show interfaces trunk: trunk ports, allowed and active VLANs, native VLAN.",
-        "show spanning-tree [vlan N]: root bridge, port roles and states.",
-        "show etherchannel summary: bundle membership and flags.",
-        "show cdp neighbors / show lldp neighbors: what is attached to each port.",
-        "show logging: link flaps, MAC flapping, err-disable events."
+        "Step 1, define the symptom: one host, one VLAN, one switch or the whole site? When did it start? What changed (cabling, firmware, config)? Scope tells you whether to look at the port, a trunk or the core.",
+        "Step 2, Layer 1: `show interfaces status` or `ethtool eth0`. Is the link up at the expected speed and duplex? Check LEDs, patch cords, SFP and DOM levels. Swap the cable or port to isolate.",
+        "Step 3, counters: read `show interfaces`, clear them, wait, and read again. Rising CRC or runts means physical or duplex; rising output drops means congestion; rising resets mean flapping.",
+        "Step 4, Layer 2 identity: `show mac address-table interface Gi0/5` should show the host MAC. `show vlan brief` confirms the VLAN. If the MAC is on a different port than expected, you have a move, a loop or a spoof.",
+        "Step 5, trunks: `show interfaces trunk`; the VLAN must be in the allowed list, active and forwarding on both ends, and native VLANs must match.",
+        "Step 6, spanning tree: `show spanning-tree vlan 10` and `show spanning-tree blockedports`. Look for unexpected root, topology change counters rising, ports in blocking or inconsistent state.",
+        "Step 7, bundles: `show etherchannel summary` and `show lacp neighbor` for suspended or down members.",
+        "Step 8, Layer 3 edge: `show ip arp`, `show ip interface brief` for the SVI, then ping the gateway from the switch with `ping vrf` or source VLAN interface.",
+        "Step 9, capture when the tables look right but traffic does not flow: mirror the port to an analyzer and look at ARP, DHCP, BPDUs and LACPDUs."
+      ],
+      "code": "SW# show interfaces status\nPort    Name     Status      Vlan   Duplex  Speed Type\nGi0/1   uplink   connected   trunk  a-full  a-1000 10/100/1000BaseTX\nGi0/5   pc-alice connected   10     a-full  a-100  10/100/1000BaseTX\nGi0/6            err-disabled 10    auto    auto   10/100/1000BaseTX\n\nSW# show interfaces gi0/5\n  GigabitEthernet0/5 is up, line protocol is up (connected)\n  Full-duplex, 100Mb/s, media type is 10/100/1000BaseTX\n  5 minute input rate 18000 bits/sec, 25 packets/sec\n     0 runts, 0 giants, 0 throttles\n     47 input errors, 47 CRC, 0 frame, 0 overrun, 0 ignored\n     0 output errors, 0 collisions, 3 interface resets\n     0 late collision, 0 deferred, 912 output drops\n\nSW# show interfaces gi0/5 transceiver detail     (SFP ports)\nSW# test cable-diagnostics tdr interface gi0/5   (copper, some platforms)\nSW# show cdp neighbors detail                    (what is on the other end)"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Cisco IOS / IOS XE**: `show interfaces`, `show mac address-table`, `show vlan brief`, `show interfaces trunk`, `show spanning-tree`, `show etherchannel summary`, `show logging`.",
+        "**Juniper Junos**: `show interfaces terse`, `show ethernet-switching table`, `show vlans`, `show spanning-tree bridge`, `show lacp interfaces`.",
+        "**Arista EOS**: Cisco-like syntax (`show mac address-table`, `show interfaces status`) plus `show lldp neighbors`.",
+        "**Linux host or bridge**: `ip -s link`, `ethtool -S eth0`, `bridge fdb show`, `bridge vlan show`, `ip neigh`, `bridge link`, `cat /proc/net/bonding/bond0`.",
+        "**Passive observation**: SPAN or RSPAN session, a network tap (no drop under load), or a hub in older labs.",
+        "**Active testing**: ping, traceroute, `iperf3` for throughput, cable testers and TDR, loopback plugs, `mtr`.",
+        "**Telemetry**: SNMP polling (interface counters, MIBs, RFC 2613 SMON for mirroring), RMON, sFlow and NetFlow/IPFIX samples, streaming telemetry via gNMI, and syslog to a central server.",
+        "**Management methods**: CLI over SSH or console, SNMP, web UI, NETCONF/RESTCONF; unmanaged switches have none, smart switches offer only a web UI."
       ]
     },
     {
-      "heading": "Reading interface counters",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "CRC / input errors: bad cable, interference, duplex mismatch.",
-        "Runts and giants: collisions or MTU mismatch.",
-        "Output drops: congestion.",
-        "Late collisions: duplex mismatch or too-long cabling.",
-        "Resets/flaps: unstable link or failing optic."
+        "**Time to detect**: SNMP polling at 5 minutes can miss a 30-second flap; streaming telemetry at 1 to 10 s catches it, at the cost of more data.",
+        "**Mirror capacity**: a SPAN destination is one port. Mirroring two 10 Gbit/s full duplex ports to a 10 Gbit/s analyzer can drop frames; mirror one direction or filter by VLAN.",
+        "**CPU impact**: SPAN of a VLAN with heavy traffic, packet capture on a software bridge, and debug commands can raise CPU and disturb production. Prefer `show` commands and sampled monitoring.",
+        "**Counter wrap**: 32-bit interface counters wrap in about 34 seconds at 1 Gbit/s (2^32 bytes divided by 125,000,000 bytes per second). Use 64-bit counters (ifHCInOctets) for fast links.",
+        "**Error rate thresholds**: a healthy copper link has zero CRC errors over days. A rate above 1 error per 10 million frames deserves attention; a steadily increasing count matters more than the absolute number.",
+        "**Optical power**: a typical 10GBASE-SR receiver needs about -9.9 to -1 dBm and 10GBASE-LR about -14.4 to 0.5 dBm. Values near the lower limit mean dirty connectors or excess loss.",
+        "**Cable limits**: copper twisted pair runs to 100 m for 10/100/1000BASE-T and 10GBASE-T (Cat 6A); beyond that frames fail with CRC errors or the link renegotiates to a lower speed."
       ]
     },
     {
-      "heading": "Common symptoms and checks",
+      "heading": "Common Pitfalls & Gotchas",
       "bullets": [
-        "Port down/down: cable, remote end, or err-disabled (check `show interfaces status err-disabled`).",
-        "Link up, no traffic: wrong VLAN, trunk not allowing the VLAN, or port security violation.",
-        "Slow link: speed/duplex mismatch or errors.",
-        "Intermittent: loops (STP), MAC flapping, or a failing cable.",
-        "Host cannot reach gateway: ARP, VLAN, or default gateway misconfiguration."
+        "**Duplex mismatch**: one end hard-coded to 100/full and the other left on auto falls back to 100/half. The half side reports late collisions and runts; the full side reports CRC and frame errors. Throughput collapses under load while ping works. Set both ends to auto, or both fixed identically (gigabit requires autonegotiation).",
+        "**Clearing counters then forgetting**: always note the time and read deltas; absolute numbers over months mean little.",
+        "**Treating drops as errors**: output drops indicate congestion; replacing cables will not help.",
+        "**Trusting a green light**: link up only proves Layer 1. VLAN, trunk, STP and port security issues leave the link light on.",
+        "**Mirroring side effects**: a mirror destination port stops being a normal port; plugging a switch into it creates unexpected behavior. Mirrored traffic may include tags or exclude errored frames.",
+        "**Changing many things at once**: you cannot tell what fixed it and may leave stray config behind.",
+        "**Ignoring the logs**: link up and down, MAC flap, BPDU guard and err-disable events are already logged. Check timestamps, which need NTP to correlate across devices.",
+        "**Debug on a busy switch**: `debug` commands can freeze the CPU. Use targeted filters and set a short logging buffer.",
+        "**Assuming the table is current**: MAC and ARP entries age. If a host is silent, its entry is gone; generate traffic and look again.",
+        "**Unmanaged switch in the path**: it hides loops, ignores VLAN tags (or drops them) and gives no counters."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "Help desk and network operations: the first-line runbook for 'my port is dead' is link status, VLAN, MAC and err-disable checks, usually in under two minutes.",
+        "Loop response: during a broadcast storm, engineers compare per-port counters to find the looping interface, shut it, then fix cabling or enable BPDU guard.",
+        "Change validation: before and after a maintenance window, operators capture `show` outputs and diff them to catch accidental changes.",
+        "Security investigations: tracking a rogue device by MAC across switches, using CDP or LLDP to walk uplinks.",
+        "Capacity planning: interface utilization trends and drop counters decide when to add links or upgrade to 25 or 100 Gbit/s.",
+        "Automation and observability: Ansible, NAPALM, SNMP exporters and gNMI telemetry feed dashboards and alerting for errors and flaps."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**A user cannot reach the network. Where do you start?** Physical link and port status, then VLAN, MAC table, spanning tree, then IP and gateway.",
+        "**What causes CRC errors?** Bad cable, connector or optic, EMI, a failing NIC or a duplex mismatch.",
+        "**How do you recognize a duplex mismatch?** Late collisions and runts on the half-duplex side, CRC and frame errors on the full-duplex side, slow throughput under load.",
+        "**What is err-disable and how do you recover?** A protective shutdown; find the cause with `show interfaces status err-disabled`, fix it, then `shutdown` and `no shutdown` or use errdisable recovery.",
+        "**How do you find a Layer 2 loop?** Very high broadcast counters, CPU near 100 percent, MAC flapping logs; trace the ports with fastest-growing counters and check STP.",
+        "**What is port mirroring used for?** Copying traffic to an analyzer port for Wireshark, IDS or troubleshooting.",
+        "**How do you find where a host is plugged in?** `show mac address-table address <mac>`, follow trunks and CDP/LLDP to the access port.",
+        "**Link is up but no traffic passes. What do you check?** VLAN assignment, trunk allowed list, port security, STP state, then ARP and gateway.",
+        "**Which tools show what is attached?** `show cdp neighbors`, `show lldp neighbors` and the MAC table."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Linux equivalents",
-      "summary": "Same questions on a host or bridge.",
+      "title": "Reading interface counters",
+      "summary": "What each error counter points to.",
       "sections": [
         {
-          "body": "`ip -s link` shows counters and errors; `ethtool eth0` shows speed and duplex; `bridge fdb show` is the MAC table; `bridge vlan show` lists VLANs; `ip neigh` is ARP.",
-          "code": "$ ethtool eth0 | grep -E 'Speed|Duplex|Link'\n$ ip -s link show eth0"
+          "body": "**CRC and input errors**: physical layer or duplex. **Runts**: collisions or a bad NIC. **Giants and baby giants**: MTU mismatch, for example a tagged frame arriving on a 1500-byte MTU path. **Output drops**: egress congestion. **Late collisions**: duplex mismatch or an over-long cable. **Resets and flaps**: unstable link, failing optic or power saving features. Clear counters, run traffic for a measured interval, and look at the change rather than the lifetime total. `show interfaces counters errors` gives a compact table across the whole switch."
+        }
+      ]
+    },
+    {
+      "title": "Linux equivalents",
+      "summary": "The same questions on a host or Linux bridge.",
+      "sections": [
+        {
+          "body": "`ip -s link` shows RX/TX errors and drops, `ethtool` shows speed, duplex and driver statistics, `bridge fdb show` is the MAC table, `bridge vlan show` lists VLANs, `ip neigh` is the ARP table, and `bridge link` shows STP states.",
+          "code": "$ ethtool eth0 | grep -E 'Speed|Duplex|Link detected|Auto-negotiation'\n        Speed: 1000Mb/s\n        Duplex: Full\n        Link detected: yes\n$ ethtool -S eth0 | grep -E 'crc|err|drop'\n$ ip -s link show eth0\n$ bridge fdb show br br0\n$ bridge vlan show\n$ ip neigh show\n$ bridge -d link show\n$ ethtool -m eth0       # SFP module DOM data"
         }
       ]
     },
     {
       "title": "Packet captures",
-      "summary": "See what is on the wire.",
+      "summary": "Seeing what is really on the wire.",
       "sections": [
         {
-          "body": "SPAN/port mirroring copies traffic to an analyzer port; Wireshark or tcpdump then shows ARP, STP BPDUs, and LACPDUs directly. Filter on `arp`, `stp`, or `ether proto 0x8809`."
+          "body": "Mirror the suspect port with SPAN and capture on the analyzer with Wireshark or tcpdump. Useful filters: `arp`, `stp`, `ether proto 0x8809` for LACPDUs, `vlan`, `udp port 67 or 68` for DHCP and `ether host aa:bb:cc:dd:ee:ff`.",
+          "code": "monitor session 1 source interface Gi0/5 both\nmonitor session 1 destination interface Gi0/24\n\n$ tcpdump -i eth0 -e -n -c 20 stp\n$ tcpdump -i eth0 -e -n ether proto 0x8809\n$ tcpdump -i eth0 -e -n vlan and host 10.0.10.5"
+        },
+        {
+          "body": "Seeing a tag in the capture confirms the trunk is tagging. Some NICs strip the VLAN tag before the capture, so use the vendor option to preserve it, or capture on the mirror port."
         }
       ]
     },
     {
       "title": "Spotting a loop",
-      "summary": "Symptoms and fix.",
+      "summary": "Symptoms, triage and fix.",
       "sections": [
         {
-          "body": "Symptoms: very high CPU, utilization near 100%, rapidly increasing broadcast counters, MAC flapping logs. Find the looping ports from the interface with the fastest-growing counters, shut one, and fix the topology or enable BPDU guard."
+          "body": "Symptoms: switch CPU near 100 percent, utilization near 100 percent on many links, rapidly increasing broadcast and multicast counters, MAC flapping messages, topology change counters rising and users with dropped sessions. Triage: identify the ports with the fastest-growing input counters, shut one at a time (or pull the suspect cable), and watch the storm stop. Fix the cause: a patch cable looped between two wall jacks, an unmanaged switch with two uplinks, or STP disabled or filtered. Prevent with BPDU guard on edge ports, storm control (for example 1 percent broadcast), root guard, UDLD, and consistent STP across all switches."
         }
       ]
     },
     {
       "title": "Err-disable",
-      "summary": "Automatic protection.",
+      "summary": "Automatic protection and recovery.",
       "sections": [
         {
-          "body": "Ports shut themselves down on BPDU guard, port security, or link flap events. `show interfaces status err-disabled` names the cause; fix it, then `shutdown` / `no shutdown` (or configure auto-recovery)."
+          "body": "Ports shut down automatically for BPDU guard, port security violation, UDLD, link flap, storm control, loopback, DHCP rate limit and channel misconfiguration. The status output names the reason. Fix the cause before re-enabling, otherwise the port will be disabled again. Auto recovery restores ports after a timer.",
+          "code": "SW# show interfaces status err-disabled\nPort    Name   Status        Reason          Err-disabled Vlans\nGi0/6          err-disabled  bpduguard\n\nSW# configure terminal\nSW(config)# interface gi0/6\nSW(config-if)# shutdown\nSW(config-if)# no shutdown\nSW(config)# errdisable recovery cause bpduguard\nSW(config)# errdisable recovery interval 300"
+        }
+      ]
+    },
+    {
+      "title": "Cabling and optics",
+      "summary": "Layer 1 faults that look like Layer 2 faults.",
+      "sections": [
+        {
+          "body": "Test copper with a certifier or TDR (`test cable-diagnostics tdr`) for opens, shorts, pair skew and length. Bent or over-pulled Cat 5e or poor terminations cause CRC errors and speed fallback to 100 Mbit/s when a pair is damaged. For fiber, read DOM power levels (`show interfaces transceiver detail`); a receive level near the sensitivity limit points at dirty connectors, a bad patch cord or too much loss. Check that both ends use matching types (SR with SR, LR with LR, correct single or multimode fiber), that third-party optics are accepted, and that Tx and Rx fibers are not swapped. Power over Ethernet adds `show power inline` for budget and fault states."
+        }
+      ]
+    },
+    {
+      "title": "Neighbor discovery with CDP and LLDP",
+      "summary": "Mapping who is connected where.",
+      "sections": [
+        {
+          "body": "CDP (Cisco) and LLDP (IEEE 802.1AB, multicast 01:80:C2:00:00:0E, EtherType 0x88CC) advertise device name, port ID, capabilities, native VLAN, management address and power needs. They let you walk from a known switch to the device attached to any port and spot mismatched native VLANs or duplex (CDP reports them). LLDP-MED adds voice VLAN and location data. Disable them on untrusted edge ports, since they reveal topology information."
+        },
+        {
+          "code": "SW# show cdp neighbors\nDevice ID   Local Intrfce  Holdtme  Capability  Platform   Port ID\nDS1         Gi0/1          150      R S I       WS-C3850   Gi1/0/12\nSW# show lldp neighbors detail"
+        }
+      ]
+    },
+    {
+      "title": "Port mirroring and monitoring",
+      "summary": "SPAN, RSPAN, taps and sFlow.",
+      "sections": [
+        {
+          "body": "A switch forwards frames only to the right port, so a monitoring host cannot see other ports' traffic. SPAN copies selected ports or VLANs to a destination port. RSPAN carries the copy over a dedicated VLAN to a remote switch and ERSPAN encapsulates it in GRE for routing across Layer 3. Because mirroring can exceed the destination port's capacity, choose directions (rx, tx, both) and VLAN filters carefully. SMON (RFC 2613) lets SNMP control mirroring. sFlow samples one in N packets and counters from the ASIC and is cheap enough to run permanently. Taps are passive hardware devices that never drop under load and are the right choice for forensic capture."
         }
       ]
     },
@@ -88,47 +191,70 @@
       "summary": "Make future faults easy.",
       "sections": [
         {
-          "body": "Keep configuration backups, a port map, and baseline counters so deviations are obvious. Use SNMP or streaming telemetry to alert on error and utilization trends."
+          "body": "Keep configuration backups (in version control), a port map linking patch panel to switch port to device, and baseline values for utilization, error rate, MAC counts and STP topology (root bridge, blocked ports). Use NTP so logs on all devices align. Send syslog and SNMP traps to a central collector and alert on changes that matter: link flap more than 5 times in a minute, a new root bridge, MAC count jumps, err-disable events, and optical power drifting. With a baseline, a deviation is obvious and the fix is often a rollback."
         }
       ]
     }
   ],
   "takeaways": [
-    "Troubleshoot bottom-up: link, MAC/VLAN/trunk, STP, then IP.",
-    "Know the key commands: interfaces status, mac address-table, vlan brief, trunk, spanning-tree, etherchannel.",
-    "Counters tell the story: CRC means cabling, runts/giants mean MTU or collisions, drops mean congestion.",
-    "Loops show as broadcast storms and MAC flapping."
+    "Work bottom-up: physical link, then VLAN and trunk, MAC table, spanning tree and bundles, then ARP and the gateway.",
+    "A link light proves only Layer 1: VLANs, trunks, STP and port security can all block traffic on a healthy link.",
+    "CRC errors and runts point to cabling, optics or duplex mismatch; output drops point to congestion; late collisions point to duplex mismatch.",
+    "`show mac address-table` (or `bridge fdb show`) tells you where a host is learned; a MAC jumping between ports means a loop or duplicate.",
+    "A Layer 2 loop shows as near 100 percent utilization and CPU, huge broadcast counters and MAC flapping: shut the looping port and fix with BPDU guard and storm control.",
+    "Err-disabled ports name their cause (`show interfaces status err-disabled`); fix it, then shutdown and no shutdown or use auto recovery.",
+    "Use SPAN, tcpdump, CDP/LLDP, SNMP and syslog for evidence, and keep baselines so deviations stand out."
+  ],
+  "practice": [
+    {
+      "title": "List the order of checks for a host that has no network access",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Interpret a `show interfaces` output with CRC and late collision counts",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find which switch port a given MAC address is on",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Diagnose a duplex mismatch from the counters on both ends",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "A VLAN works on one switch but not across the trunk: find why",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Set up SPAN and capture ARP and BPDU frames with tcpdump",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Triage a broadcast storm in progress and prevent a recurrence",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a monitoring plan (SNMP, syslog, telemetry) with alert thresholds for a campus",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
-      "url": "https://1.ieee802.org/"
+      "label": "Network switch (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Network_switch"
     },
     {
-      "label": "Reference: Cisco IOS switching command references",
+      "label": "Cisco Catalyst switch troubleshooting guides",
       "url": "https://www.cisco.com/c/en/us/support/switches/index.html"
     },
     {
       "label": "Linux man-pages: bridge(8)",
       "url": "https://man7.org/linux/man-pages/man8/bridge.8.html"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Interpret the counters in show interfaces",
-      "difficulty": "Easy"
     },
     {
-      "title": "Troubleshoot a host that cannot reach its gateway",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Find a loop from rising broadcast counters",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Diagnose a native VLAN mismatch",
-      "difficulty": "Medium"
+      "label": "Linux man-pages: ethtool(8)",
+      "url": "https://man7.org/linux/man-pages/man8/ethtool.8.html"
     }
   ]
 }

@@ -1,117 +1,232 @@
 {
-  "summary": "The IPv4 header carries the fields routers need to forward a datagram: addresses, length, fragmentation controls, time to live, the upper-layer protocol, and a header checksum. It is 20 bytes plus up to 40 bytes of options.",
+  "summary": "The IPv4 header is the 20-to-60-byte prefix on every IPv4 packet. It carries the source and destination addresses, a TTL that stops loops, a protocol number that names the payload (TCP, UDP, ICMP), fragmentation fields, and a checksum over the header itself. Routers read only this header to forward the packet, so knowing each field's size and purpose lets you decode captures, reason about MTU and fragmentation, and answer a very common interview question. It is defined in RFC 791 and still carries most of the Internet's traffic.",
   "sections": [
     {
-      "heading": "Header layout (RFC 791)",
-      "code": " 0       4       8              16   19                 31\n+-------+-------+---------------+------+------------------+\n|Version|  IHL  | Type of Svc   |     Total Length         |\n+-------+-------+---------------+------+------------------+\n|      Identification           |Flags | Fragment Offset  |\n+-------------------------------+------+------------------+\n|   TTL         |   Protocol    |     Header Checksum      |\n+---------------+---------------+--------------------------+\n|                  Source Address                          |\n+----------------------------------------------------------+\n|                Destination Address                       |\n+----------------------------------------------------------+\n|                Options (0-40 bytes)                      |"
+      "heading": "Overview",
+      "body": "IPv4 is a connectionless, best-effort network layer protocol. Each packet is routed independently, and the header holds everything a router needs: where it is going, how long it may live, how big it is, and how to reassemble it if it had to be split. The fixed part is 20 bytes made of five 32-bit words; optional extensions can stretch the header to at most 60 bytes. Fields are in network byte order (big endian). The design from 1981 had to work over links of very different sizes, so it includes fragmentation. Modern practice avoids fragmentation, and several fields (the ToS byte, ID, the reserved flag bit) have been repurposed since RFC 791 for DSCP, ECN and other uses."
     },
     {
-      "heading": "Fields",
+      "heading": "Core Concepts",
       "bullets": [
-        "Version (4 bits): 4.",
-        "IHL (4 bits): header length in 32-bit words; minimum 5 (20 bytes), maximum 15 (60 bytes).",
-        "Type of Service / DSCP+ECN (8 bits): QoS marking and congestion notification.",
-        "Total Length (16 bits): header plus data in bytes; maximum 65,535.",
-        "Identification (16): shared by all fragments of one datagram.",
-        "Flags (3): reserved, DF (Don't Fragment), MF (More Fragments).",
-        "Fragment Offset (13): position of this fragment in 8-byte units.",
-        "TTL (8): decremented at each router; at zero the packet is dropped and ICMP Time Exceeded is sent.",
-        "Protocol (8): payload type, e.g. 1 ICMP, 6 TCP, 17 UDP.",
-        "Header Checksum (16): covers the header only.",
-        "Source and Destination addresses (32 each)."
+        "**Version (4 bits)**: always 4. A parser that sees any other value must drop the packet.",
+        "**IHL (4 bits)**: header length in 32-bit words. The minimum is 5 (20 bytes) and the maximum 15 (60 bytes), so options take at most 40 bytes.",
+        "**DSCP (6 bits) and ECN (2 bits)**: the old Type of Service byte. DSCP selects a per-hop QoS behavior and ECN signals congestion without dropping.",
+        "**Total Length (16 bits)**: header plus payload in bytes, so a packet is at most 65,535 bytes.",
+        "**Identification (16 bits)**: a value shared by all fragments of one original packet so the receiver can group them.",
+        "**Flags (3 bits)**: bit 0 reserved (zero), bit 1 DF (Don't Fragment), bit 2 MF (More Fragments).",
+        "**Fragment Offset (13 bits)**: where this fragment's data starts in the original payload, measured in 8-byte units.",
+        "**TTL (8 bits)**: hop limit. Every router decrements it; at zero the packet is dropped and an ICMP Time Exceeded is sent.",
+        "**Protocol (8 bits)**: the next-layer protocol: 1 ICMP, 2 IGMP, 6 TCP, 17 UDP, 41 IPv6-in-IPv4, 47 GRE, 50 ESP, 89 OSPF, 132 SCTP.",
+        "**Header Checksum (16 bits)**: ones' complement checksum over the header only, not the payload.",
+        "**Source and Destination Address (32 bits each)**: the endpoints, rewritten only by NAT.",
+        "**Options (0 to 40 bytes)**: rarely used extras, padded so the header ends on a 32-bit boundary."
       ]
     },
     {
-      "heading": "Header checksum",
-      "body": "The checksum is the 16-bit one's complement of the one's complement sum of all 16-bit header words, computed with the checksum field set to zero. Because TTL changes at every hop, each router recomputes it (usually incrementally).",
-      "code": "sum = 0\nfor each 16-bit word w in header: sum += w\nwhile (sum >> 16): sum = (sum & 0xffff) + (sum >> 16)\nchecksum = ~sum & 0xffff"
+      "heading": "How It Works",
+      "body": "A router receives a frame, strips the Layer 2 header and checks the IP header: version is 4, IHL is at least 5, total length fits the frame, and the checksum is valid. If any check fails the packet is silently dropped. The router decrements TTL; if it reaches zero the packet is dropped and ICMP Time Exceeded (type 11) goes back to the source. The router then recomputes the header checksum (modern hardware updates it incrementally because only TTL changed), looks up the destination in its forwarding table with a longest-prefix match, finds the next hop and outgoing interface, and, if the packet is bigger than the outgoing MTU, either fragments it or, when DF is set, drops it and returns ICMP Destination Unreachable code 4 (fragmentation needed and DF set). Finally it builds a new Layer 2 frame to the next hop. The header is read and rewritten at every hop; the payload is untouched. The checksum is the ones' complement of the ones' complement sum of all 16-bit words in the header, computed with the checksum field set to zero. To verify, sum the entire header including the checksum; a valid header sums to 0xFFFF. For the example above the words add to 0x2479C, fold the carry to get 0x479E, and invert to get 0xB861. When TTL drops from 0x40 to 0x3F the high byte of one word falls by 1, so the sum falls by 0x0100 and the new checksum is 0xB961. That is the trick routers use to avoid recomputing the full sum (RFC 1624 describes it safely).",
+      "code": "IPv4 header, 20 bytes without options (each row is 32 bits)\n\n  0       4       8              16      19                      31\n +-------+-------+--------------+-----------------------------------+\n |Version|  IHL  | DSCP |  ECN  |           Total Length            |\n +-------+-------+--------------+-----+-----------------------------+\n |        Identification        |Flags|       Fragment Offset       |\n +---------------+--------------+-----+-----------------------------+\n |     TTL       |   Protocol   |          Header Checksum          |\n +---------------+--------------+-----------------------------------+\n |                       Source Address                             |\n +------------------------------------------------------------------+\n |                    Destination Address                           |\n +------------------------------------------------------------------+\n |                Options (0..40 bytes) + padding                   |\n +------------------------------------------------------------------+\n\nReal header, hex: 45 00 00 73 00 00 40 00 40 11 b8 61 c0 a8 00 01 c0 a8 00 c7\n version 4, IHL 5 (20 bytes), DSCP 0, total length 0x0073 = 115\n ID 0, flags 010 (DF set), offset 0, TTL 0x40 = 64, protocol 0x11 = UDP\n checksum 0xb861, src 192.168.0.1, dst 192.168.0.199\n\n#include <stdint.h>\n#include <stddef.h>\n\n/* Internet checksum over `len` bytes (header must have checksum = 0). */\nuint16_t ip_checksum(const void *data, size_t len) {\n    const uint8_t *p = data;\n    uint32_t sum = 0;\n    while (len > 1) {                   /* add 16-bit big-endian words */\n        sum += (uint32_t)((p[0] << 8) | p[1]);\n        p += 2; len -= 2;\n    }\n    if (len) sum += (uint32_t)(p[0] << 8);   /* odd trailing byte */\n    while (sum >> 16)                        /* fold carries back in */\n        sum = (sum & 0xFFFF) + (sum >> 16);\n    return (uint16_t)~sum;\n}\n\nstruct ipv4_hdr {\n    uint8_t  ver_ihl;      /* (4 << 4) | ihl */\n    uint8_t  tos;          /* DSCP << 2 | ECN */\n    uint16_t total_len;\n    uint16_t id;\n    uint16_t flags_frag;   /* flags in top 3 bits, offset in low 13 */\n    uint8_t  ttl;\n    uint8_t  proto;\n    uint16_t checksum;\n    uint32_t src, dst;\n};"
     },
     {
-      "heading": "Fragmentation",
-      "body": "If a datagram exceeds the next link's MTU and DF is clear, a router splits it. Each fragment repeats the header, sets MF on all but the last, and stores its byte offset divided by 8 in the offset field. The destination, not routers, reassembles using source, destination, protocol, and Identification.",
-      "code": "MTU 1500, payload 4000 bytes (header 20):\n  frag 1: offset 0,   1480 bytes, MF=1\n  frag 2: offset 185, 1480 bytes, MF=1   (1480/8 = 185)\n  frag 3: offset 370, 1040 bytes, MF=0"
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Without options (IHL 5)**: the usual case, 20 bytes. Fast paths in routers assume it.",
+        "**With options**: End of Option List (0), No Operation (1), Record Route (7), Timestamp (68), Loose Source Route (131), Strict Source Route (137), Router Alert (148). Packets with options are slow-pathed in many routers and often dropped by firewalls.",
+        "**Fragmented packets**: MF set on all but the last fragment, nonzero offset on all but the first. A packet with MF=0 and offset 0 is unfragmented.",
+        "**DF-set packets**: used for Path MTU Discovery. Oversize means ICMP back to the sender, never fragmentation.",
+        "**ToS interpretations**: original precedence and ToS bits (RFC 791), then DiffServ DSCP (RFC 2474), plus ECN (RFC 3168). Same byte, different meaning.",
+        "**Tunneled IPv4**: IP-in-IP (protocol 4), GRE (47), IPsec ESP (50), UDP-based VXLAN or WireGuard. The inner packet carries its own IP header.",
+        "**Multicast and broadcast packets**: header format is identical; only the destination address (224.0.0.0/4, or all ones) changes."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Header size**: 20 bytes minimum, 60 maximum. For a 1500-byte MTU, IPv4 plus TCP leaves 1460 bytes of TCP data (the common MSS).",
+        "**Maximum packet**: 65,535 bytes because Total Length is 16 bits.",
+        "**Minimum reassembly size**: every host must accept 576 bytes and reassemble up to 576. Default minimum MTU is 68 bytes (60 header plus 8 fragment).",
+        "**Fragment granularity**: offsets are in units of 8 bytes, so every fragment except the last carries a multiple of 8 data bytes. Max offset is 8191 x 8 = 65,528.",
+        "**Per-hop work**: version and checksum check, TTL decrement, incremental checksum fix, table lookup. Hardware does this at line rate; fragmentation and options force a CPU slow path.",
+        "**Reassembly cost**: the receiver buffers fragments, so each partial packet holds memory until a timer (about 30 to 60 seconds) expires.",
+        "**ID space**: 16 bits means 65,536 values; at high rates IDs repeat quickly, which is why fragmenting fast flows can corrupt data."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**IHL is in words, not bytes**: header length = IHL x 4. A parser that treats IHL as bytes misreads every packet with options.",
+        "**Fragment offset is in 8-byte units**: the byte offset is the field times 8.",
+        "**Total Length includes the header**: payload length = total length minus IHL x 4. Ethernet padding after it must be ignored.",
+        "**The checksum covers the header only**: TCP and UDP carry their own checksums over data plus a pseudo-header with the IP addresses.",
+        "**NAT must rewrite checksums**: changing an address changes the IP header checksum and every transport checksum that uses the pseudo-header.",
+        "**Fragment attacks**: overlapping fragments, tiny fragments that hide TCP flags, and the Ping of Death (reassembled size over 65,535). Firewalls reassemble or drop weird fragments.",
+        "**ICMP filtering breaks PMTUD**: blocking ICMP type 3 code 4 makes large DF packets vanish while small ones work, a classic black hole.",
+        "**Byte order**: fields are big endian on the wire. Always use `ntohs` and `htons` in C."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Every router and firewall**: forwarding, ACLs and QoS keyed on source, destination, protocol and DSCP.",
+        "**Traceroute**: sends probes with TTL 1, 2, 3 and so on, and maps the path from the ICMP Time Exceeded replies.",
+        "**Path MTU Discovery**: TCP sets DF and shrinks its segment size from ICMP feedback, with MSS clamping on tunnels.",
+        "**QoS**: voice marked DSCP 46 (EF), video AF41, best effort 0. Routers queue accordingly.",
+        "**ECN**: bits 6 and 7 let routers mark congestion with CE (11) so TCP backs off without loss.",
+        "**Packet capture and filtering**: `ip.ttl`, `ip.flags.df`, `ip.frag_offset` in Wireshark and `ip[8]` style BPF filters."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How big is the IPv4 header?** 20 bytes minimum, 60 maximum, IHL times 4.",
+        "**Why is the checksum header-only?** Recomputing over data at every hop would be costly, and end hosts verify data with TCP or UDP checksums.",
+        "**What does a router change in the header?** TTL and the checksum; and with NAT, addresses.",
+        "**How does fragmentation work?** Split the payload into chunks that are multiples of 8, copy the header, set MF and the offset in 8-byte units, and let only the destination reassemble.",
+        "**What happens when TTL hits zero?** The router drops the packet and sends ICMP type 11 code 0 to the source.",
+        "**What is the maximum payload at MTU 1500?** 1480 bytes of IP payload with no options.",
+        "**DF set and the packet is too big?** Dropped, with ICMP type 3 code 4 carrying the next-hop MTU."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Path MTU discovery",
-      "summary": "Avoiding fragmentation.",
+      "title": "Version, IHL and total length",
+      "summary": "The first row of the header and how to find the payload.",
       "sections": [
         {
-          "body": "Senders set DF and shrink packets when a router answers ICMP 'Fragmentation needed' (type 3, code 4). Blocking that ICMP message creates black holes where large packets vanish but small ones work."
+          "body": "The first byte is `0x45` for an ordinary packet: version 4, IHL 5. If IHL is 6 there are four option bytes, so the payload starts at byte 24. Total Length lets the receiver find the end of the datagram, which matters because Ethernet may append zero padding to reach 64 bytes. A packet whose Total Length is smaller than IHL x 4, or larger than the received frame, is malformed and dropped."
         }
       ]
     },
     {
-      "title": "Address classes versus CIDR",
-      "summary": "History.",
+      "title": "DSCP and ECN",
+      "summary": "The repurposed Type of Service byte.",
       "sections": [
         {
-          "body": "RFC 791 defined classes A (/8), B (/16), and C (/24) by leading bits. Classless addressing (CIDR, RFC 4632) replaced them so any prefix length can be used and routes can be aggregated."
+          "body": "Originally 3 precedence bits plus delay, throughput and reliability flags. DiffServ redefined the top 6 bits as DSCP, a code point that picks a per-hop behavior, and the low 2 bits became ECN. Common DSCP values: 0 default, 46 Expedited Forwarding for voice, 34 (AF41) for interactive video, 8 (CS1) for scavenger traffic. ECN values: 00 not capable, 01 and 10 ECN-capable transport, 11 Congestion Experienced. Operators often re-mark DSCP at network edges, because the field is advisory and untrusted between domains."
         }
       ]
     },
     {
-      "title": "Options",
-      "summary": "Rarely used.",
+      "title": "Fragmentation worked example",
+      "summary": "Splitting a 4000-byte packet over a 1500-byte MTU.",
       "sections": [
         {
-          "body": "Record Route, Timestamp, and Source Route options exist but are often dropped by routers for security and performance, which is one reason IPv6 removed them from the base header."
-        }
-      ]
-    },
-    {
-      "title": "Special addresses",
-      "summary": "Know these.",
-      "sections": [
-        {
+          "body": "The original has a 20-byte header and 3980 bytes of data. The largest data chunk per fragment is 1500 minus 20 = 1480, which is a multiple of 8 (185 units), so it fits. All three fragments share the same ID, say 0x1C46.",
           "bullets": [
-            "127.0.0.0/8 loopback.",
-            "10/8, 172.16/12, 192.168/16 private (RFC 1918).",
-            "169.254/16 link-local.",
-            "224.0.0.0/4 multicast.",
-            "255.255.255.255 limited broadcast."
-          ]
+            "**Fragment 1**: total length 1500, MF=1, offset 0, data bytes 0 to 1479.",
+            "**Fragment 2**: total length 1500, MF=1, offset 185, data bytes 1480 to 2959.",
+            "**Fragment 3**: total length 1040, MF=0, offset 370, data bytes 2960 to 3979."
+          ],
+          "code": "offset field = byte_start / 8     (1480/8 = 185, 2960/8 = 370)\nfragment data size must be a multiple of 8 except the last\nreassembly key = (src, dst, protocol, identification)"
+        }
+      ]
+    },
+    {
+      "title": "Reassembly and its problems",
+      "summary": "What the destination does and why it is fragile.",
+      "sections": [
+        {
+          "body": "The receiver groups fragments by the tuple of source, destination, protocol and ID, places each chunk at offset x 8, and declares the packet complete when the last fragment (MF=0) has arrived and there are no holes. A reassembly timer discards partial packets. Losing any one fragment loses the whole datagram, so fragmenting multiplies the loss rate. Only the first fragment holds the TCP or UDP header, which breaks port-based firewalls and load balancers that look at later fragments. For these reasons modern stacks prefer Path MTU Discovery, set DF on TCP and keep UDP payloads under the path MTU."
+        }
+      ]
+    },
+    {
+      "title": "Time To Live and traceroute",
+      "summary": "Loop prevention and path discovery.",
+      "sections": [
+        {
+          "body": "TTL started as a time in seconds but became a hop count. Hosts start at 64 (Linux, macOS) or 128 (Windows), so the TTL you see on a reply hints at the sender's OS and the number of hops crossed. Traceroute sends UDP or ICMP echo probes with TTL 1, 2, 3 and so on; each router that discards one reports itself with an ICMP Time Exceeded, and the destination answers the final probe differently (port unreachable or echo reply). TTL also stops routing loops from circulating packets forever."
+        }
+      ]
+    },
+    {
+      "title": "Protocol numbers",
+      "summary": "How the receiver chooses the next parser.",
+      "sections": [
+        {
+          "body": "The Protocol field is the demultiplexing key for the IP layer, like EtherType for Ethernet. The IANA registry assigns values; the ones to remember are 1 (ICMP), 2 (IGMP), 4 (IP-in-IP), 6 (TCP), 17 (UDP), 41 (IPv6 encapsulation), 47 (GRE), 50 (ESP), 51 (AH), 89 (OSPF) and 132 (SCTP). A firewall rule that allows 'IP' without naming a protocol often means any value. OSPF and EIGRP ride directly on IP with no transport protocol at all."
+        }
+      ]
+    },
+    {
+      "title": "IP options",
+      "summary": "The rarely used 40 bytes.",
+      "sections": [
+        {
+          "body": "Each option begins with a type byte. Types 0 (end of list) and 1 (padding NOP) are one byte; the rest carry a type, a length and data. Record Route stores up to 9 router addresses, Timestamp stores times, and source routing lets the sender dictate the path, which is why most networks drop source-routed packets as a spoofing and bypass risk. Because options force the slow path and there are only 40 bytes of space, the Internet has largely abandoned them. IPv6 moved the same idea into extension headers."
+        }
+      ]
+    },
+    {
+      "title": "Header checksum in depth",
+      "summary": "Ones' complement arithmetic and incremental updates.",
+      "sections": [
+        {
+          "body": "The checksum is end-around-carry addition of 16-bit words, so it does not depend on byte order and can be computed in any chunk order. It detects any single-bit error and most burst errors but is weak against reordered words. RFC 1624 gives the update formula HC' = ~(~HC + ~m + m') for a changed word m to m', which routers use for the TTL decrement. IPv6 dropped the header checksum entirely, trusting Layer 2 CRCs and transport checksums."
         }
       ]
     }
   ],
   "takeaways": [
-    "20-byte base header; IHL tells you where options end.",
-    "TTL prevents loops; Protocol selects TCP, UDP, or ICMP.",
-    "Fragmentation uses ID, MF, DF, and an offset in 8-byte units.",
-    "The checksum covers the header only and is recomputed per hop."
+    "The IPv4 header is 20 bytes plus up to 40 bytes of options; IHL counts 32-bit words.",
+    "Version 4, IHL, DSCP/ECN, total length, ID, flags, offset, TTL, protocol, checksum, source and destination make up the fixed header.",
+    "Routers change only TTL and checksum; NAT also changes addresses.",
+    "Fragment offset is in 8-byte units, MF means more follow, DF forbids fragmentation and drives Path MTU Discovery.",
+    "The checksum covers only the header; TCP and UDP verify their own data with a pseudo-header.",
+    "TTL decrements at each hop and a zero value triggers ICMP Time Exceeded, which traceroute exploits.",
+    "The Protocol field picks the payload parser: 1 ICMP, 6 TCP, 17 UDP, 41 IPv6, 47 GRE, 89 OSPF."
+  ],
+  "practice": [
+    {
+      "title": "Decode the hex header 45 00 05 dc 1c 46 40 00 40 06 ... by hand and state every field",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "List the IHL, header length and payload start offset when IHL = 7",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute the checksum for a given 20-byte header and then verify it by summing with the checksum included",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Fragment a 5000-byte IP packet for an MTU of 1400 and give ID, MF, offset and total length for each piece",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why a TCP transfer stalls over a VPN when ICMP type 3 code 4 is filtered, and how MSS clamping fixes it",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Show with the incremental update formula that TTL decrement from 64 to 63 raises the checksum by 0x0100",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Write a C function that validates an IPv4 header (version, IHL, total length, checksum) from a raw buffer",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain how traceroute uses TTL and what differs between UDP, ICMP and TCP probe modes",
+      "difficulty": "Easy"
+    }
   ],
   "references": [
     {
       "label": "RFC 791: Internet Protocol",
-      "url": "https://www.rfc-editor.org/rfc/rfc791"
+      "url": "https://www.rfc-editor.org/rfc/rfc791.txt"
     },
     {
-      "label": "RFC 1071: Computing the Internet Checksum",
-      "url": "https://www.rfc-editor.org/rfc/rfc1071"
+      "label": "RFC 792: Internet Control Message Protocol",
+      "url": "https://www.rfc-editor.org/rfc/rfc792.txt"
     },
     {
-      "label": "RFC 1191: Path MTU Discovery",
-      "url": "https://www.rfc-editor.org/rfc/rfc1191"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Decode an IPv4 header from hex",
-      "difficulty": "Easy"
+      "label": "RFC 1624: Incremental Internet Checksum",
+      "url": "https://www.rfc-editor.org/rfc/rfc1624"
     },
     {
-      "title": "Explain why a TTL=1 packet dies at the first router",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Compute a header checksum by hand",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Fragment a 4000-byte payload for MTU 1500 and list the offsets",
-      "difficulty": "Medium"
+      "label": "RFC 2474: Definition of the Differentiated Services Field",
+      "url": "https://www.rfc-editor.org/rfc/rfc2474"
     }
   ]
 }

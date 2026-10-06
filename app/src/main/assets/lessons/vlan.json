@@ -1,127 +1,259 @@
 {
-  "summary": "A VLAN divides one physical switch network into separate logical Layer 2 broadcast domains. IEEE 802.1Q tags frames with a VLAN ID so many VLANs can share one trunk link.",
+  "summary": "A VLAN splits one physical switch network into several isolated Layer 2 broadcast domains, and IEEE 802.1Q is the standard that tags frames so many VLANs can share a single trunk link. A 4-byte tag inserted after the source MAC carries a 12-bit VLAN ID, giving up to 4,094 usable VLANs and a 3-bit priority field. VLANs are how campuses separate staff, guests, phones and servers, how data centers isolate tenants, and how one router interface serves many subnets. Most real-world outages around them come from native VLAN, allowed-list and trunk mode mistakes, so the details matter.",
   "sections": [
     {
-      "heading": "Why VLANs",
+      "heading": "Overview",
+      "body": "Without VLANs, every port on a switch (and every interconnected switch) shares one broadcast domain. A broadcast from one host reaches all the others, hosts of every department sit in the same IP subnet, and the only way to separate groups is to buy separate switches. A virtual LAN solves this in software: the administrator assigns each port to a VLAN, and the switch keeps traffic of different VLANs apart as if they were on different physical switches.\n\nBecause a VLAN is a broadcast domain, it normally maps to exactly one IP subnet. Hosts in the same VLAN talk directly through Layer 2. Hosts in different VLANs must go through a router or a Layer 3 switch, which is also the natural place to apply access control lists and firewall policy.\n\nWhen a VLAN has to span several switches, the link between them has to carry frames of many VLANs at once while keeping them distinguishable. IEEE 802.1Q does that by tagging. A link that carries tagged frames of multiple VLANs is a trunk. A link that carries a single untagged VLAN to an end device is an access link. The same standard also defines the 802.1p priority bits for quality of service, and its 2014 revision absorbed 802.1D bridging and spanning tree."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Segment traffic by department, function, or security zone without separate hardware.",
-        "Shrink broadcast domains for performance.",
-        "Move users without recabling.",
-        "Each VLAN is typically one IP subnet."
+        "**VLAN ID (VID)**: a 12-bit number identifying the VLAN. 0 and 4095 are reserved, so 1 to 4094 are usable. VLAN 1 is the default VLAN on most switches and cannot be deleted on Cisco gear.",
+        "**Access port**: belongs to exactly one VLAN and sends and receives untagged frames. The switch adds the tag internally and removes it on egress. Used for PCs, printers, servers.",
+        "**Trunk port**: carries many VLANs, with each frame tagged except possibly the native VLAN. Used between switches, to routers, hypervisors and access points.",
+        "**Tag (802.1Q header)**: 4 bytes inserted between the source MAC and the EtherType: a 16-bit TPID of 0x8100, then a 16-bit TCI holding PCP (3 bits), DEI (1 bit) and VID (12 bits).",
+        "**Native VLAN**: the VLAN whose frames cross a trunk untagged. Default is VLAN 1 on Cisco. Both ends of a trunk must agree on it.",
+        "**Allowed VLAN list**: the set of VLANs permitted on a trunk. VLANs outside it are pruned from that link even if they exist.",
+        "**Priority code point (PCP)**: the 802.1p class of service, 0 to 7. 7 is highest in the standard's encoding, with 5 commonly used for voice and 6 or 7 for network control.",
+        "**Drop eligible indicator (DEI)**: 1 bit marking frames that may be dropped first under congestion. It replaced the old CFI bit.",
+        "**SVI (switch virtual interface)**: a Layer 3 interface for a VLAN on a multilayer switch; it is the default gateway of hosts in that VLAN.",
+        "**Router-on-a-stick**: one physical router interface with 802.1Q subinterfaces, one per VLAN, doing inter-VLAN routing over a trunk.",
+        "**Voice VLAN**: a second VLAN for IP phones on an access port, signaled by CDP or LLDP-MED, so the phone's tagged voice traffic and the PC's untagged data traffic share one cable.",
+        "**Priority tag**: a frame with VID 0 that carries only priority and is treated as belonging to the native VLAN."
       ]
     },
     {
-      "heading": "The 802.1Q tag",
-      "body": "A 4-byte tag is inserted after the source MAC address:",
+      "heading": "How It Works",
+      "body": "A frame is never really tagged by the sending host unless it has a VLAN-aware NIC (servers with virtual machines do this). The usual path is: host sends an untagged frame, the access port assigns the port VLAN ID (PVID), the switch forwards within that VLAN and adds the tag only when the frame leaves on a trunk. The far switch reads the tag, removes it for an access port, and applies MAC learning per VLAN.",
       "bullets": [
-        "TPID: 0x8100 identifies a tagged frame.",
-        "PCP: priority (class of service) 0-7.",
-        "DEI: drop eligibility.",
-        "VID: VLAN ID; usable values 1-4094 (0 and 4095 are reserved).",
-        "The tag adds 4 bytes, raising the maximum frame to 1522; the FCS is recalculated."
+        "Ingress on an access port: untagged frame, VLAN = port's access VLAN. A tagged frame normally gets dropped (Cisco) unless its VID matches the access VLAN.",
+        "Ingress on a trunk: if tagged, VLAN = tag VID; if untagged, VLAN = native VLAN. A VID not on the allowed list is dropped.",
+        "Forwarding: MAC lookup uses (VLAN, destination MAC). A flood stays inside that VLAN only.",
+        "Egress on a trunk: add a tag with the VID, except for the native VLAN which leaves untagged. Egress on an access port: strip any tag.",
+        "Because the tag changes the frame, the FCS is recalculated at every tagging or untagging switch. The frame grows from 1518 to 1522 bytes (802.3ac) and the minimum may be padded from 64 to 68 bytes on tagged links.",
+        "Inter-VLAN traffic: the host sends to its default gateway MAC (the SVI or router subinterface); the router receives it in VLAN A, routes by IP, and re-sends it in VLAN B with a new Ethernet header."
       ],
-      "code": "| Dst MAC | Src MAC | TPID 0x8100 (16) | PCP (3) | DEI (1) | VID (12) | EtherType | Payload | FCS |"
+      "code": "Untagged Ethernet II frame          802.1Q tagged frame\n+--------------+ 6 bytes            +--------------+ 6\n| Dest MAC     |                    | Dest MAC     |\n+--------------+ 6                  +--------------+ 6\n| Source MAC   |                    | Source MAC   |\n+--------------+ 2                  +--------------+ 2  TPID = 0x8100\n| EtherType    |                    | TPID 0x8100  |\n+--------------+                    +--------------+ 2  TCI\n| Payload      | 46-1500            | PCP|D|  VID   |    3 + 1 + 12 bits\n+--------------+ 4                  +--------------+ 2\n| FCS          |                    | EtherType    |\n+--------------+                    +--------------+\n                                    | Payload      | 46-1500\n                                    +--------------+ 4\n                                    | FCS (new)    |\n                                    +--------------+\n\nTag 0x8100 0x00 0x64 = PCP 0, DEI 0, VID 100\nTag 0x8100 0xA0 0x0A = PCP 5, DEI 0, VID 10"
     },
     {
-      "heading": "Port types",
+      "heading": "Variants & Types",
       "bullets": [
-        "Access port: belongs to one VLAN and sends/receives untagged frames; for end hosts.",
-        "Trunk port: carries many VLANs with tags; between switches, or to routers and servers.",
-        "Native VLAN: frames on a trunk without a tag are assigned to it; both ends must agree."
+        "**Port-based (static) VLAN**: the port is assigned to a VLAN by configuration. By far the most common.",
+        "**Dynamic VLAN assignment**: the VLAN is chosen at login by 802.1X/RADIUS attributes, or historically by a VMPS server using the device MAC address.",
+        "**Protocol and subnet based VLANs**: assignment by EtherType or IP subnet. Rare today.",
+        "**Private VLANs**: a primary VLAN split into isolated and community secondary VLANs so hosts in the same subnet cannot reach each other except through a promiscuous port. Used in hosting and guest networks.",
+        "**Q-in-Q (802.1ad) stacking**: an outer service tag (TPID 0x88a8, also called S-tag) wraps the customer's tag (C-tag). The provider uses its own VLANs and carries customers' VLANs untouched. Total frame grows to 1526 bytes.",
+        "**ISL (Inter-Switch Link)**: Cisco's older proprietary trunk encapsulation that added a 26-byte header and 4-byte trailer. Deprecated; 802.1Q is the only choice on modern gear.",
+        "**VTP (VLAN Trunking Protocol)**: Cisco proprietary protocol to distribute the VLAN database. Convenient but dangerous: a switch with a higher revision number can wipe the VLAN list of an entire domain. Many sites run it in transparent or off mode.",
+        "**MVRP / GVRP**: standards-based registration protocols (MVRP replaced GVRP in 802.1ak, 2007) that let switches advertise which VLANs they need on a link.",
+        "**VXLAN**: a Layer 3 overlay with a 24-bit VNI giving 16 million segments, used in data centers when 4,094 VLANs are not enough. It still maps VNIs to VLANs at the edge."
       ]
     },
     {
-      "heading": "Inter-VLAN routing",
-      "body": "Hosts in different VLANs are in different subnets, so traffic must be routed. Options: router-on-a-stick (a trunk to a router with a subinterface per VLAN), or a Layer 3 switch with switched virtual interfaces (SVIs)."
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**ID space**: 12 bits gives 4,096 values minus 2 reserved, so 4,094 VLANs. Cisco's normal range is 1 to 1005 (stored in the vlan.dat database) and the extended range is 1006 to 4094. 1002 to 1005 are reserved for legacy FDDI and Token Ring.",
+        "**Frame overhead**: 4 bytes per tag. On a 1500-byte payload that is 0.26 percent; on 64-byte frames it is 6.25 percent. Q-in-Q adds a second 4 bytes.",
+        "**MTU and baby giants**: a 1522-byte frame exceeds the legacy 1518 limit. Devices that do not understand tags may count them as baby giants even if they forward them. Plan jumbo or provider MTU with 4 to 8 spare bytes.",
+        "**MAC table**: scales with VLANs because the key is (VLAN, MAC); the same host seen in two VLANs consumes two entries.",
+        "**Spanning tree load**: per-VLAN spanning tree (PVST+ or Rapid PVST+) runs one instance per VLAN. 1,000 VLANs means 1,000 BPDUs every 2 seconds per trunk, which can overload older CPUs. MSTP groups VLANs into a few instances.",
+        "**Router-on-a-stick throughput**: all inter-VLAN traffic crosses one trunk twice, so a 1 Gbit/s trunk is both the ceiling and a single point of failure. Layer 3 switches route in hardware instead.",
+        "**Broadcast domain size**: a typical guideline is /24 (254 hosts) per VLAN, well under 500 hosts, to keep broadcast and ARP load low."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Native VLAN mismatch**: if the two ends of a trunk have different native VLANs, untagged frames hop between VLANs and spanning tree logs `%SPANTREE-2-RECV_PVID_ERR`. Always match them.",
+        "**VLAN hopping by switch spoofing**: an attacker's host negotiates a trunk through DTP (Dynamic Trunking Protocol) and then receives all VLANs. Fix by setting `switchport mode access` and `switchport nonegotiate` on edge ports.",
+        "**VLAN hopping by double tagging**: the attacker sends a frame tagged first with the native VLAN, then with the victim VLAN. The first switch strips the outer (native) tag and the second switch sees the inner tag. It works only one way and only if the attacker's port is in the trunk's native VLAN. Fix: use an unused native VLAN, never use VLAN 1 for user ports, and optionally tag native traffic (`vlan dot1q tag native`).",
+        "**VLAN not in the allowed list or not created**: a port assigned to a nonexistent VLAN goes inactive on Cisco. A trunk that does not allow the VLAN silently drops it. Check both ends.",
+        "**VLAN not on both switches**: a VLAN must exist on every switch it traverses, or the trunk will not carry it.",
+        "**Assuming VLANs equal security**: VLANs separate broadcast domains but are not a firewall. A misconfigured trunk, a router without an ACL, or a compromised hypervisor bypasses them. Combine them with ACLs and firewalling.",
+        "**Management VLAN left as VLAN 1**: control protocols (CDP, VTP, DTP, STP) use VLAN 1 untagged by default, so exposing it spreads their reach. Move management to its own VLAN.",
+        "**Forgetting the voice VLAN or DEI mapping**: QoS markings are lost if the trunk or port is configured to ignore CoS (`mls qos trust`). Also check that phones tag voice with the right VID.",
+        "**Duplicate MAC in different VLANs** is fine, but an IP phone and PC bridging the same MAC onto two VLANs is a sign of misuse."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "Corporate campuses: staff, guest Wi-Fi, IoT, printers, voice and management each get a VLAN and an SVI with ACLs.",
+        "Data centers: server VLANs per application tier, storage VLANs, vMotion and management VLANs, trunked to hypervisors where each VM vNIC gets a port group with a VID.",
+        "Service providers: Q-in-Q (802.1ad) carries customer VLANs across a metro Ethernet and is the basis of carrier Ethernet services such as E-Line and E-LAN.",
+        "Wi-Fi: an access point trunk carries one VLAN per SSID so guest and corporate networks share the same radio hardware.",
+        "Home and small office: a router with a managed switch and a few VLANs for kids, IoT, guests; many ISPs also tag Internet traffic (for example VLAN 6 or VLAN 10 on fiber) on the WAN link.",
+        "Linux: `ip link add link eth0 name eth0.100 type vlan id 100` creates a VLAN subinterface; Linux bridges can also be VLAN aware with `bridge vlan add`."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What does a VLAN do?** Creates separate broadcast domains on shared switch hardware.",
+        "**How many VLANs can 802.1Q have?** 4,094 usable (12-bit VID, 0 and 4095 reserved).",
+        "**What does the tag look like?** 4 bytes after the source MAC: TPID 0x8100, then PCP 3 bits, DEI 1 bit, VID 12 bits.",
+        "**Access vs trunk?** Access carries one untagged VLAN; trunk carries many tagged VLANs plus an optional untagged native VLAN.",
+        "**What is the native VLAN and why is it risky?** The untagged VLAN on a trunk. Mismatches leak traffic and enable double-tagging attacks.",
+        "**How do two VLANs communicate?** Through a Layer 3 device, either an SVI or a router subinterface.",
+        "**What is Q-in-Q?** 802.1ad double tagging, outer S-tag TPID 0x88a8, used by providers.",
+        "**How would you prevent VLAN hopping?** Static access mode, `nonegotiate`, unused native VLAN, prune unused VLANs on trunks.",
+        "**Max frame size with a tag?** 1522 bytes, versus 1518 untagged."
+      ]
     }
   ],
   "subtopics": [
     {
       "title": "Basic configuration (Cisco IOS)",
-      "summary": "Typical commands.",
+      "summary": "Creating VLANs, access ports and trunks.",
       "sections": [
         {
-          "code": "vlan 10\n name SALES\ninterface Gi0/1\n switchport mode access\n switchport access vlan 10\ninterface Gi0/24\n switchport mode trunk\n switchport trunk allowed vlan 10,20\n switchport trunk native vlan 99"
+          "body": "Create the VLAN, put edge ports in it, and make inter-switch links explicit trunks with a pruned allowed list and an unused native VLAN. Turn off DTP so a port never negotiates a trunk by itself.",
+          "code": "! Access port\ninterface GigabitEthernet0/10\n switchport mode access\n switchport access vlan 10\n spanning-tree portfast\n!\n! Trunk port to another switch\ninterface GigabitEthernet0/48\n switchport trunk encapsulation dot1q\n switchport mode trunk\n switchport trunk native vlan 999\n switchport trunk allowed vlan 10,20,30,99\n switchport nonegotiate\n!\nvlan 10\n name STAFF\nvlan 20\n name VOICE"
+        },
+        {
+          "body": "Verify with `show vlan brief` (VLAN to access port map), `show interfaces trunk` (which VLANs are allowed, active and forwarding) and `show interfaces switchport` (administrative and operational mode, native VLAN)."
+        }
+      ]
+    },
+    {
+      "title": "Inter-VLAN routing",
+      "summary": "Router-on-a-stick and SVIs.",
+      "sections": [
+        {
+          "body": "A router subinterface is tagged with the VLAN and holds the gateway address. A multilayer switch does the same with SVIs, which route in hardware.",
+          "code": "! Router on a stick\ninterface GigabitEthernet0/0.10\n encapsulation dot1Q 10\n ip address 10.0.10.1 255.255.255.0\ninterface GigabitEthernet0/0.20\n encapsulation dot1Q 20\n ip address 10.0.20.1 255.255.255.0\n\n! Layer 3 switch\nip routing\ninterface Vlan10\n ip address 10.0.10.1 255.255.255.0"
+        },
+        {
+          "body": "Router-on-a-stick is cheap but limited by one link. SVIs are the choice for campus and data center distribution layers. If a VLAN has no active port, its SVI goes down (line-protocol down) unless auto-state is disabled."
         }
       ]
     },
     {
       "title": "VLAN hopping",
-      "summary": "Attacks and prevention.",
+      "summary": "Switch spoofing and double tagging attacks.",
       "sections": [
         {
-          "bullets": [
-            "Switch spoofing: an attacker negotiates a trunk via DTP. Disable with `switchport nonegotiate` and set ports to access.",
-            "Double tagging: an outer native-VLAN tag is stripped by the first switch, exposing the inner tag. Use an unused native VLAN and tag it, and never put users on it."
-          ]
+          "body": "Switch spoofing: the attacker pretends to be a switch and negotiates a trunk via DTP, then tags frames for any VLAN. Double tagging: the attacker's frame carries the native VLAN tag as outer tag and the victim VLAN as inner tag; the first switch removes the outer tag because it matches the native VLAN, and the second switch forwards by the inner tag. It is one-way (replies cannot return) so it suits denial of service or blind injection. Defenses are static access ports, `switchport nonegotiate`, a dedicated unused native VLAN that no host uses, tagging the native VLAN, and keeping user ports out of VLAN 1."
         }
       ]
     },
     {
       "title": "Q-in-Q (802.1ad)",
-      "summary": "Provider bridging.",
+      "summary": "Stacking an outer service tag on a customer tag.",
       "sections": [
         {
-          "body": "Service providers stack an outer S-tag (TPID 0x88a8) on a customer's C-tag so customer VLANs stay private across the provider network."
+          "body": "802.1ad adds an S-tag with TPID 0x88a8 outside the customer's C-tag (0x8100). The provider edge switch pushes the S-tag on customer ingress and pops it on egress, so a customer can use all 4,094 of its own VLANs without coordinating with the provider. Before the standard, some vendors used 0x9100 or 0x9200 for the outer tag, which still appears in older configs. Q-in-Q frames are 1526 bytes, so provider links need an MTU of at least 1526 or jumbo frames. Layer 2 protocol tunneling is often added so the customer's STP, CDP and LACP pass through the provider cloud."
         }
       ]
     },
     {
       "title": "Voice VLANs and QoS",
-      "summary": "Priority.",
+      "summary": "Phones and PCs on one port.",
       "sections": [
         {
-          "body": "IP phones are often placed in a separate voice VLAN, and PCP bits mark voice for priority queuing."
+          "body": "An IP phone has a built-in switch. The access port is configured with a data VLAN (untagged, for the PC) and a voice VLAN (tagged, for the phone). The switch tells the phone the voice VID via CDP or LLDP-MED. Voice frames carry PCP 5 (and DSCP EF at Layer 3), which the switch can trust from the phone boundary but not from the PC. Prioritization happens in the egress queues, which is why 802.1p only helps when the congested hop honors it."
+        },
+        {
+          "code": "interface GigabitEthernet0/12\n switchport mode access\n switchport access vlan 10\n switchport voice vlan 20\n mls qos trust device cisco-phone\n spanning-tree portfast"
+        }
+      ]
+    },
+    {
+      "title": "Private VLANs",
+      "summary": "Isolating hosts inside one subnet.",
+      "sections": [
+        {
+          "body": "A private VLAN has a primary VLAN and secondary VLANs. Hosts in an isolated secondary VLAN can talk only to promiscuous ports (the router or firewall), not to each other. Hosts in a community VLAN can talk to each other and to promiscuous ports. This lets a hosting provider or hotel put hundreds of customers in one /24 without lateral movement. Support depends on the platform, and trunks between switches need PVLAN-aware configuration."
+        }
+      ]
+    },
+    {
+      "title": "VTP and VLAN distribution",
+      "summary": "Why the VLAN database can be dangerous.",
+      "sections": [
+        {
+          "body": "VTP synchronizes the VLAN list across a domain from a server switch. Clients and servers adopt the database with the highest configuration revision number. A lab switch with a higher revision, added to production, can delete production VLANs overnight, putting every access port into an inactive VLAN. Version 3 adds authentication and a primary server concept, but most modern designs set `vtp mode transparent` or `off` and push configuration with automation."
         }
       ]
     },
     {
       "title": "Troubleshooting",
-      "summary": "Typical faults.",
+      "summary": "A short checklist for lost VLAN connectivity.",
       "sections": [
         {
-          "bullets": [
-            "No connectivity across a trunk: VLAN not allowed or not created on the far switch.",
-            "Native VLAN mismatch warnings (CDP).",
-            "Host in the wrong VLAN or wrong subnet/gateway.",
-            "Commands: show vlan brief, show interfaces trunk."
-          ]
+          "body": "Walk the path hop by hop. Is the access port in the right VLAN (`show vlan brief`)? Does the VLAN exist on every switch? Is the trunk up, and does `show interfaces trunk` list the VLAN as allowed and in the spanning tree forwarding set? Do native VLANs match? Is the MAC learned on the expected port in that VLAN (`show mac address-table vlan 10`)? Is the SVI up and does the host have the right gateway and mask? Capture on the trunk and confirm the 802.1Q tag is present, because a tag stripped by a NIC driver is a common surprise on Linux hosts."
+        }
+      ]
+    },
+    {
+      "title": "Linux and hypervisor VLANs",
+      "summary": "Tagging at the host.",
+      "sections": [
+        {
+          "body": "A Linux host can create a VLAN subinterface, or run a VLAN-aware bridge so virtual machines inherit their tag.",
+          "code": "# VLAN subinterface\nip link add link eth0 name eth0.100 type vlan id 100\nip addr add 10.0.100.5/24 dev eth0.100\nip link set eth0.100 up\n\n# VLAN-aware bridge\nip link add br0 type bridge vlan_filtering 1\nip link set eth0 master br0\nbridge vlan add dev eth0 vid 10-20\nbridge vlan add dev vnet0 vid 10 pvid untagged"
+        },
+        {
+          "body": "Hypervisors typically use a trunk to the host and one VLAN ID per virtual port group; the switch port must be a trunk, not an access port."
         }
       ]
     }
   ],
   "takeaways": [
-    "802.1Q adds a 4-byte tag with a 12-bit VLAN ID (1-4094).",
-    "Access ports are untagged for one VLAN; trunks carry many VLANs tagged.",
-    "Different VLANs need a router or Layer 3 switch to talk.",
-    "Harden against switch spoofing and double tagging."
-  ],
-  "references": [
-    {
-      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
-      "url": "https://1.ieee802.org/"
-    },
-    {
-      "label": "Reference: IEEE 802.1Q (Wikipedia)",
-      "url": "https://en.wikipedia.org/wiki/IEEE_802.1Q"
-    }
+    "A VLAN is a separate Layer 2 broadcast domain, usually one IP subnet; different VLANs need a router or SVI to communicate.",
+    "802.1Q inserts a 4-byte tag after the source MAC: TPID 0x8100, PCP 3 bits, DEI 1 bit, VID 12 bits.",
+    "VID 0 and 4095 are reserved, so 4,094 VLANs are usable; the max frame grows from 1518 to 1522 bytes.",
+    "Access ports are untagged and in one VLAN; trunk ports tag all VLANs except the native VLAN.",
+    "Native VLAN mismatches leak traffic; use an unused native VLAN, static access mode and `switchport nonegotiate` to stop hopping attacks.",
+    "Q-in-Q (802.1ad) uses an outer S-tag with TPID 0x88a8 so providers can carry customer VLANs transparently.",
+    "VLANs are segmentation, not security: enforce policy with ACLs or firewalls at the Layer 3 boundary."
   ],
   "practice": [
     {
-      "title": "Configure two VLANs with an access port and a trunk",
+      "title": "Decode a raw 802.1Q header (0x8100 A00A) into PCP, DEI and VID",
       "difficulty": "Easy"
     },
     {
-      "title": "Decode an 802.1Q tag from hex",
+      "title": "Explain access ports versus trunk ports and the native VLAN",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Why can hosts in different VLANs not ping each other directly?",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Configure two switches with VLANs 10 and 20 and an 802.1Q trunk",
       "difficulty": "Medium"
     },
     {
-      "title": "Design router-on-a-stick for three VLANs",
+      "title": "Troubleshoot a trunk where one VLAN does not pass",
       "difficulty": "Medium"
     },
     {
-      "title": "Explain double-tagging VLAN hopping",
+      "title": "Design router-on-a-stick and compare it to SVIs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain a double-tagging attack and the three controls that stop it",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Design a Q-in-Q service for a customer with 300 VLANs, including MTU",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "IEEE 802.1Q (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/IEEE_802.1Q"
+    },
+    {
+      "label": "IEEE 802.1Q Bridges and Bridged Networks",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Linux man-pages: bridge(8)",
+      "url": "https://man7.org/linux/man-pages/man8/bridge.8.html"
     }
   ]
 }

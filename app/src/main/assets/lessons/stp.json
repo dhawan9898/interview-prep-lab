@@ -1,118 +1,248 @@
 {
-  "summary": "Spanning Tree Protocol lets a switched network have redundant links without forwarding loops. Switches elect a root, compute loop-free paths toward it, and block the redundant ports.",
+  "summary": "The Spanning Tree Protocol (STP, IEEE 802.1D, invented by Radia Perlman at DEC) lets switches share redundant links without creating Layer 2 loops. Bridges elect one root bridge, compute the cheapest path to it, and block every port that would close a loop, leaving a single active path between any two nodes. Because Ethernet frames have no TTL, a loop causes broadcast storms that take a network down within seconds, so STP or its faster successors RSTP and MSTP run on almost every switched network. Knowing the election rules, port roles, timers and guard features is core to both operating and interviewing for networking roles.",
   "sections": [
     {
-      "heading": "The problem: Layer 2 loops",
-      "body": "Ethernet frames have no TTL. With redundant links, a broadcast can circulate forever and multiply (a broadcast storm), while MAC tables flap as the same source appears on multiple ports. STP prevents this by blocking some ports."
+      "heading": "Overview",
+      "body": "Redundant links between switches are good engineering: if a cable or switch fails, another path exists. But Ethernet has no hop limit. A broadcast frame or an unknown unicast frame sent into a ring of switches is flooded out of every port, comes back around the loop, and is flooded again, each time multiplying. Within a few seconds the links are saturated with copies of the same frames (a broadcast storm), the MAC table keeps changing as the same source MAC appears on different ports (MAC flapping), and the switch CPU hits 100 percent. Hosts cannot be reached, and the only cure is to remove the loop physically.\n\nSTP solves this by logically pruning the topology to a tree. All switches exchange small control frames called bridge protocol data units (BPDUs). They elect one switch as the root bridge, every other switch finds its single best path to the root, and any redundant port is put in a blocking state where it does not forward user data. The blocked links are not wasted: if an active link fails, STP unblocks a backup port and the network heals itself.\n\nThe standards form a family. Classic STP is 802.1D-1998. Rapid STP (RSTP) was 802.1w in 2001 and was folded into 802.1D-2004. Multiple STP (MSTP) was 802.1s and was folded into 802.1Q-2005. Since 802.1Q-2014 all of them live in one document. Cisco's PVST+ and Rapid PVST+ run one instance per VLAN. In modern networks STP is mainly a safety net against accidental loops, while redundancy and bandwidth come from link aggregation, MLAG and routed Layer 3 designs."
     },
     {
-      "heading": "Root bridge election",
-      "body": "Every switch has a Bridge ID: a 16-bit priority (default 32768, in steps of 4096) followed by its MAC address. The switch with the lowest Bridge ID becomes the root. Switches exchange BPDUs (every 2 seconds) announcing the root they believe in."
-    },
-    {
-      "heading": "Port roles",
+      "heading": "Core Concepts",
       "bullets": [
-        "Root port: each non-root switch's single best path toward the root (lowest cumulative cost, then lowest sender ID).",
-        "Designated port: on each segment, the port that offers the best path to the root; it forwards.",
-        "Blocked/alternate port: everything else; receives BPDUs but forwards no data."
+        "**Bridge ID (BID)**: 8 bytes: a 4-bit priority, a 12-bit system ID extension (the VLAN ID in per-VLAN STP), and the 48-bit MAC address. Lower is better. Default priority is 32768 and in the original standard it moves in steps of 4096 because only the top 4 bits are configurable.",
+        "**Root bridge**: the bridge with the lowest BID. It is the reference point of the tree, and all other bridges calculate their cost to reach it.",
+        "**Root path cost**: the sum of port costs along the path to the root, counting the cost on each bridge's ingress (receiving) side.",
+        "**Port cost**: derived from link speed. Original 802.1D short values: 10 Mbit/s = 100, 100 Mbit/s = 19, 1 Gbit/s = 4, 10 Gbit/s = 2. The 802.1t long values scale as 20,000,000,000 divided by speed in kbit/s: 1 Gbit/s = 20,000, 10 Gbit/s = 2,000, 100 Gbit/s = 200.",
+        "**Port ID**: 16 bits: 4-bit priority (default 128, steps of 16) and a 12-bit port number. Used as the last tiebreaker.",
+        "**Root port (RP)**: on each non-root bridge, the one port with the best path to the root. It forwards.",
+        "**Designated port (DP)**: on each network segment, the port of the bridge that offers the best path to the root for that segment. It forwards. Every port on the root bridge is a designated port.",
+        "**Blocked (alternate/backup) port**: anything that is neither root nor designated. It does not forward user frames but still listens to BPDUs.",
+        "**BPDU**: the control frame, sent to the multicast MAC 01:80:C2:00:00:00 (the Bridge Group Address), carrying root ID, cost, sender ID, port ID and timers. PVST+ uses 01:00:0C:CC:CC:CD.",
+        "**Timers**: Hello 2 s (BPDU interval from the root), Forward Delay 15 s (time in each of listening and learning), Max Age 20 s (how long a stored BPDU stays valid). Set by the root and carried in BPDUs.",
+        "**Topology change (TC)**: an event such as a port moving to forwarding or a forwarding port failing. TC causes MAC tables to age fast so stale entries disappear.",
+        "**Edge port (PortFast)**: a port facing an end host that goes straight to forwarding because it cannot create a loop."
       ]
     },
     {
-      "heading": "Path cost",
-      "body": "Costs are summed along the path to the root. Typical IEEE short-method values: 10 Mb/s = 100, 100 Mb/s = 19, 1 Gb/s = 4, 10 Gb/s = 2. Lower total cost wins; ties are broken by sender bridge ID and port ID."
+      "heading": "How It Works",
+      "body": "STP is a distributed algorithm. Each bridge starts by claiming to be the root, sending configuration BPDUs on every port. When it hears a superior BPDU (lower root ID), it stops claiming and relays the better information. The result converges to one root, and then each bridge decides its port roles using only the BPDUs it received.",
+      "bullets": [
+        "Step 1, elect the root: every bridge advertises its own BID as root. The lowest BID wins; priority is compared first, and the MAC address breaks ties. Because the lowest MAC wins by default, an old, slow switch can accidentally become root, so set the priority manually.",
+        "Step 2, find the root port on each non-root bridge by comparing received BPDUs in this order: lowest root BID, lowest root path cost, lowest sender BID, lowest sender port ID (and finally the local port ID).",
+        "Step 3, choose a designated port per segment: the bridge whose path to the root is cheapest advertises on that segment. Tie: lowest sender BID, then lowest port ID.",
+        "Step 4, block the rest: ports that are neither root nor designated go to blocking (discarding).",
+        "Step 5, maintain: the root sends a BPDU every hello time (2 s). Non-root bridges relay the information on their designated ports. If a bridge stops hearing BPDUs on its root port for max age (20 s) it assumes the path failed and recomputes.",
+        "Classic 802.1D port states: Disabled, Blocking (receives BPDUs, no learning, no forwarding), Listening (15 s, still no MAC learning), Learning (15 s, learns MACs but does not forward) and Forwarding. A new link therefore needs 30 s before it forwards, and an indirect failure needs up to max age + 2 times forward delay = 20 + 15 + 15 = 50 s.",
+        "Topology changes: a bridge that sees a change sends a TCN BPDU (4 bytes, type 0x80) out its root port. The upstream bridge acknowledges using the TCA flag and passes it to the root. The root then sets the TC flag in its config BPDUs for max age + forward delay (35 s) so all bridges shorten MAC aging to 15 s."
+      ],
+      "code": "Triangle of three switches, all 1 Gbit/s links (short cost 4), default priority.\n   SW1 BID 32768.0000.0000.0001\n   SW2 BID 32768.0000.0000.0002\n   SW3 BID 32768.0000.0000.0003\n\n        SW1 (root)\n       /  \\\n  (4) /    \\ (4)\n     /      \\\n   SW2------SW3\n        (4)\n\n1. Root election: SW1 has the lowest MAC, so it is root. All its ports are DP.\n2. Root ports: SW2 reaches the root over SW1-SW2 (cost 4); SW3 over SW1-SW3 (cost 4).\n   The two-hop path via the other switch would cost 8, so it loses.\n3. Segment SW2-SW3: both offer cost 4 to the root. Tie broken by sender BID:\n   SW2 (..0002) beats SW3 (..0003), so SW2's port is designated.\n4. SW3's port on that segment is neither RP nor DP: it blocks (alternate).\n\nResult: SW1-SW2 and SW1-SW3 forward, SW3 port to SW2 blocks. If SW1-SW3 fails,\nSW3's blocked port becomes root port and unblocks.\n\nBPDU contents (Configuration BPDU, 35 bytes after the LLC header):\n  Protocol ID 0x0000 | Version 0x00 | Type 0x00 | Flags 1 byte\n  Root ID 8 bytes | Root Path Cost 4 bytes | Bridge ID 8 bytes\n  Port ID 2 bytes | Message Age 2 | Max Age 2 | Hello Time 2 | Forward Delay 2\n  (time fields are in units of 1/256 second)"
     },
     {
-      "heading": "Port states in classic STP",
+      "heading": "Variants & Types",
       "bullets": [
-        "Blocking: discards data, listens to BPDUs.",
-        "Listening: transitions, no learning yet (forward delay 15 s).",
-        "Learning: builds the MAC table, still no forwarding (15 s).",
-        "Forwarding: normal operation.",
-        "Disabled: administratively down.",
-        "Default timers: hello 2 s, forward delay 15 s, max age 20 s, so convergence takes 30-50 seconds."
+        "**STP (802.1D-1998)**: single instance for the whole bridged LAN, five port states, 30 to 50 s convergence. Obsolete in practice but every newer protocol is backward compatible with it.",
+        "**RSTP (802.1w, 802.1D-2004)**: three states (discarding, learning, forwarding), five roles (root, designated, alternate, backup, disabled), a proposal and agreement handshake on point-to-point links, and edge ports. Reconverges in well under a second on a link failure, and detects a missing root in 3 times hello (6 s). BPDU version 2, type 0x02.",
+        "**PVST+ (Cisco)**: one STP instance per VLAN on 802.1Q trunks, which allows load sharing by electing different roots per VLAN. Uses the 0100.0ccc.cccd destination and an SNAP encapsulation. Slow convergence like 802.1D.",
+        "**Rapid PVST+ (Cisco)**: RSTP rules with one instance per VLAN. The Cisco default on most current IOS switches.",
+        "**MSTP (802.1s, in 802.1Q)**: maps many VLANs to a few instances (0 to 64). The switches in a region share the same name, revision number and VLAN-to-instance map. Instance 0 is the IST that carries all untagged BPDUs, and a region looks like a single bridge to the outside world. Uses a remaining-hops counter instead of message age.",
+        "**Juniper VSTP**: Juniper's interoperable PVST+ equivalent, limited to 253 spanning tree topologies per switch.",
+        "**Shortest Path Bridging (802.1aq) and TRILL**: replace STP with IS-IS and use all equal-cost paths. Used in some large Layer 2 fabrics.",
+        "**Alternatives to avoid STP**: routed access (Layer 3 to the edge), MLAG/vPC/VSS to present two switches as one logical device, and EVPN-VXLAN fabrics in which the underlay is routed, leaving STP only at host edges."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Convergence, 802.1D**: new link 30 s (listening 15 + learning 15); direct failure of the root port up to 30 s; indirect failure up to 50 s (max age 20 + 15 + 15).",
+        "**Convergence, RSTP**: tens to hundreds of milliseconds on point-to-point full-duplex links with the handshake; up to 6 s when a BPDU stops arriving (3 hellos); shared (half-duplex) links still fall back to timers.",
+        "**Control overhead**: one BPDU per designated port per 2 s. Per-VLAN STP multiplies this by the VLAN count: 500 VLANs on a trunk is 250 BPDUs per second, which can strain older control planes. MSTP keeps it to one BPDU per port.",
+        "**Diameter limit**: the original timers assume a network diameter of 7 bridges (default max age 20 s, forward delay 15 s). Larger diameters need timer tuning; MSTP's remaining hops default to 20.",
+        "**Wasted capacity**: a ring or mesh with STP leaves links blocked. In a simple triangle one third of the cable capacity carries no user data. Per-VLAN or per-instance roots can split the load, but a Layer 3 design uses all links.",
+        "**Frame sizes**: Config BPDU 35 bytes, RSTP BPDU 36 bytes, TCN BPDU 4 bytes, carried in 802.3 frames with LLC (DSAP and SSAP 0x42).",
+        "**Priority and cost ranges**: bridge priority 0 to 61440 in steps of 4096, port priority 0 to 240 in steps of 16, path cost 1 to 65535 (short) or 1 to 200,000,000 (long)."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Accidental root**: leaving defaults means the oldest switch (lowest MAC) may become root, putting an access closet switch in the middle of the data path. Always set the root explicitly: `spanning-tree vlan 1-100 priority 4096` or `root primary` on the core, `root secondary` on its partner.",
+        "**Unidirectional link**: a fiber pair that works in only one direction stops BPDUs while data continues in one direction. The blocking port stops hearing BPDUs, moves to forwarding and creates a loop. Use UDLD and loop guard.",
+        "**Unmanaged switch or hub loop**: a user connects two outlets on the same unmanaged switch. Without BPDU guard on access ports, the loop forms outside STP's view.",
+        "**PortFast on a switch-facing port**: skipping listening and learning removes loop protection for that port. Pair PortFast with BPDU guard.",
+        "**Mismatched modes**: mixing STP with RSTP or PVST+ with MSTP can fall back to the slow mode on the link, or cause a root inconsistency (`%SPANTREE-2-ROOTGUARD_BLOCK`, PVID mismatch, type inconsistent). Use one mode on all switches.",
+        "**Network too wide for timers**: reducing hello or max age on a large network can cause flapping; tune them from the root only.",
+        "**Unnecessary topology changes**: access ports without PortFast trigger a TC every time a PC reboots, making switches flush MAC tables and flood. Under RSTP, edge ports do not cause TCs.",
+        "**BPDU guard err-disable**: when a guarded port gets a BPDU it shuts down. Good for security, bad when an engineer plugs in a switch without warning.",
+        "**Forgetting MST region config**: different revision numbers or name strings put two switches in separate regions, creating unexpected boundary ports and blocked links."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "Campus access layer: Rapid PVST+ or MSTP on every switch as loop protection, with PortFast and BPDU guard on edge ports and root guard on downlinks.",
+        "Core and distribution pair: deliberately configured as primary and secondary root, usually with a routed link between them (or MLAG), so that STP rarely has to block anything.",
+        "Data centers: STP is kept as a backstop on server-facing ports; Layer 2 domains are kept small, with VXLAN and routed fabrics for scale.",
+        "Industrial and ring networks: RSTP rings (and vendor ring protocols like ERPS, G.8032) provide fast failover for plant floors.",
+        "Service providers: MSTP and Q-in-Q with BPDU tunneling to keep customer topologies independent.",
+        "Small business and home: low-cost smart switches run RSTP by default; many loops caused by two patch cables are tolerated only because RSTP is enabled."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What problem does STP solve?** Layer 2 loops and the resulting broadcast storms and MAC table instability, while keeping redundant links available as backup.",
+        "**How is the root bridge elected?** Lowest bridge ID (priority then MAC). The default priority is 32768.",
+        "**What are the port roles and states?** Root, designated, blocked (alternate/backup in RSTP); STP states are blocking, listening, learning, forwarding.",
+        "**How are ties broken when choosing a root port?** Lowest root BID, lowest path cost, lowest sender BID, lowest sender port ID.",
+        "**Why does STP take 30 to 50 seconds?** 15 s listening plus 15 s learning, plus up to 20 s max age after an indirect failure.",
+        "**How does RSTP converge faster?** Proposal and agreement handshake on point-to-point links, edge ports, no listening state, and alternate ports pre-computed as backups.",
+        "**What do PortFast, BPDU guard, root guard and loop guard do?** PortFast: edge port to forwarding at once. BPDU guard: err-disable if a BPDU arrives on an edge port. Root guard: block ports that receive superior BPDUs. Loop guard: stop a blocked port becoming designated when BPDUs vanish.",
+        "**PVST+ versus MSTP?** PVST+ runs one instance per VLAN and gives easy load sharing at high CPU cost; MSTP maps many VLANs to a few instances in one standard.",
+        "**Why is the root bridge placement important?** Every path to the root decides traffic flow; a poorly placed root causes suboptimal paths and can overload slow links."
       ]
     }
   ],
   "subtopics": [
     {
       "title": "Rapid STP (802.1w)",
-      "summary": "Faster convergence.",
+      "summary": "Roles, states and the handshake that cut convergence.",
       "sections": [
         {
-          "body": "RSTP collapses states into discarding, learning, and forwarding and adds a proposal/agreement handshake so point-to-point links can move to forwarding in a second or less. It adds alternate and backup port roles that are ready to take over immediately."
+          "body": "RSTP keeps the election rules but changes how ports reach forwarding. A designated port on a point-to-point link sends a BPDU with the **proposal** flag. The neighbor, if it hears a better root, puts all its other non-edge ports into discarding (a sync operation) and replies with **agreement**. The proposer can then forward immediately, and the process cascades away from the root one hop at a time. Alternate ports are pre-computed backups for the root port, and backup ports are redundant paths onto the same segment. Link type is inferred from duplex: full duplex means point to point, half duplex means shared. RSTP also ages information after three missed hellos (6 s), and responds to inferior BPDUs on a root or designated port from the same sender at once."
+        },
+        {
+          "body": "Example state output on a Cisco switch running Rapid PVST+.",
+          "code": "SW2# show spanning-tree vlan 10\nVLAN0010\n  Spanning tree enabled protocol rstp\n  Root ID    Priority    4106\n             Address     0000.0000.0001\n             Cost        4\n             Port        1 (GigabitEthernet0/1)\n             Hello Time  2 sec  Max Age 20 sec  Forward Delay 15 sec\n  Bridge ID  Priority    32778 (priority 32768 sys-id-ext 10)\n             Address     0000.0000.0002\n\nInterface    Role Sts Cost      Prio.Nbr Type\nGi0/1        Root FWD 4         128.1    P2p\nGi0/2        Desg FWD 4         128.2    P2p\nGi0/24       Desg FWD 4         128.24   P2p Edge"
         }
       ]
     },
     {
       "title": "PortFast and BPDU guard",
-      "summary": "Edge ports.",
+      "summary": "Fast edge ports with a safety net.",
       "sections": [
         {
-          "body": "Ports to end hosts should skip the delay (PortFast / edge port). BPDU Guard shuts such a port down if it ever receives a BPDU, preventing someone from attaching a switch and changing the topology."
+          "body": "PortFast (RSTP edge port) moves an access port to forwarding right away, avoiding the 30 s delay that makes DHCP fail on boot and avoiding TCs when hosts power cycle. Because skipping STP removes loop protection, pair it with **BPDU guard**, which err-disables the port if any BPDU arrives. **BPDU filter** is different and risky: it stops sending and drops received BPDUs, so a loop behind that port goes undetected. Enable globally with `spanning-tree portfast default` and `spanning-tree portfast bpduguard default`; the global form applies only to access ports."
+        },
+        {
+          "code": "interface GigabitEthernet0/10\n switchport mode access\n spanning-tree portfast\n spanning-tree bpduguard enable\n! recovery after err-disable\nerrdisable recovery cause bpduguard\nerrdisable recovery interval 300"
         }
       ]
     },
     {
       "title": "Per-VLAN and multiple spanning trees",
-      "summary": "PVST+, MSTP.",
+      "summary": "PVST+, Rapid PVST+ and MSTP.",
       "sections": [
         {
-          "body": "PVST+ (Cisco) runs one tree per VLAN, enabling load balancing by choosing a different root per VLAN. MSTP (802.1s) maps groups of VLANs to a few instances, scaling better."
+          "body": "PVST+ gives each VLAN its own tree and its own root, so VLAN 10 can use the left uplink and VLAN 20 the right, using both links. The price is CPU and BPDU volume. MSTP puts VLANs into instances: for example instance 1 for VLANs 10 to 19 and instance 2 for VLANs 20 to 29. Every switch in a region must share the name, revision and the VLAN to instance map, which is summarized in a 16-byte digest in the BPDU. Misconfigured digests split regions."
+        },
+        {
+          "code": "spanning-tree mode mst\nspanning-tree mst configuration\n name CAMPUS\n revision 3\n instance 1 vlan 10-19\n instance 2 vlan 20-29\nspanning-tree mst 1 priority 4096\nspanning-tree mst 2 priority 8192"
         }
       ]
     },
     {
       "title": "Protecting the root",
-      "summary": "Guard features.",
+      "summary": "Root guard, loop guard and UDLD.",
       "sections": [
         {
-          "body": "Root Guard stops a port from accepting a superior BPDU that would move the root. Loop Guard prevents a port from becoming designated if BPDUs stop arriving. Set priorities deliberately so the root is a core switch, not an arbitrary old one."
+          "body": "**Root guard** on ports that should never lead to the root (distribution downlinks facing access switches): if a superior BPDU arrives, the port goes into root-inconsistent state (blocked) and recovers by itself when the superior BPDUs stop. **Loop guard** on root and alternate ports: if BPDUs stop arriving, the port goes into loop-inconsistent state instead of becoming designated, preventing loops from unidirectional failures. **UDLD** detects one-way fiber links on its own. Do not enable root guard and loop guard on the same port; they have conflicting ideas of a good port."
         }
       ]
     },
     {
-      "title": "Diagnosing",
-      "summary": "Commands.",
+      "title": "BPDU format and timers",
+      "summary": "What is in the frames.",
       "sections": [
         {
-          "body": "`show spanning-tree` lists the root, port roles, and states per VLAN; unexpected root bridges and flapping topology-change counters point to problems.",
-          "code": "Switch# show spanning-tree vlan 10\n  Root ID  Priority 24586  Address 0011.2233.4455\n  Gi0/1  Root FWD 4  128.1  P2p"
+          "body": "A configuration BPDU is sent to 01:80:C2:00:00:00 with an 802.3 length field and LLC header (DSAP 0x42, SSAP 0x42, control 0x03). Payload: protocol ID 0x0000, version (0 for STP, 2 for RSTP, 3 for MST), type (0x00 config, 0x80 TCN, 0x02 RST/MST), flags (TC, proposal, port role 2 bits, learning, forwarding, agreement, TCA), root ID (8 bytes), root path cost (4 bytes), bridge ID (8 bytes), port ID (2 bytes), message age, max age, hello time and forward delay (2 bytes each in 1/256 s units). Message age grows by one second at each hop and the BPDU is discarded when it reaches max age. Wireshark filters it with `stp`."
+        }
+      ]
+    },
+    {
+      "title": "Root bridge placement and load balancing",
+      "summary": "Making the tree match the design.",
+      "sections": [
+        {
+          "body": "Put the root in the core or distribution layer in the middle of the traffic flow, make a second switch secondary root, and make sure the priority is low enough (4096 or 8192) that no access switch can win by mistake. With PVST+ or MSTP, split the instances: odd VLANs rooted on core 1 and even VLANs on core 2, with each access switch uplinking to both so each uplink is forwarding for half the VLANs. Check the result with `show spanning-tree vlan N` and verify the root port and cost on each switch; ensure the path to the root matches the expected link, not a slow detour."
+        }
+      ]
+    },
+    {
+      "title": "Diagnosing STP problems",
+      "summary": "Reading symptoms and finding the loop.",
+      "sections": [
+        {
+          "body": "Symptoms of a loop: switch CPU near 100 percent, all link LEDs blinking in sync, interface counters for broadcasts and multicasts growing by millions per second, `%SW_MATM-4-MACFLAP_NOTIF` logs, and users losing connectivity. Triage: find the ports with the fastest-growing input counters, check `show spanning-tree` for topology change counts and which port last changed, and disconnect redundant links until the storm stops. Root causes are almost always a new cable, an unmanaged switch, a disabled STP, or a BPDU filter. Preventive controls: BPDU guard, root guard, loop guard, UDLD, storm control, and a consistent mode everywhere."
+        },
+        {
+          "code": "SW# show spanning-tree detail | include occurred|from|is exec\n  Number of topology changes 41 last change occurred 00:00:07 ago\n          from GigabitEthernet0/14\nSW# show interfaces gi0/14 | include broadcasts\n     3918245 broadcasts (1213 multicasts)"
+        }
+      ]
+    },
+    {
+      "title": "Shortest Path Bridging and TRILL",
+      "summary": "What replaces STP in large Layer 2 fabrics.",
+      "sections": [
+        {
+          "body": "STP wastes capacity by blocking links. **SPB (802.1aq)** runs IS-IS between bridges to compute shortest paths and forwards over all equal-cost paths, using MAC-in-MAC (802.1ah) or Q-in-Q encapsulation at the edge. **TRILL** (RFC 6325) also uses IS-IS, routes frames between RBridges with a hop count in a TRILL header, and eliminates loops with the TTL. Both are rarely used outside specific fabrics; EVPN-VXLAN over a routed underlay has become the dominant approach."
         }
       ]
     }
   ],
   "takeaways": [
-    "STP elects the lowest Bridge ID as root, then keeps only the best loop-free paths.",
-    "Roles: root, designated, blocked; costs sum toward the root.",
-    "Classic STP converges in 30-50 s; RSTP in about a second.",
-    "Use PortFast + BPDU Guard on edge ports and set the root deliberately."
-  ],
-  "references": [
-    {
-      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
-      "url": "https://1.ieee802.org/"
-    },
-    {
-      "label": "Reference: Spanning Tree Protocol (Wikipedia)",
-      "url": "https://en.wikipedia.org/wiki/Spanning_Tree_Protocol"
-    }
+    "STP prevents Layer 2 loops by electing a root bridge and blocking redundant ports so the active topology is a tree.",
+    "Root election uses the lowest bridge ID: 4-bit priority (default 32768), 12-bit VLAN extension, 48-bit MAC; set it manually.",
+    "Root port choice order: lowest root BID, lowest root path cost, lowest sender BID, lowest sender port ID.",
+    "Defaults: hello 2 s, forward delay 15 s, max age 20 s; classic STP converges in 30 to 50 s, RSTP in under a second on point-to-point links.",
+    "Path costs for 1 Gbit/s: 4 (short) or 20,000 (long); BPDUs go to 01:80:C2:00:00:00.",
+    "Use PortFast with BPDU guard on edge ports, root guard on downlinks, loop guard and UDLD on inter-switch links.",
+    "Prefer RSTP or MSTP over classic STP; use per-VLAN roots or instances to balance load, or avoid blocking with Layer 3 or MLAG designs."
   ],
   "practice": [
     {
-      "title": "Compute path costs for a topology",
+      "title": "Elect the root and mark port roles in a four-switch ring",
       "difficulty": "Easy"
     },
     {
-      "title": "Configure PortFast and BPDU Guard",
+      "title": "Compute root path costs given link speeds under short and long cost methods",
       "difficulty": "Easy"
     },
     {
-      "title": "Elect the root and port roles for a four-switch ring",
+      "title": "List the five 802.1D port states and what each one does",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why 802.1D takes 50 seconds after an indirect failure",
       "difficulty": "Medium"
     },
     {
-      "title": "Explain the RSTP proposal/agreement handshake",
+      "title": "Trace the RSTP proposal and agreement handshake across three switches",
       "difficulty": "Medium"
+    },
+    {
+      "title": "Configure Rapid PVST+ so VLAN 10 and 20 use different uplinks",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Respond to a broadcast storm: triage steps and permanent fixes",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design an MSTP region and explain what happens with a revision mismatch",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Spanning Tree Protocol (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Spanning_Tree_Protocol"
+    },
+    {
+      "label": "IEEE 802.1D / 802.1w / 802.1s, consolidated into 802.1Q",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Network switch (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Network_switch"
     }
   ]
 }

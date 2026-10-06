@@ -1,132 +1,245 @@
 {
-  "summary": "IPv6 uses a fixed 40-byte header with 128-bit addresses. It drops the header checksum and in-network fragmentation and moves optional features into extension headers, making forwarding simpler.",
+  "summary": "The IPv6 header is a fixed 40-byte header with a 128-bit source and destination address, an 8-bit hop limit, a Next Header field and no checksum or fragmentation fields. Optional features moved into a chain of extension headers that most routers never read. The simpler layout lets hardware forward at line rate, and the 128-bit address space ends the shortage that forced NAT on IPv4. You see it in every dual-stack network, mobile carrier and cloud, and interviewers love to compare it field by field with IPv4.",
   "sections": [
     {
-      "heading": "Header layout (RFC 8200)",
-      "code": "+-------+---------------+--------------------------+\n|Ver(4) | Traffic Class | Flow Label (20)          |\n+-------+---------------+--------------+-----------+\n| Payload Length (16)   | Next Header  | Hop Limit |\n+-----------------------+--------------+-----------+\n| Source Address (128)                             |\n+--------------------------------------------------+\n| Destination Address (128)                        |\n+--------------------------------------------------+"
+      "heading": "Overview",
+      "body": "IPv6 (RFC 8200) was designed to fix IPv4's address exhaustion and to make routing cheaper. The base header was streamlined: it has a fixed size so a router can find the destination address at a constant offset, it drops the header checksum so no per-hop recomputation is needed, and it removes in-flight fragmentation so routers do not have to buffer and split packets. Everything optional went into extension headers placed between the base header and the transport header, each introduced by the Next Header field of the one before it. The result is a header twice as large as IPv4's minimum but with fewer fields: 8 in total against IPv4's 12 fixed ones."
     },
     {
-      "heading": "Fields",
+      "heading": "Core Concepts",
       "bullets": [
-        "Version (4 bits): 6.",
-        "Traffic Class (8): DSCP and ECN.",
-        "Flow Label (20): lets routers keep packets of one flow together (e.g. for load balancing).",
-        "Payload Length (16): bytes after the 40-byte header, including extension headers.",
-        "Next Header (8): the next header type (6 TCP, 17 UDP, 58 ICMPv6, or an extension header).",
-        "Hop Limit (8): replaces TTL.",
-        "Source and Destination: 128 bits each."
+        "**Version (4 bits)**: always 6.",
+        "**Traffic Class (8 bits)**: same role as the IPv4 DSCP and ECN byte: 6 bits of DSCP, 2 bits of ECN.",
+        "**Flow Label (20 bits)**: labels packets of one flow so routers can load-balance by flow without parsing ports (RFC 6437). 0 means unlabeled.",
+        "**Payload Length (16 bits)**: bytes after the 40-byte base header, including extension headers. Max 65,535 unless a jumbogram is used.",
+        "**Next Header (8 bits)**: type of the header that follows, either an extension header or a transport protocol. Shares the IPv4 protocol number space: 6 TCP, 17 UDP, 58 ICMPv6.",
+        "**Hop Limit (8 bits)**: TTL by another name, decremented at every router; zero means drop and send ICMPv6 Time Exceeded.",
+        "**Source and Destination Address (128 bits each)**: written as eight groups of four hex digits, with `::` compressing one run of zeros.",
+        "**Extension header**: an optional header such as hop-by-hop, routing, fragment or destination options. Multiples of 8 bytes in length.",
+        "**Path MTU**: the smallest link MTU on the route. IPv6 requires every link to support at least 1280 bytes."
       ]
     },
     {
-      "heading": "Differences from IPv4",
+      "heading": "How It Works",
+      "body": "A host builds the 40-byte header, sets Next Header to the transport protocol (or the first extension header), and sends the packet. A router reads the Hop Limit and Destination Address, decrements the Hop Limit, does a longest-prefix lookup and forwards. It never touches the extension chain, except the Hop-by-Hop Options header which, if present, must be first and is examined by every router. If a packet is bigger than the next link's MTU, the router does not fragment: it drops the packet and returns ICMPv6 Packet Too Big (type 2) with the MTU. The sender then lowers its packet size, or inserts a Fragment header and fragments itself. The destination processes the extension headers in order and finally hands the payload to the transport protocol named by the last Next Header. The 40-byte layout is easy to parse. The code below reads the first word, extracts version, traffic class and flow label with shifts, and walks the extension header chain until it reaches a transport protocol. The walk matters for security devices: they must follow every Next Header, because an attacker can hide the TCP header behind many extension headers. Each generic extension header begins with Next Header and Hdr Ext Len (length in 8-byte units not counting the first 8), except the Fragment header, which is a fixed 8 bytes, and AH, whose length is in 4-byte units.",
+      "code": "IPv6 base header, 40 bytes (each row 32 bits)\n\n  0       4              12                       20                31\n +-------+---------------+-----------------------------------------+\n |Ver=6  | Traffic Class |              Flow Label                 |\n +-------+---------------+-------------------+----------+----------+\n |        Payload Length |    Next Header    | Hop Limit|\n +-----------------------+-------------------+----------+\n |                  Source Address (128 bits)                      |\n |                                                                 |\n +-----------------------------------------------------------------+\n |                Destination Address (128 bits)                   |\n |                                                                 |\n +-----------------------------------------------------------------+\n\nExtension chain example (TCP segment sent after a route header):\n [IPv6 NH=43] -> [Routing NH=6] -> [TCP header + data]\n\nHex: 60 00 00 00 00 14 06 40 + 32 address bytes\n version 6, TC 0, flow 0, payload length 20, next header 6 (TCP), hop limit 64\n\n#include <stdint.h>\n#include <stddef.h>\n#include <arpa/inet.h>\n\nstruct ipv6_hdr {\n    uint32_t ver_tc_flow;   /* 4 bits ver, 8 bits TC, 20 bits flow */\n    uint16_t payload_len;\n    uint8_t  next_hdr;\n    uint8_t  hop_limit;\n    uint8_t  src[16];\n    uint8_t  dst[16];\n};  /* sizeof == 40 */\n\n/* Return the transport protocol, skipping HBH(0), routing(43),\n   fragment(44) and destination options(60). */\nint final_proto(const uint8_t *pkt, size_t len) {\n    const struct ipv6_hdr *h = (const void *)pkt;\n    uint8_t nh = h->next_hdr;\n    size_t off = 40;\n    for (int n = 0; n < 8; n++) {              /* bound the chain */\n        if (nh == 0 || nh == 43 || nh == 60) {\n            if (off + 2 > len) return -1;\n            uint8_t next = pkt[off];\n            off += 8 + 8 * (size_t)pkt[off + 1];\n            nh = next;\n        } else if (nh == 44) {                   /* fragment: 8 bytes */\n            if (off + 8 > len) return -1;\n            nh = pkt[off]; off += 8;\n        } else return nh;                        /* 6, 17, 58, 59... */\n    }\n    return -1;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Fixed 40-byte header: faster to parse in hardware.",
-        "No header checksum: link layer and transport checksums protect data; saves per-hop recomputation.",
-        "Routers never fragment; only the source does, using the Fragment extension header.",
-        "No IPv4-style options; extensions chain via Next Header.",
-        "UDP checksum becomes mandatory.",
-        "No broadcast; multicast and anycast replace it."
+        "**Hop-by-Hop Options (0)**: processed by every router. Used for router alert and jumbograms. Must come first.",
+        "**Routing (43)**: source routing. Type 0 was deprecated for amplification attacks (RFC 5095); type 2 supports Mobile IPv6 and type 4 is Segment Routing (SRv6).",
+        "**Fragment (44)**: 8 bytes with a 13-bit offset in 8-byte units, an M flag and a 32-bit identification. Only sources fragment.",
+        "**Destination Options (60)**: processed by the final destination, or by each routing-list destination when placed before a routing header.",
+        "**Authentication Header (51) and ESP (50)**: IPsec headers, built into IPv6 design though now optional.",
+        "**No Next Header (59)**: nothing follows; the packet ends here.",
+        "**ICMPv6 (58)**: error reporting plus Neighbor Discovery, Router Advertisements and Multicast Listener Discovery. It is essential, unlike ICMP for IPv4.",
+        "**Address types**: unicast (global `2000::/3`, link-local `fe80::/10`, unique local `fc00::/7`), multicast `ff00::/8`, anycast (a unicast address in several places). There is no broadcast."
       ]
     },
     {
-      "heading": "Extension headers",
-      "body": "Optional headers sit between the base header and the upper-layer payload. RFC 8200 recommends this order: Hop-by-Hop Options, Destination Options (for intermediate destinations), Routing, Fragment, Authentication, ESP, Destination Options (final), then the upper-layer header. Each should appear at most once (Destination Options at most twice).",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "Only Hop-by-Hop Options must be processed by every router.",
-        "Fragment header: 13-bit offset in 8-byte units, M flag, 32-bit Identification.",
-        "Everything up to the upper-layer header must be in the first fragment."
+        "**Header size**: 40 bytes always, versus 20 to 60 for IPv4. Tunneling or UDP with IPv6 costs 20 extra bytes per packet.",
+        "**TCP MSS on 1500 MTU**: 1500 minus 40 minus 20 = 1440 bytes, versus 1460 in IPv4.",
+        "**Minimum link MTU**: 1280 bytes. A path MTU below this needs link-layer fragmentation.",
+        "**Address space**: 2^128, about 3.4 x 10^38 addresses. A standard end-site subnet is a /64 holding 2^64 interface identifiers.",
+        "**Per-hop work**: no checksum to update and no fragmentation, so forwarding is a Hop Limit decrement and a lookup. Extension headers beyond HBH are ignored by transit routers.",
+        "**Extension header size**: each is a multiple of 8 bytes. Long chains risk spilling past the first fragment and past hardware parsing limits, which is why many devices drop packets with more than a few headers.",
+        "**Jumbogram**: payload up to 4 GB using the Hop-by-Hop Jumbo Payload option with Payload Length set to 0."
       ]
     },
     {
-      "heading": "MTU rules",
-      "body": "Every IPv6 link must support an MTU of at least 1280 bytes. Hosts should use Path MTU Discovery (RFC 8201); routers drop oversized packets and return ICMPv6 Packet Too Big."
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Blocking ICMPv6**: breaks Path MTU Discovery, Neighbor Discovery and autoconfiguration. Drop selected types only, never all of ICMPv6.",
+        "**Treating it like IPv4**: there is no header checksum, so the UDP checksum is mandatory (RFC 8200). A UDP packet with checksum 0 is invalid over IPv6.",
+        "**Pseudo-header**: TCP, UDP and ICMPv6 checksums cover a pseudo-header that includes the 128-bit source and destination, the upper-layer length and the next header value.",
+        "**Extension header ordering**: HBH first, destination options before routing, fragment after routing, upper layer last. Bad ordering is dropped.",
+        "**Fragment loss amplification**: only the first fragment has the transport header, so firewalls cannot filter later fragments by port.",
+        "**Using a subnet smaller than /64**: breaks SLAAC and some neighbor features, except /127 for point-to-point and /128 for loopbacks.",
+        "**Textual ambiguity**: `::` may appear only once in an address, leading zeros inside a group are optional, and `::1` is loopback.",
+        "**Traffic class vs flow label confusion**: one marks priority, the other marks flows. Routers must not reorder packets within a flow."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Mobile and ISPs**: most mobile carriers are IPv6-first and reach IPv4 through NAT64 and DNS64 or 464XLAT.",
+        "**Cloud and data centers**: dual-stack load balancers, and SRv6 uses the routing header to steer traffic through service chains.",
+        "**Local networks**: link-local `fe80::` addresses are on every interface and drive routing protocol neighbors, with SLAAC for host addresses.",
+        "**Adoption**: roughly half of traffic to large content networks is IPv6 by the mid-2020s.",
+        "**Security tooling**: firewalls must parse the extension chain; RA Guard and DHCPv6 Shield protect LANs from rogue router advertisements.",
+        "**Packet capture**: Wireshark filters `ipv6.hlim`, `ipv6.nxt`, `ipv6.fraghdr`."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How big is the IPv6 header?** 40 bytes, fixed, no options in the base header.",
+        "**What disappeared compared with IPv4?** Header checksum, IHL, fragmentation fields in the base header, options, and broadcast.",
+        "**Who fragments in IPv6?** Only the source host, using a Fragment header after learning the path MTU. Routers never fragment.",
+        "**What is the minimum MTU?** 1280 bytes for every link, and 1500 is typical.",
+        "**What replaced TTL?** Hop Limit, same behavior with a clearer name.",
+        "**What are extension headers?** Chained headers between the base header and transport, identified through Next Header.",
+        "**How do you shorten `2001:0db8:0000:0000:0000:0000:0000:0001`?** `2001:db8::1`.",
+        "**What replaced broadcast?** Multicast, such as the all-nodes address `ff02::1`."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Address notation",
-      "summary": "Writing 128 bits.",
+      "title": "Address notation and compression",
+      "summary": "Reading and writing 128-bit addresses.",
       "sections": [
         {
-          "body": "Eight groups of four hex digits, with leading zeros droppable and one run of zero groups replaced by `::`. Example: 2001:0db8:0000:0000:0000:0000:0000:0001 is 2001:db8::1.",
+          "body": "An IPv6 address is eight 16-bit groups in hex separated by colons. Leading zeros in a group may be dropped, and the longest run of all-zero groups may be replaced once by `::`. So `2001:0db8:0000:0000:0000:ff00:0042:8329` becomes `2001:db8::ff00:42:8329`. Prefix notation matches CIDR: `2001:db8:abcd::/48` is a 48-bit prefix. Addresses in URLs are put in brackets, `http://[2001:db8::1]:8080/`, and a zone id selects an interface for link-local addresses, `fe80::1%eth0`. RFC 5952 recommends lowercase hex and the shortest form, choosing the first run when two runs tie."
+        }
+      ]
+    },
+    {
+      "title": "Address types and scopes",
+      "summary": "Global, link-local, unique local and multicast.",
+      "sections": [
+        {
+          "body": "A host usually has several addresses at once: a link-local one, one or more global ones and temporary privacy addresses.",
           "bullets": [
-            "::1 loopback.",
-            "fe80::/10 link-local.",
-            "fc00::/7 unique local (private).",
-            "2000::/3 global unicast.",
-            "ff00::/8 multicast."
+            "**Loopback** `::1`, **unspecified** `::`, **default route** `::/0`.",
+            "**Global unicast** `2000::/3`, assigned by registries; documentation prefix `2001:db8::/32`.",
+            "**Link-local** `fe80::/10`: valid on one link only, never routed, mandatory on every interface.",
+            "**Unique local** `fc00::/7` (in practice `fd00::/8`): private-like, site scoped, no NAT needed.",
+            "**Multicast** `ff00::/8`: scope nibble picks link (2), site (5) or global (e); `ff02::1` all nodes, `ff02::2` all routers.",
+            "**Solicited-node** `ff02::1:ff00:0/104` plus the low 24 bits of the unicast address, used for Neighbor Discovery."
           ]
         }
       ]
     },
     {
-      "title": "SLAAC and Neighbor Discovery",
-      "summary": "Autoconfiguration.",
+      "title": "Traffic class and flow label",
+      "summary": "QoS and flow identification.",
       "sections": [
         {
-          "body": "A host builds a link-local address, learns the prefix from Router Advertisements, and forms its own global address (RFC 4862), using ICMPv6 Neighbor Discovery in place of ARP and parts of DHCP."
+          "body": "Traffic Class is the DSCP plus ECN byte exactly as in IPv4, so QoS policies carry over. The 20-bit Flow Label is new: a source sets the same non-zero label, with the same source and destination addresses, for all packets of a flow. Routers and load balancers can hash on (source, destination, flow label) to keep one flow on one path without reading transport ports, which is helpful when ports are hidden by encryption or buried behind extension headers. Intermediate routers must not change the label unless they are the originator, and sources should pick the label pseudo-randomly."
+        }
+      ]
+    },
+    {
+      "title": "Hop-by-Hop and routing headers",
+      "summary": "Headers that influence the path.",
+      "sections": [
+        {
+          "body": "Hop-by-Hop Options are the only extension header every router must read, and for that reason many vendors process it on the slow path or drop it, which has made it unreliable on the Internet. Routing headers carry a list of waypoints. Type 0 allowed a single packet to bounce between two routers many times, so it was deprecated; type 2 supports Mobile IPv6 home addresses; type 3 is RPL for low-power networks; type 4 is the Segment Routing Header used by SRv6 to encode a path as a list of 128-bit segment identifiers."
+        }
+      ]
+    },
+    {
+      "title": "Fragment header and path MTU",
+      "summary": "How IPv6 handles large packets.",
+      "sections": [
+        {
+          "body": "The Fragment header is 8 bytes: Next Header, 8 reserved bits, a 13-bit offset in 8-byte units, 2 reserved bits, the M flag and a 32-bit identification. The part before the fragment header (base header plus any headers that must be processed by routers) is the unfragmentable part and is copied into each fragment; the rest is the fragmentable part. A sender learns the MTU from ICMPv6 Packet Too Big, which is why blocking it is harmful. The reassembly timeout is 60 seconds. Every link must support 1280 bytes, so a sender that cannot learn the MTU can safely use 1280-byte packets."
+        }
+      ]
+    },
+    {
+      "title": "Autoconfiguration and interface identifiers",
+      "summary": "Where host addresses come from.",
+      "sections": [
+        {
+          "body": "SLAAC lets a host build its own address from a /64 prefix in a Router Advertisement plus a 64-bit interface identifier. The older EUI-64 method derived the identifier from the MAC by inserting `ff:fe` in the middle and flipping the U/L bit: `00:1a:2b:3c:4d:5e` becomes `021a:2bff:fe3c:4d5e`. It leaks the hardware identity, so modern systems use stable opaque identifiers (RFC 7217) and rotating temporary addresses (RFC 8981). Before using any address the host runs Duplicate Address Detection with a Neighbor Solicitation. DHCPv6 is the stateful alternative and is often used with RAs for DNS information."
+        }
+      ]
+    },
+    {
+      "title": "IPv4 versus IPv6 header comparison",
+      "summary": "Field-by-field mapping interviewers expect.",
+      "sections": [
+        {
+          "bullets": [
+            "**Version**: kept, value 6.",
+            "**IHL**: removed, header is a fixed 40 bytes.",
+            "**DSCP/ECN**: kept as Traffic Class.",
+            "**Total Length**: becomes Payload Length (excludes the base header).",
+            "**Identification, Flags, Fragment Offset**: moved to the Fragment extension header.",
+            "**TTL**: renamed Hop Limit.",
+            "**Protocol**: renamed Next Header and also names extension headers.",
+            "**Header Checksum**: removed.",
+            "**Options**: replaced by extension headers.",
+            "**Addresses**: 32 bits grow to 128 bits.",
+            "**New**: Flow Label."
+          ]
         }
       ]
     },
     {
       "title": "Transition mechanisms",
-      "summary": "Living with IPv4.",
+      "summary": "Running IPv6 next to IPv4.",
       "sections": [
         {
-          "bullets": [
-            "Dual stack: run both protocols.",
-            "Tunnelling (6in4, 6rd).",
-            "NAT64/DNS64: IPv6-only clients reach IPv4 servers."
-          ]
-        }
-      ]
-    },
-    {
-      "title": "Why no checksum is fine",
-      "summary": "Reasoning.",
-      "sections": [
-        {
-          "body": "Link-layer CRCs catch most bit errors and transport protocols checksum the data plus a pseudo-header of the addresses, so an IP header checksum duplicates work and costs time at every hop."
+          "body": "Dual stack runs both protocols on every device and is the preferred approach. Tunnels such as 6in4 carry IPv6 inside IPv4 using protocol number 41. NAT64 translates between IPv6-only clients and IPv4 servers, with DNS64 synthesizing AAAA records in the prefix `64:ff9b::/96` that embed the IPv4 address in the last 32 bits. 464XLAT lets IPv4-only apps on a phone work on an IPv6-only carrier. Happy Eyeballs (RFC 8305) races IPv6 and IPv4 connection attempts so a broken path in one family does not delay the user."
         }
       ]
     }
   ],
   "takeaways": [
-    "Fixed 40-byte header, 128-bit addresses, Hop Limit instead of TTL.",
-    "No header checksum and no router fragmentation.",
-    "Extension headers chain through Next Header in a recommended order.",
-    "Minimum MTU is 1280; Path MTU Discovery is essential."
+    "The IPv6 base header is a fixed 40 bytes: version, traffic class, flow label, payload length, next header, hop limit and two 128-bit addresses.",
+    "There is no header checksum, no IHL and no in-flight fragmentation, which keeps router work minimal.",
+    "Optional features live in extension headers chained through Next Header; only Hop-by-Hop is read by every router.",
+    "Only the source fragments, using a Fragment header, after ICMPv6 Packet Too Big; every link must carry at least 1280 bytes.",
+    "UDP checksums are mandatory over IPv6, and TCP, UDP and ICMPv6 checksums cover a pseudo-header with the 128-bit addresses.",
+    "Broadcast is gone: multicast (ff02::1 all nodes) and anycast cover it.",
+    "Do not block ICMPv6: PMTUD, Neighbor Discovery and SLAAC depend on it."
+  ],
+  "practice": [
+    {
+      "title": "Write out the 40-byte IPv6 base header for a TCP packet, naming every field's width",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compress 2001:0db8:0000:0000:0000:ff00:0042:8329 and expand fe80::1 into full form",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Map each IPv4 header field to its IPv6 equivalent or say why it disappeared",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Derive the EUI-64 interface identifier for MAC 00:1a:2b:3c:4d:5e",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Fragment a 3000-byte IPv6 payload over a 1280-byte link and give the Fragment header values",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why ICMPv6 Packet Too Big must not be filtered and what happens if it is",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a C function that skips the extension header chain and returns the transport protocol, with bounds checks",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a firewall policy for an IPv6 edge that allows required ICMPv6 types and drops dangerous routing headers",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
       "label": "RFC 8200: Internet Protocol, Version 6 (IPv6) Specification",
-      "url": "https://www.rfc-editor.org/rfc/rfc8200"
+      "url": "https://www.rfc-editor.org/rfc/rfc8200.txt"
     },
     {
-      "label": "RFC 4291: IPv6 Addressing Architecture",
+      "label": "RFC 4291: IP Version 6 Addressing Architecture",
       "url": "https://www.rfc-editor.org/rfc/rfc4291"
     },
     {
-      "label": "RFC 8201: Path MTU Discovery for IPv6",
-      "url": "https://www.rfc-editor.org/rfc/rfc8201"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Compress and expand IPv6 addresses",
-      "difficulty": "Easy"
+      "label": "RFC 4861: Neighbor Discovery for IP version 6",
+      "url": "https://www.rfc-editor.org/rfc/rfc4861"
     },
     {
-      "title": "Explain why routers cannot fragment IPv6",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Decode a 40-byte IPv6 header",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Order a set of extension headers correctly",
-      "difficulty": "Medium"
+      "label": "RFC 6437: IPv6 Flow Label Specification",
+      "url": "https://www.rfc-editor.org/rfc/rfc6437"
     }
   ]
 }

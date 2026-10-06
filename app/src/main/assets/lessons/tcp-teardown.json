@@ -1,87 +1,247 @@
 {
-  "summary": "A TCP connection is closed independently in each direction using FIN segments, so a full close normally takes four segments. The side that closes first lingers in TIME-WAIT to make sure the final ACK arrives and old segments die out.",
+  "summary": "TCP closes each direction of a connection separately with a FIN, so a graceful close is normally four segments: FIN, ACK, FIN, ACK. The side that closes first ends in TIME-WAIT for twice the maximum segment lifetime, which makes the last ACK reliable and keeps stray old segments from corrupting a new connection on the same 4-tuple. Understanding the states, half-close, RST aborts and the classic problems of piled-up TIME-WAIT and CLOSE-WAIT sockets is core knowledge for debugging servers and a staple of networking interviews.",
   "sections": [
     {
-      "heading": "Normal close (RFC 9293, section 3.6)",
-      "code": "Active closer                    Passive closer\nESTABLISHED                      ESTABLISHED\n  --- FIN seq=x ------------->\nFIN-WAIT-1                       CLOSE-WAIT\n  <-- ACK ack=x+1 -----------\nFIN-WAIT-2\n                                 (app calls close)\n  <-- FIN seq=y ------------\n                                 LAST-ACK\n  --- ACK ack=y+1 ---------->\nTIME-WAIT (2 x MSL)              CLOSED\nCLOSED"
+      "heading": "Overview",
+      "body": "Opening a TCP connection is symmetrical but closing it is not. A TCP connection is really two independent byte streams, one in each direction, and each stream is ended by a segment with the FIN flag set. RFC 9293, section 3.6 defines the procedure and the state machine. When an application calls `close()` the kernel finishes sending queued data and then sends FIN, which means \"I have no more data to send.\" The peer acknowledges it, and later, when its own application closes, sends its own FIN. Only after both FINs are acknowledged is the connection fully closed.\n\nThe side that sends the first FIN is the **active closer**. The other is the **passive closer**. The distinction matters because the active closer pays an extra cost: it must linger in TIME-WAIT. On a busy server that decides who closes first can determine whether you run out of ports or memory.\n\nThere is also an abrupt way out. A segment with RST set kills the connection at once, discards pending data and tells the peer to do the same. A RST is used for errors and for deliberate aborts, and is never part of a normal graceful close."
     },
     {
-      "heading": "State meanings",
+      "heading": "Core Concepts",
       "bullets": [
-        "FIN-WAIT-1: our FIN sent, waiting for its ACK.",
-        "FIN-WAIT-2: our FIN acknowledged, waiting for the peer's FIN.",
-        "CLOSE-WAIT: peer's FIN received; waiting for our application to close.",
-        "LAST-ACK: our FIN sent after CLOSE-WAIT; waiting for the final ACK.",
-        "TIME-WAIT: waiting before deleting the connection record.",
-        "CLOSING: both sides sent FIN simultaneously."
+        "**FIN**: flag meaning the sender has finished sending. It consumes one sequence number, like SYN, and is retransmitted until acknowledged.",
+        "**Active and passive close**: the first side to send FIN is active. The side that receives it first is passive.",
+        "**Half-close**: after receiving a FIN a host may keep sending. The receiving direction is closed but the sending direction is still open. `shutdown(fd, SHUT_WR)` creates this deliberately.",
+        "**FIN-WAIT-1**: we sent FIN and are waiting for its ACK (or for the peer's FIN).",
+        "**FIN-WAIT-2**: our FIN was acknowledged; we wait for the peer's FIN.",
+        "**CLOSE-WAIT**: we received the peer's FIN and acknowledged it, but our application has not called `close()` yet.",
+        "**LAST-ACK**: we sent our FIN after CLOSE-WAIT and wait for its ACK.",
+        "**CLOSING**: both sides sent FIN at about the same time; we have the peer's FIN but not yet an ACK of ours.",
+        "**TIME-WAIT**: the active closer waits 2 x MSL after sending the final ACK before freeing the connection record.",
+        "**MSL**: maximum segment lifetime, the longest a segment is assumed to survive in the network. RFC 9293 takes it as 2 minutes.",
+        "**RST**: reset flag. It aborts the connection with no handshake and no waiting.",
+        "**Orphaned socket**: a socket the application has closed while the kernel still holds it to finish the close sequence."
       ]
     },
     {
-      "heading": "Why four segments",
-      "body": "Each direction is closed separately. The peer may still have data to send after receiving our FIN (a half-close), so its ACK and its own FIN can be separated in time. If it has nothing more to send they can be combined, giving three segments."
+      "heading": "How It Works",
+      "body": "A graceful close where the client closes first, with sequence numbers: the client has sent up to seq 1500 and the server up to seq 8000. The client's FIN uses seq 1500, which consumes one number, so the server acknowledges 1501.",
+      "bullets": [
+        "**1. FIN**: the client's application calls `close()`. After queued data is sent, the kernel sends FIN+ACK (seq=1500) and moves to FIN-WAIT-1.",
+        "**2. ACK**: the server's kernel acknowledges with ack=1501 and moves to CLOSE-WAIT. It tells the application of the end of input: `read()` now returns 0. The client moves to FIN-WAIT-2 on receiving this ACK.",
+        "**3. FIN**: the server application finishes its work and calls `close()`. The server sends FIN (seq=8000) and enters LAST-ACK. In between steps 2 and 3 the server may still send data; that is the half-closed period.",
+        "**4. ACK**: the client receives the FIN, sends ACK (ack=8001) and enters TIME-WAIT. The server receives it and goes to CLOSED immediately.",
+        "**5. Wait**: the client stays in TIME-WAIT for 2 x MSL. If it receives a retransmitted FIN (meaning the final ACK was lost) it re-ACKs and restarts the timer. After the timeout it goes to CLOSED and the record is freed.",
+        "**Three-segment variant**: if the server has nothing more to send and its delayed ACK timer has not fired, ACK and FIN are sent together as FIN+ACK, so the close is only three segments."
+      ],
+      "code": "Active closer (client)                  Passive closer (server)\nESTABLISHED                             ESTABLISHED\n  -- FIN,ACK seq=1500 ack=8000 ------>\nFIN-WAIT-1                              CLOSE-WAIT   (read() returns 0)\n  <- ACK seq=8000 ack=1501 ----------\nFIN-WAIT-2\n                                        (app calls close())\n  <- FIN,ACK seq=8000 ack=1501 ------   LAST-ACK\n  -- ACK seq=1501 ack=8001 ---------->\nTIME-WAIT (2 x MSL)                     CLOSED\nCLOSED"
     },
     {
-      "heading": "TIME-WAIT",
-      "body": "The active closer must remain in TIME-WAIT for 2 x MSL (RFC 9293 requires 2 x the maximum segment lifetime; MSL is commonly assumed 60 s on Linux, giving a 60 s wait in practice). It guarantees the last ACK can be retransmitted if lost and prevents delayed segments from a previous connection being mistaken for a new one using the same 4-tuple."
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Simultaneous close**: both sides send FIN before seeing the other's. Each goes FIN-WAIT-1, receives a FIN, sends an ACK and enters CLOSING, then on receiving the ACK of its own FIN moves to TIME-WAIT. Both sides end in TIME-WAIT.",
+        "**FIN+ACK shortcut**: in FIN-WAIT-1 a segment that acknowledges our FIN and carries the peer's FIN takes us straight to TIME-WAIT, skipping FIN-WAIT-2.",
+        "**Half-close**: `shutdown(SHUT_WR)` sends FIN but keeps the receive side open. `shutdown(SHUT_RD)` stops reading locally and sends nothing.",
+        "**Abortive close**: RST ends it immediately. Triggered by `SO_LINGER` with `l_onoff=1, l_linger=0`, by closing a socket that still has unread data, or by segments arriving for a connection that does not exist.",
+        "**Timeout close**: keepalive probes (Linux defaults: 7200 s idle, 75 s apart, 9 probes) or retransmission timeout expiry kill a dead connection with ETIMEDOUT.",
+        "**Application level close**: protocols such as TLS add close_notify, and HTTP adds `Connection: close`, before TCP FIN. Truncation attacks are why TLS wants a close_notify first."
+      ]
     },
     {
-      "heading": "Abortive close",
-      "body": "A RST ends a connection immediately with no handshake. It is sent for segments to a non-existent connection and when SO_LINGER with zero timeout is used. Pending data is discarded."
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Segments**: 4 for a graceful close (3 if ACK and FIN merge); 1 for an abortive close.",
+        "**TIME-WAIT duration**: RFC 9293 gives 2 x MSL = 4 minutes. Linux hard-codes 60 seconds (`TCP_TIMEWAIT_LEN`). Windows defaults to 120 s and BSD varies.",
+        "**Memory**: a TIME-WAIT entry on Linux is a compact `tcp_timewait_sock` of about 200 bytes, far smaller than a full socket, so 100,000 of them is only some megabytes.",
+        "**Port budget**: the default Linux ephemeral range 32768 to 60999 gives about 28,200 ports. At 60 s TIME-WAIT, one client reaching one destination IP and port can open only about 470 new connections per second before running out.",
+        "**FIN-WAIT-2 timer**: for orphaned sockets Linux limits it with `tcp_fin_timeout` (default 60 s) so a peer that never sends FIN does not hold it forever. A non-orphaned socket in FIN-WAIT-2 can wait indefinitely.",
+        "**CLOSE-WAIT**: has no timer at all. It lasts until the application closes, which can be forever."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**CLOSE-WAIT pile-up**: a growing count of CLOSE-WAIT sockets is an application bug. The peer closed, but your code never called `close()` (a leaked file descriptor or an ignored `read()` of 0). The kernel is not at fault.",
+        "**Blaming TIME-WAIT**: TIME-WAIT is normal and harmless in moderate numbers. It exists to protect correctness. Thousands of them are expected on a busy client or on a server that closes connections.",
+        "**Disabling TIME-WAIT**: tricks such as `tcp_tw_recycle` (removed in Linux 4.12) broke clients behind NAT because they dropped SYNs with older timestamps. Do not use it.",
+        "**Wrong side closing**: if the server always closes first, the server accumulates TIME-WAIT and might exhaust ports towards a database or proxy. Let the client close, or pool connections.",
+        "**RST instead of FIN**: closing a socket that has unread received data makes Linux send RST, and the peer may lose the data it had already sent, including the HTTP response. Drain the input first or use `shutdown(SHUT_WR)` and read to EOF.",
+        "**Bind failure after restart**: restarting a server that was the active closer leaves its listening port's old connections in TIME-WAIT, and `bind()` fails with EADDRINUSE. Set `SO_REUSEADDR` before `bind()`.",
+        "**TIME-WAIT assassination**: a stray RST arriving in TIME-WAIT can kill the state early (RFC 1337). Linux ignores such RSTs unless `tcp_rfc1337` is changed.",
+        "**Assuming close() means peer saw the data**: `close()` returns once data is queued, not delivered. Use an application ACK or `shutdown` plus read-until-EOF for confirmation.",
+        "**SIGPIPE**: writing after the peer's RST raises SIGPIPE or returns EPIPE. Writes after receiving FIN may work once and then fail."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**HTTP/1.0 and `Connection: close`**: the server signals the end of the response body by closing the connection, so teardown timing is part of the protocol.",
+        "**HTTP/1.1 and keep-alive**: avoids repeated handshake and teardown costs by reusing connections; reverse proxies tune idle timeouts to close first without racing the client.",
+        "**Half-close in tools**: `nc -N`, SSH and `rsync` send FIN on their input to say \"end of input\" while still reading the output.",
+        "**Databases and proxies**: connection pools exist partly to avoid TIME-WAIT port exhaustion and handshake cost.",
+        "**Observability**: `ss -tan | awk '{print $1}' | sort | uniq -c` counts sockets by state, which is the first step when diagnosing a server in trouble.",
+        "**Load balancers**: idle connection timeouts and RST injection at the edge are common ways cloud load balancers terminate flows, which applications see as unexpected resets."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why does closing take four segments?** Each direction closes separately, and the peer's ACK and its own FIN may be separated by data it still has to send.",
+        "**Why TIME-WAIT, and why 2 x MSL?** To retransmit the last ACK if it was lost, and to let old duplicates from the previous incarnation expire. One MSL for our ACK to reach the peer plus one MSL for a retransmitted FIN to come back.",
+        "**Which side enters TIME-WAIT?** The active closer.",
+        "**Server has many CLOSE-WAIT sockets. What is wrong?** The application is not closing sockets after the peer closed.",
+        "**Server has many TIME-WAIT sockets. Is that a problem?** Normally not; check port exhaustion, close direction and connection reuse.",
+        "**What is half-close?** FIN on one direction while the other stays open, via `shutdown(SHUT_WR)`.",
+        "**What does RST do?** Immediately aborts, discards queued data, no TIME-WAIT.",
+        "**Which states can a passive closer be in?** CLOSE-WAIT then LAST-ACK then CLOSED.",
+        "**How do you stop `bind()` failing during TIME-WAIT?** `SO_REUSEADDR`."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Half-close",
-      "summary": "shutdown(SHUT_WR).",
+      "title": "The TCP close state machine",
+      "summary": "All states in RFC 9293 and their transitions.",
       "sections": [
         {
-          "body": "An application can send a FIN yet keep reading, as in HTTP clients that signal 'request done' while waiting for the response. shutdown(fd, SHUT_WR) does this; close() ends both directions."
+          "body": "Eleven states exist in total. The six used for teardown are the interesting ones.",
+          "bullets": [
+            "**ESTABLISHED to FIN-WAIT-1**: local `close()`, send FIN.",
+            "**ESTABLISHED to CLOSE-WAIT**: receive FIN, send ACK.",
+            "**FIN-WAIT-1 to FIN-WAIT-2**: receive ACK of our FIN.",
+            "**FIN-WAIT-1 to CLOSING**: receive FIN without the ACK of ours (simultaneous close).",
+            "**FIN-WAIT-1 to TIME-WAIT**: receive FIN+ACK together.",
+            "**FIN-WAIT-2 to TIME-WAIT**: receive FIN, send ACK.",
+            "**CLOSING to TIME-WAIT**: receive ACK of our FIN.",
+            "**CLOSE-WAIT to LAST-ACK**: local `close()`, send FIN.",
+            "**LAST-ACK to CLOSED**: receive ACK of our FIN.",
+            "**TIME-WAIT to CLOSED**: 2 x MSL timer expires."
+          ]
         }
       ]
     },
     {
-      "title": "Too many TIME-WAIT sockets",
-      "summary": "High-rate clients.",
+      "title": "TIME-WAIT in depth",
+      "summary": "Two jobs: reliable final ACK and old-duplicate protection.",
       "sections": [
         {
-          "body": "Servers that actively close thousands of connections per second accumulate TIME-WAIT entries and may exhaust ephemeral ports. Remedies: let the client close first, reuse connections (keep-alive), and use SO_REUSEADDR or tcp_tw_reuse for outgoing connections."
+          "body": "Job one: the final ACK can be lost. If the active closer forgot the connection immediately, the passive side would retransmit its FIN and get an RST, ending the close with an error. By staying, the active side can answer the retransmitted FIN with another ACK.\n\nJob two: segments from the old connection may still be wandering in the network. If a new connection with the same 4-tuple started at once, an old segment with a sequence number inside the new window could be accepted as data. Waiting 2 x MSL lets every old segment die. A new SYN arriving in TIME-WAIT may be accepted if its ISN is higher than the last sequence number seen (RFC 6191 refines this using timestamps), which is how reconnects often succeed anyway."
         }
       ]
     },
     {
-      "title": "Too many CLOSE-WAIT sockets",
-      "summary": "A program bug.",
+      "title": "CLOSE-WAIT leaks",
+      "summary": "The state that points at an application bug.",
       "sections": [
         {
-          "body": "CLOSE-WAIT piling up means the peer closed but the local application never called close(), a classic file-descriptor leak. TIME-WAIT is normal; CLOSE-WAIT growth is not."
+          "body": "A socket in CLOSE-WAIT means the kernel has told the application \"the peer is finished\" and is waiting for `close()`. Every socket you read to EOF but never close, every error path that returns without closing, and every thread blocked forever on a different resource can leave it there. File descriptors accumulate until `accept()` fails with EMFILE.",
+          "code": "/* correct: always close after read() returns 0 */\nchar buf[4096];\nssize_t n;\nwhile ((n = read(fd, buf, sizeof buf)) > 0)\n    handle(buf, n);\nif (n < 0) perror(\"read\");\nclose(fd);                      /* sends our FIN; CLOSE-WAIT -> LAST-ACK */"
         }
       ]
     },
     {
-      "title": "Simultaneous close",
-      "summary": "Both ends send FIN together.",
+      "title": "Half-close with shutdown",
+      "summary": "Signalling end of input while still receiving.",
       "sections": [
         {
-          "body": "Both go FIN-WAIT-1 -> CLOSING -> TIME-WAIT after exchanging FINs and ACKs; each side waits 2 x MSL."
+          "body": "`close()` releases the descriptor and, if it is the last reference, ends both directions. `shutdown()` acts on the connection itself. `SHUT_WR` sends FIN once queued data is sent and leaves the read side open, which is exactly what a client needs to say \"here is my whole request\" and then collect an arbitrarily long reply.",
+          "code": "send(fd, req, reqlen, 0);\nshutdown(fd, SHUT_WR);          /* FIN: no more request bytes */\nwhile ((n = recv(fd, buf, sizeof buf, 0)) > 0)\n    fwrite(buf, 1, n, stdout);  /* keep reading the reply */\nclose(fd);"
         }
       ]
     },
     {
-      "title": "Inspecting states",
-      "summary": "Tools.",
+      "title": "Abortive close and SO_LINGER",
+      "summary": "Using RST on purpose, and when it happens by accident.",
       "sections": [
         {
-          "body": "`ss -tan state time-wait | wc -l` counts TIME-WAIT sockets; `ss -tan` lists all TCP states.",
-          "code": "$ ss -tan | awk '{print $1}' | sort | uniq -c"
+          "body": "By default `close()` returns immediately and the kernel sends remaining data in the background. With `SO_LINGER` set to `l_onoff=1` and `l_linger=0`, `close()` discards queued data and sends RST, and the socket skips TIME-WAIT entirely. That is occasionally used by load generators and servers under attack, but it can truncate responses and trigger ECONNRESET in the peer.",
+          "code": "struct linger lg = {.l_onoff = 1, .l_linger = 0};\nsetsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof lg);\nclose(fd);                      /* RST, no FIN, no TIME-WAIT */"
+        }
+      ]
+    },
+    {
+      "title": "Port exhaustion and TIME-WAIT tuning",
+      "summary": "What helps and what hurts.",
+      "sections": [
+        {
+          "body": "The usual cause of 'cannot assign requested address' is a client making many short connections to one server. Fixes in order of preference:",
+          "bullets": [
+            "**Reuse connections** with keep-alive and pools.",
+            "**Let the peer close** first so TIME-WAIT lands on the side with more headroom.",
+            "**Widen the range**: `net.ipv4.ip_local_port_range`.",
+            "**Spread destinations** across more server IPs or ports, because the limit is per full 4-tuple.",
+            "**tcp_tw_reuse** (outgoing connections only, relies on timestamps) lets a new connect reuse a TIME-WAIT port after one second. Value 2 on new kernels means loopback only.",
+            "**Avoid** `tcp_tw_recycle` (removed) and tiny `tcp_max_tw_buckets` values, which sacrifice correctness."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Observing teardown with ss and tcpdump",
+      "summary": "How to see each state live.",
+      "sections": [
+        {
+          "body": "Combine counts by state with a packet capture of FIN and RST only.",
+          "code": "ss -tan state time-wait | wc -l\nss -tan state close-wait\nss -tan state fin-wait-2\ntcpdump -n -i eth0 'tcp[tcpflags] & (tcp-fin|tcp-rst) != 0'\n# typical close, flags: [F.] FIN+ACK, [.] ACK, [R.] RST+ACK"
+        }
+      ]
+    },
+    {
+      "title": "Graceful close in TLS and HTTP",
+      "summary": "Application layer signals before FIN.",
+      "sections": [
+        {
+          "body": "TLS sends a close_notify alert so each side can tell a clean end from an attacker who injects a FIN to truncate data. HTTP/1.1 uses Content-Length or chunked encoding so the end of a message does not depend on TCP closing, which makes persistent connections possible. When a server must close an idle persistent connection, it can race with a client that is sending a new request, and the client sees a reset. Good clients retry idempotent requests on that error."
         }
       ]
     }
   ],
   "takeaways": [
-    "Each direction closes with its own FIN and ACK, usually four segments.",
-    "The active closer ends in TIME-WAIT for 2 x MSL.",
-    "CLOSE-WAIT buildup indicates an application not closing sockets.",
-    "RST aborts a connection immediately."
+    "Each direction is closed separately with a FIN, so a graceful close is four segments (three if ACK and FIN merge).",
+    "The active closer ends in TIME-WAIT for 2 x MSL: 4 minutes in RFC 9293, 60 seconds hard-coded in Linux.",
+    "TIME-WAIT guarantees the last ACK can be resent and keeps old duplicates from entering a new connection.",
+    "Many CLOSE-WAIT sockets mean your application is not closing sockets; many TIME-WAIT sockets are usually normal.",
+    "`shutdown(SHUT_WR)` gives a half-close: FIN out, reading still open. `close()` ends both directions.",
+    "RST aborts immediately, discards queued data and skips TIME-WAIT; closing with unread input triggers it.",
+    "Use `SO_REUSEADDR` so a restarted server can bind while old connections linger in TIME-WAIT.",
+    "Pool and reuse connections instead of shortening TIME-WAIT to avoid port exhaustion."
+  ],
+  "practice": [
+    {
+      "title": "Name the state of each side after every segment of a four-segment close",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "List sockets by state with ss and identify which side is the active closer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why a lost final ACK is recoverable thanks to TIME-WAIT",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write a client that uses shutdown(SHUT_WR) and reads the reply to EOF",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reproduce a CLOSE-WAIT leak with a server that never closes and find it with ss and lsof",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compute the maximum new connection rate for one client to one server given a port range and TIME-WAIT length",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Trace a simultaneous close and give the state of both hosts at each step",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Show with SO_LINGER zero that RST is sent and TIME-WAIT is skipped, and discuss the risks",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design connection handling for a proxy that must not exhaust ports under 20k new connections per second",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -91,24 +251,14 @@
     {
       "label": "RFC 1337: TIME-WAIT Assassination Hazards in TCP",
       "url": "https://www.rfc-editor.org/rfc/rfc1337"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Draw the state transitions on both sides of a close",
-      "difficulty": "Easy"
     },
     {
-      "title": "Capture a RST close and a FIN close and compare",
-      "difficulty": "Easy"
+      "label": "RFC 6191: Reducing the TIME-WAIT State Using TCP Timestamps",
+      "url": "https://www.rfc-editor.org/rfc/rfc6191"
     },
     {
-      "title": "Explain why TIME-WAIT lasts 2 x MSL",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Diagnose thousands of sockets stuck in CLOSE-WAIT",
-      "difficulty": "Medium"
+      "label": "Linux tcp(7) manual page",
+      "url": "https://man7.org/linux/man-pages/man7/tcp.7.html"
     }
   ]
 }

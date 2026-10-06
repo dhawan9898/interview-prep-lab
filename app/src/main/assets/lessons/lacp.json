@@ -1,125 +1,246 @@
 {
-  "summary": "Link aggregation bundles several physical links between two devices into one logical link for more bandwidth and redundancy. LACP, defined in IEEE 802.1AX (formerly 802.3ad), negotiates the bundle automatically.",
+  "summary": "Link aggregation combines several parallel Ethernet links into one logical link (a LAG, port channel or bond) for more bandwidth and for failover. The Link Aggregation Control Protocol (LACP, IEEE 802.3ad, now 802.1AX) negotiates the bundle by exchanging LACPDUs so both ends agree on which ports belong together. It is used between switches, between servers and top-of-rack switches, and on uplinks to firewalls and storage. The key subtlety is that traffic is balanced per flow by a hash, so one TCP connection never exceeds the speed of a single member link.",
   "sections": [
     {
-      "heading": "Why aggregate",
+      "heading": "Overview",
+      "body": "A single Ethernet cable is a bottleneck and a single point of failure: the cable, the port on one side and the port on the other can each fail. Ethernet speeds historically jump tenfold per generation (10, 100, 1000, 10000 Mbit/s), and the next speed up is not always affordable. Link aggregation is the alternative: use two, four or eight identical links in parallel and treat them as one.\n\nBy the mid-1990s every switch vendor had its own bundling scheme (Cisco EtherChannel, Nortel MLT, and so on) which only worked with the same vendor on both ends and usually needed manual configuration on both sides. The IEEE 802.3 working group took up the problem in November 1997 and produced 802.3ad as clause 43 of 802.3 in March 2000. In 2008 the work was moved to the 802.1 group as 802.1AX-2008, because layers like 802.1X port security sit below the aggregation sublayer; the current revision is 802.1AX-2020.\n\nThe bundle appears to everything above it, including spanning tree, VLANs, IP and the MAC address table, as one interface with one MAC address and the combined bandwidth. Spanning tree sees one link instead of several, so none of the members is blocked. If a member fails, traffic is rehashed onto the survivors in milliseconds, with no spanning tree recalculation."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "More total bandwidth than a single link.",
-        "Redundancy: the bundle keeps working if a member fails.",
-        "STP sees one logical link, so no member links are blocked."
+        "**LAG (link aggregation group)**: the set of physical ports bundled together. Also called port channel (Cisco), Aggregated Ethernet (Juniper), Eth-Trunk (Huawei), bond or team (Linux, Windows), trunk (HP/Aruba, confusingly).",
+        "**LACP**: the control protocol that negotiates and monitors the LAG using Link Aggregation Control Protocol Data Units (LACPDUs).",
+        "**LACPDU**: a Slow Protocols frame sent to the multicast MAC 01:80:C2:00:00:02 with EtherType 0x8809 and subtype 0x01. It is never forwarded by a bridge.",
+        "**Actor and partner**: each side describes itself as the actor and echoes what it last heard from its neighbor as the partner. A port is operational when both views match.",
+        "**System ID**: system priority (16 bits, default 32768) plus the system MAC address. Lower wins when both sides decide who controls port selection.",
+        "**Key**: a 16-bit number that groups ports able to aggregate together (same speed, same duplex, same administrative settings). Ports with different keys never bundle.",
+        "**Port priority**: 16 bits (default 32768); lower numbers are preferred when more ports are eligible than the LAG can use, the rest becoming standby.",
+        "**Active and passive mode**: active sends LACPDUs unconditionally; passive only replies when it hears an LACPDU. Active-active and active-passive form a bundle; passive-passive never does.",
+        "**Static (on) mode**: the LAG is forced up with no negotiation. It has no health checks; a mismatch or a one-way failure is not detected.",
+        "**Timeouts**: fast = 1 s between LACPDUs, slow = 30 s. A neighbor is declared dead after 3 missed intervals (3 s or 90 s).",
+        "**Hash (distribution) algorithm**: a function of selected header fields that picks the member link for each frame, so all frames of a flow take the same link and stay in order.",
+        "**MLAG / MC-LAG**: multi-chassis LAG, where the two ends of the bundle on one side are different physical switches that act as one logical partner."
       ]
     },
     {
-      "heading": "How LACP works",
-      "body": "Each side sends LACPDUs (EtherType 0x8809, slow-protocols multicast 01:80:C2:00:00:02) on every member link. They carry the system priority and MAC, a port key, and port state. Links whose partner information matches are bundled and activated; mismatches stay out. This detects misconfiguration and cabling mistakes that static bundles cannot."
+      "heading": "How It Works",
+      "body": "LACP is a small state machine run per port. Each port has actor state flags: Activity, Timeout, Aggregation, Synchronization, Collecting, Distributing, Defaulted and Expired. Ports exchange LACPDUs, decide which ports can be bundled together, and only then enable the data path.",
+      "bullets": [
+        "Step 1, advertise: an active port sends an LACPDU every 1 s (fast) or 30 s (slow) carrying its system priority, system ID, key, port priority, port number and state flags.",
+        "Step 2, learn the partner: the neighbor's LACPDU is stored as the partner information. Both sides now know the other's system ID and key.",
+        "Step 3, select an aggregator: ports whose actor key, partner system ID, partner key and speed/duplex match are placed in the same aggregator. The system with the lower system priority (then lower MAC) makes the decision when ports are limited, using port priority to pick active ports and leaving the rest as standby.",
+        "Step 4, synchronize: a port sets Synchronization when its partner agrees that the aggregator selection matches. Then it enables Collecting (receive) and Distributing (transmit) bits, in that order, so frames are not sent before the other end can accept them.",
+        "Step 5, distribute: for every outgoing frame, the hash selects one member link. The hash inputs depend on the platform and policy: source MAC, destination MAC, source IP, destination IP, VLAN, Layer 4 ports.",
+        "Step 6, monitor: if LACPDUs stop arriving for 3 intervals, the port is marked Expired then Defaulted and removed from the bundle. Traffic is rehashed onto the remaining members. When the link returns, the process restarts from step 1."
+      ],
+      "code": "LACPDU (Slow Protocols, EtherType 0x8809)\n  Destination MAC 01:80:C2:00:00:02 | Source MAC = port MAC | 0x8809\n  Subtype 0x01 (LACP) | Version 0x01\n  TLV 0x01 Actor Information      (length 20)\n      System Priority 2 B | System ID 6 B | Key 2 B\n      Port Priority 2 B   | Port Number 2 B | State 1 B | Reserved 3 B\n  TLV 0x02 Partner Information    (length 20)  same layout, as last heard\n  TLV 0x03 Collector Information  (length 16)  max delay in 10 us units\n  TLV 0x00 Terminator             (length 0)\n\nState byte, bit 0 to 7:\n  0 LACP_Activity    (1 = active)      4 Collecting\n  1 LACP_Timeout     (1 = short)       5 Distributing\n  2 Aggregation      (can bundle)      6 Defaulted\n  3 Synchronization  (in sync)         7 Expired\n\nCisco example, two switches:\n  SW1(config)# interface range gi0/1-2\n  SW1(config-if-range)# channel-group 1 mode active\n  SW1(config)# interface port-channel 1\n  SW1(config-if)# switchport mode trunk\n  SW2 uses mode active or passive on its two ports.\n\nHash example, 4 member links, src/dst IP hash:\n  link = (src_ip XOR dst_ip) mod 4\n  10.0.0.5 -> 10.0.1.9: 0x0A000005 XOR 0x0A000109 = 0x0000010C; 0x10C mod 4 = 0\n  So all packets of that IP pair use member link 0."
     },
     {
-      "heading": "Modes",
+      "heading": "Variants & Types",
       "bullets": [
-        "Active: sends LACPDUs and initiates negotiation.",
-        "Passive: replies only if it receives LACPDUs; two passive ends never form a bundle.",
-        "Static ('on'): no protocol, forced bundle; risky if the peer is misconfigured.",
-        "LACPDU timing: fast (every 1 s) or slow (every 30 s)."
+        "**LACP (802.1AX, mode active or passive)**: the standard dynamic bundle with negotiation, failure detection and mismatch protection. Preferred everywhere.",
+        "**Static LAG (mode on)**: manual with no protocol. Simple, no control frames, but cannot detect miscabling or a failed partner process. Both ends must be static, or the bundle will fail or loop.",
+        "**PAgP (Cisco Port Aggregation Protocol)**: Cisco proprietary negotiation, with modes desirable and auto. Rarely used today; LACP is interoperable.",
+        "**Linux bonding driver**: seven modes. 0 balance-rr (round-robin per packet, reorders), 1 active-backup (one active, no switch support needed), 2 balance-xor (hash), 3 broadcast, 4 802.3ad (LACP), 5 balance-tlb (adaptive transmit load balancing) and 6 balance-alb (adaptive load balancing with ARP tricks, receive balancing without switch support).",
+        "**Linux team driver (teamd)**: userspace alternative to bonding with runners for LACP, round-robin, load balance and active backup.",
+        "**MLAG / vPC / VSS / VLT / MC-LAG**: the two switches on one side synchronize MAC and LACP state over a peer link, so the other side sees one LACP partner. It gives switch-level redundancy as well as link redundancy and, unlike STP, uses all links.",
+        "**Layer 3 ECMP**: instead of aggregating, run routed links and let the routing protocol balance equal-cost paths, hashed per flow. This is the usual design in leaf-spine fabrics.",
+        "**Multilink PPP, DOCSIS channel bonding, 802.11 MLO**: the same idea at other layers: several channels are treated as one logical link.",
+        "**Bonding-like WAN technologies**: SD-WAN and MPTCP bond Internet links at higher layers, per flow or per packet, with no cooperation from the provider."
       ]
     },
     {
-      "heading": "Load balancing",
-      "body": "Frames are assigned to member links by hashing header fields so a single flow always uses the same link and stays in order. A single TCP connection therefore never exceeds one member's speed.",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "L2 hash: source/destination MAC.",
-        "L2+L3: plus IP addresses.",
-        "L3+L4: plus TCP/UDP ports (best spread)."
+        "**Bandwidth**: aggregate capacity is the sum of active member speeds (4 x 10 Gbit/s = 40 Gbit/s), but any single flow is limited to one member's speed (10 Gbit/s).",
+        "**Member limits**: 802.3ad allows up to 8 active links per LAG. Cisco supports up to 16 ports in a channel with 8 active and 8 standby. Many data center switches allow 16 or 32 active.",
+        "**Requirements**: all members must be full duplex and the same speed (the standard lists 10, 100, 1000 and 10000 Mbit/s). They usually must also share the same VLAN and trunk settings and sit in the same switch (or the same MLAG pair).",
+        "**Failover time**: a link-down event triggers rehash in tens of milliseconds, and a silent failure is caught by LACP in 3 s with fast timers, or 90 s with slow timers. Fast timers cost 1 LACPDU per second per port, a negligible 128 bytes per second.",
+        "**Hash quality**: with a single pair of hosts (for example a backup server and storage over a layer2 hash), all frames hash to one link and the others stay idle. Typical real distribution is uneven, and utilization of 60 to 80 percent per link at saturation is considered good.",
+        "**Per-packet balancing**: round-robin balances perfectly but reorders packets. TCP interprets reordering as loss and triggers duplicate ACKs and retransmits, hurting throughput.",
+        "**Spanning tree cost**: STP uses the logical port channel as one port with cost derived from the aggregate bandwidth on most platforms."
       ]
     },
     {
-      "heading": "Requirements",
-      "body": "Members must have the same speed and duplex, belong to the same VLAN settings, and typically terminate on the same device (up to 8 active links is common)."
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**One flow does not speed up**: a 4 x 1 Gbit/s bond still gives one TCP stream only 1 Gbit/s. Use multiple streams, a better hash policy (layer3+4) or faster links.",
+        "**Mode mismatch**: LACP on one end and static on the other will not come up, or will come up on one side and black-hole traffic. Both ends must use LACP, or both static. Passive on both ends never forms.",
+        "**Inconsistent member configuration**: different speed, duplex, VLAN, trunk allowed list or native VLAN on members makes the switch suspend the member (flag `s` in `show etherchannel summary`) or err-disable the channel.",
+        "**Hash polarization**: if every tier of a network uses the same hash on the same fields, the second tier sees only the traffic that already hashed to one link, and the load concentrates. Vary the hash seed or fields between tiers.",
+        "**Wrong Linux hash policy**: the default `layer2` hash uses MAC addresses only, so traffic through a single gateway all goes down one link. Choose `layer3+4` (not fully 802.3ad compliant for fragments) or `layer2+3`.",
+        "**Single switch dependence**: a standard LAG cannot span two independent switches. Connect to two switches only with MLAG, or use active-backup instead.",
+        "**Servers booting before the bond is up**: PXE, ESXi installs and some embedded OSes cannot run LACP at boot; disable `lacp suspend-individual` on the port-channel (or use LACP fallback) so one port works individually.",
+        "**Counting speed incorrectly**: bonded NICs still signal at the member rate, so some tools report 1 Gbit/s on a 2 Gbit/s bond. Test with several parallel flows.",
+        "**Loops through misconfiguration**: static bundles on one side only can produce a loop if the other side treats the links as independent and STP is off."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "Switch to switch uplinks: access to distribution in campuses, leaf to spine with MLAG, multiple 100 Gbit/s links in a core.",
+        "Servers: dual 10 or 25 Gbit/s NICs bonded in LACP to a pair of top-of-rack switches (MLAG) for redundancy and bandwidth; hypervisor uplinks with a vSphere distributed switch LAG.",
+        "Storage and backup: NAS and file servers with 2 to 4 bonded NICs, using layer3+4 hashing or multipath protocols such as NFS nconnect or iSCSI MPIO to use all links per session.",
+        "Firewalls and load balancers: aggregate links to the core, using the vendor's aggregate interface.",
+        "Telecom and ISPs: Ethernet link bundling to scale backhaul links one 10 or 100 Gbit/s port at a time.",
+        "Home and small office: NAS or Wi-Fi 6 access point with two Ethernet ports aggregated to a smart switch."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is LACP and why use it?** A standard (802.1AX, formerly 802.3ad) protocol that negotiates a bundle of parallel links; gives extra bandwidth, redundancy and misconfiguration detection compared with static bundling.",
+        "**Active versus passive?** Active initiates LACPDUs; passive only responds. At least one side must be active.",
+        "**Why does one download not use all links?** Per-flow hashing keeps packets in order by pinning each flow to one link.",
+        "**What is the multicast address and EtherType?** 01:80:C2:00:00:02 and 0x8809 with subtype 1.",
+        "**How many links can be in a LAG?** Up to 8 active per 802.3ad; Cisco allows 16 with 8 standby.",
+        "**Fast and slow LACP timers?** 1 s and 30 s; failure after three missed intervals.",
+        "**How do you get redundancy across two switches?** MLAG (vPC, VSS, VLT) or active-backup on the host; standard LACP cannot span independent switches.",
+        "**What must match among member ports?** Speed, duplex, VLAN or trunk configuration, and the LAG key.",
+        "**LACP versus spanning tree?** LACP merges parallel links so none is blocked; STP prunes redundant paths. They work together: STP sees the bundle as one link."
+      ]
     }
   ],
   "subtopics": [
     {
       "title": "Cisco configuration",
-      "summary": "EtherChannel.",
+      "summary": "EtherChannel with LACP, load balancing and verification.",
       "sections": [
         {
-          "code": "interface range Gi0/1-2\n channel-group 1 mode active\ninterface Port-channel1\n switchport mode trunk\n! verify\nshow etherchannel summary"
+          "body": "Configure matching member ports into a channel group using LACP, then configure the logical Port-channel interface, not the members, for trunk or VLAN settings. The load balance method is a global setting.",
+          "code": "interface range GigabitEthernet1/0/1 - 2\n channel-protocol lacp\n channel-group 1 mode active\n lacp rate fast\n!\ninterface Port-channel1\n switchport trunk encapsulation dot1q\n switchport mode trunk\n switchport trunk allowed vlan 10,20,30\n!\nport-channel load-balance src-dst-ip\nlacp system-priority 100"
+        },
+        {
+          "body": "Verify with `show etherchannel summary` and `show lacp neighbor`. Flags: P bundled, s suspended, D down, I stand-alone, H hot-standby, w waiting. `SU` on the port-channel means a Layer 2 channel in use."
         }
       ]
     },
     {
       "title": "Linux bonding",
-      "summary": "Modes.",
+      "summary": "Mode 4 (802.3ad) and active-backup on a server.",
       "sections": [
         {
-          "body": "`mode=802.3ad` uses LACP; `active-backup` needs no switch support; `balance-xor` hashes statically; `balance-tlb/alb` adapt without switch cooperation.",
-          "code": "ip link add bond0 type bond mode 802.3ad xmit_hash_policy layer3+4"
+          "body": "Mode 802.3ad needs a switch LAG running LACP. Active-backup needs nothing from the switch and works across two switches. Use `miimon` to detect link loss.",
+          "code": "# iproute2: LACP bond with layer3+4 hashing\nip link add bond0 type bond mode 802.3ad miimon 100 \\\n   lacp_rate fast xmit_hash_policy layer3+4\nip link set eth0 down; ip link set eth0 master bond0\nip link set eth1 down; ip link set eth1 master bond0\nip link set bond0 up\ncat /proc/net/bonding/bond0\n\n# NetworkManager: active-backup across two switches\nnmcli con add type bond ifname bond0 bond.options \"mode=active-backup,miimon=100\"\nnmcli con add type ethernet ifname eth0 master bond0\nnmcli con add type ethernet ifname eth1 master bond0"
         }
       ]
     },
     {
       "title": "MLAG",
-      "summary": "Across two switches.",
+      "summary": "Aggregating links across two switches.",
       "sections": [
         {
-          "body": "Multi-chassis LAG presents two switches as one logical partner, so a server can aggregate links to both for switch-level redundancy. Implementations are vendor-specific (vPC, MC-LAG)."
+          "body": "MLAG (Cisco vPC and VSS, Arista MLAG, Juniper MC-LAG, Dell VLT, Nortel SMLT) presents two physical switches as a single LACP system ID to the connected device. The pair are linked by a peer link (the inter-switch trunk) and a keepalive path, and they synchronize MAC tables and port-channel state. A server can use LACP across both switches, so losing a whole switch does not drop the host. The standard does not define how the peers coordinate, so each vendor's protocol is proprietary and both switches must be the same vendor. Typical failures are a split-brain when the peer link and keepalive both fail, and inconsistent configuration (type 1 mismatch) that suspends the LAG."
         }
       ]
     },
     {
       "title": "Why a single flow does not speed up",
-      "summary": "Common misunderstanding.",
+      "summary": "Hashing, ordering and what to tune.",
       "sections": [
         {
-          "body": "Four 1 Gb/s links give 4 Gb/s only across many flows. One file copy still caps at 1 Gb/s. Use multipath at higher layers (multipath TCP, application parallelism) to use more."
+          "body": "The hash is computed over header fields and mapped to a member. Because frames of one flow always hash identically, the flow sticks to one link and arrives in order. TCP is sensitive to reordering, so the standard deliberately forbids per-frame spreading of a conversation. Therefore a single copy of a file over a 4 x 1 Gbit/s bundle runs at 1 Gbit/s. To benefit from the bundle use several parallel connections (the number of flows should greatly exceed the number of links), choose a hash that includes TCP/UDP ports, or move to a single faster interface. Some platforms offer a Resilient or flowlet-based hash to spread large flows."
+        }
+      ]
+    },
+    {
+      "title": "Hash policies compared",
+      "summary": "What each field choice distributes.",
+      "sections": [
+        {
+          "body": "**layer2 (src-dst-mac)**: poor when a lot of traffic goes through one router MAC. **layer2+3 (src-dst-mac and IP)**: good for many hosts talking to many. **layer3+4 (IP and ports)**: best spreading for servers, since each TCP connection hashes differently, but fragmented IP packets lack ports so some implementations treat them differently. **encap3+4** hashes the inner header of tunneled traffic (VXLAN, GRE). Choose it according to the real traffic mix, then check with per-member interface counters. Both ends hash independently: the switch decides the server-to-switch direction and the server decides the other direction."
+        },
+        {
+          "code": "# Linux: inspect the active policy and member counters\ngrep -E 'Mode|Hash|LACP' /proc/net/bonding/bond0\nip -s link show eth0\nip -s link show eth1"
         }
       ]
     },
     {
       "title": "Troubleshooting",
-      "summary": "Typical faults.",
+      "summary": "Common failures and the commands to find them.",
       "sections": [
         {
-          "bullets": [
-            "Bundle not forming: both ends passive, mismatched modes or speeds, wrong VLAN config.",
-            "Port shown as suspended or individual in the summary.",
-            "Uneven traffic: poor hash for the traffic mix; change the hash policy."
-          ]
+          "body": "LAG will not come up: check both ends use the same mode (active/passive/on), `show lacp neighbor` for partner data, and that member ports have identical speed, duplex, VLANs and trunk settings. Member suspended: the partner is not sending LACPDUs, or system IDs differ between members (members are cabled to two different switches). Uneven load: check hash policy and the number of distinct flows. Frequent flaps: check cable, optics and `lacp rate`. Capture with `tcpdump -e -i eth0 ether proto 0x8809` or Wireshark filter `lacp` to see actor and partner state flags; a state of 0x3d (active, short timeout off, aggregation, in-sync, collecting, distributing) is healthy."
+        },
+        {
+          "code": "SW# show etherchannel summary\nGroup  Port-channel  Protocol    Ports\n1      Po1(SU)         LACP      Gi0/1(P)    Gi0/2(P)\n2      Po2(SD)         LACP      Gi0/3(D)    Gi0/4(s)\nSW# show lacp neighbor\nPort Gi0/1   Partner System ID 8000,0011.2233.4455  Flags SA"
+        }
+      ]
+    },
+    {
+      "title": "Standby links and the 802.3ad cap",
+      "summary": "Why a LAG has at most 8 active members.",
+      "sections": [
+        {
+          "body": "The original standard caps active members at 8 per aggregator, partly from hardware hash table sizes. If more than 8 ports are eligible (Cisco permits 16), the ports with the lowest port priority (numerically) are chosen as active and the rest sit in hot-standby with the `H` flag. Controlled by `lacp port-priority`. The system with the lower system priority is the one whose choice is honored, so set `lacp system-priority` low on the switch you want to decide. Many modern data center platforms raise the active limit (16 or 32) but keep the standby concept."
+        }
+      ]
+    },
+    {
+      "title": "Static vs dynamic LAGs and PAgP",
+      "summary": "Choosing a bundling mode.",
+      "sections": [
+        {
+          "body": "Static mode `on` is simple and works with devices that do not speak LACP, but it never checks the partner: a swapped cable or a one-sided configuration can black-hole traffic or cause a loop. LACP detects both. PAgP does the same job on Cisco-only networks, with modes desirable and auto, and is mostly legacy. Rule of thumb: use LACP active on both ends unless the device cannot speak it. Passive is useful on servers that must wait for the switch."
         }
       ]
     }
   ],
   "takeaways": [
-    "LACP (IEEE 802.1AX) negotiates bundles with LACPDUs; at least one side must be active.",
-    "Hashing keeps each flow on one link, so a single flow is limited to one member's speed.",
-    "Members need matching speed and duplex.",
-    "MLAG extends aggregation across two switches."
-  ],
-  "references": [
-    {
-      "label": "IEEE 802.1 working group (bridging, VLANs, STP, LACP)",
-      "url": "https://1.ieee802.org/"
-    },
-    {
-      "label": "Reference: Link aggregation (Wikipedia)",
-      "url": "https://en.wikipedia.org/wiki/Link_aggregation"
-    }
+    "A LAG bundles identical parallel links into one logical link for bandwidth and failover, and STP sees it as a single port.",
+    "LACP (802.1AX, formerly 802.3ad) negotiates bundles using LACPDUs to 01:80:C2:00:00:02, EtherType 0x8809, every 1 s (fast) or 30 s (slow).",
+    "At least one end must be active; passive-passive never forms, and LACP versus static (mode on) does not interoperate.",
+    "Traffic is spread per flow by a hash, so one TCP connection never exceeds a single member's speed.",
+    "Members must match in speed, duplex and VLAN or trunk settings; up to 8 active links (Cisco: 16 with 8 standby).",
+    "Standard LAGs cannot span independent switches: use MLAG (vPC, VSS, VLT) for switch-level redundancy.",
+    "On Linux use bonding mode 4 (802.3ad) with an appropriate xmit_hash_policy, or active-backup when the switch has no LACP."
   ],
   "practice": [
     {
-      "title": "Which active/passive combinations form a bundle?",
+      "title": "Which LACP mode pairings form a bundle and which do not?",
       "difficulty": "Easy"
     },
     {
-      "title": "Explain why one flow cannot exceed one member link",
+      "title": "Why does a 4 x 1 Gbit/s bond give one file copy only 1 Gbit/s?",
       "difficulty": "Easy"
     },
     {
-      "title": "Configure EtherChannel and verify it",
+      "title": "Compute the member link chosen by an XOR hash for given IP pairs",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Configure LACP between a Cisco switch and a Linux server",
       "difficulty": "Medium"
     },
     {
-      "title": "Choose a hashing policy for a given traffic mix",
+      "title": "Troubleshoot a port-channel with one member suspended",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compare Linux bonding modes 0 to 6 and when to use each",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain MLAG and its split-brain failure mode",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Design hashing across a leaf-spine fabric to avoid polarization",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Link aggregation (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Link_aggregation"
+    },
+    {
+      "label": "IEEE 802.1AX-2020 Link Aggregation",
+      "url": "https://1.ieee802.org/"
+    },
+    {
+      "label": "Linux kernel bonding documentation",
+      "url": "https://www.kernel.org/doc/html/latest/networking/bonding.html"
     }
   ]
 }

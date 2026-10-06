@@ -1,130 +1,228 @@
 {
-  "summary": "BGP-4 is the path-vector protocol that connects autonomous systems and glues the Internet together. Instead of shortest paths it applies policy: each AS decides which routes to accept, prefer, and advertise.",
+  "summary": "BGP-4 (Border Gateway Protocol, RFC 4271) is the path-vector exterior routing protocol that connects the roughly 80,000 autonomous systems of the Internet. Each AS announces which prefixes it can reach and the list of ASes the route has passed through; receivers apply their own policy to choose what to accept, prefer and pass on. Because it runs over TCP port 179 and optimises for control rather than speed, BGP convergence is slow, but its policy knobs make it the glue of every ISP, cloud and large enterprise network, and the source of famous outages and hijacks.",
   "sections": [
     {
-      "heading": "Autonomous systems and peering",
-      "body": "An autonomous system (AS) is a set of routers under one administration with a number (ASN). Routers in different ASes peer via eBGP; routers in the same AS exchange routes via iBGP. BGP runs over TCP port 179 (RFC 4271), so it relies on TCP for reliability and has no routing-update retransmission of its own."
+      "heading": "Overview",
+      "body": "An autonomous system (AS) is a collection of networks under one administration with a common routing policy, identified by an AS number (ASN). Inside an AS, an interior protocol such as OSPF finds shortest paths. Between ASes the goals are different: companies want to choose whom to send traffic to based on cost and contracts, to control who may transit through them, and to hide internal topology. BGP is built for this. Rather than computing a metric-based shortest path, it exchanges reachability information annotated with path attributes, and each router runs a configurable decision process over the candidates. The key attribute is the AS_PATH, the ordered list of ASes a route has crossed; as a path vector it lets every receiver detect loops, because a router that sees its own ASN in a path discards it. Peers establish a TCP session on port 179, so BGP delegates reliable delivery, ordering and flow control to TCP and sends only incremental changes after the initial table dump. BGP version 4 supports classless prefixes and aggregation (CIDR), and with the multiprotocol extensions (RFC 4760) carries IPv6, VPN and EVPN routes too. The business view is as important as the technical one: customer, provider and peer relationships determine which routes are exported, and thus how the Internet's paths look. This lesson covers the messages, session states, attributes, decision process, iBGP versus eBGP, scaling tools and operational failures."
     },
     {
-      "heading": "Message types",
+      "heading": "Core Concepts",
       "bullets": [
-        "OPEN: starts a session; carries ASN, hold time, BGP identifier, capabilities.",
-        "KEEPALIVE: proves the peer is alive (typically sent at one third of the hold time).",
-        "UPDATE: advertises new routes (NLRI + path attributes) or withdraws old ones.",
-        "NOTIFICATION: reports an error and closes the session."
+        "**Autonomous system and ASN**: originally 16-bit (1 to 65535, with 64512 to 65534 private), now 32-bit (RFC 6793), written such as 4200000000 or in dotted form.",
+        "**eBGP and iBGP**: eBGP runs between routers in different ASes (normally directly connected); iBGP runs between routers of the same AS to distribute external routes internally.",
+        "**Peer or neighbour**: the router at the other end of a configured BGP session.",
+        "**Prefix and NLRI**: network layer reachability information is the list of prefixes in an UPDATE, each as length plus the minimum number of bytes needed.",
+        "**Path attributes**: properties attached to a set of prefixes, such as AS_PATH, NEXT_HOP, LOCAL_PREF and MED; they drive the decision process.",
+        "**Adj-RIB-In, Loc-RIB, Adj-RIB-Out**: routes received from a peer, the routes selected as best by this router (and installed in the forwarding table), and routes to be advertised to a peer after policy.",
+        "**Path vector**: each route carries the full AS path, used for loop prevention and as a coarse distance metric (AS hop count).",
+        "**Policy**: import and export filters and attribute rewrites that implement business rules. BGP routes are chosen by policy first, shortest path second.",
+        "**Hold time and keepalive**: the hold time is the maximum silence tolerated from a peer before the session is dropped; keepalives are sent at a third of it, default 30 seconds with a 90-second hold time.",
+        "**BGP identifier**: a 32-bit router ID, written as an IPv4 address, used in the OPEN message and as a tie-breaker."
       ]
     },
     {
-      "heading": "Session state machine",
-      "body": "Idle, Connect, Active, OpenSent, OpenConfirm, Established. Routes are exchanged only in Established. A session stuck in Active usually means the TCP connection cannot be made (wrong neighbour address, firewall, or missing route)."
+      "heading": "How It Works",
+      "body": "Every BGP message starts with a 19-byte header: a 16-byte marker (all ones in the absence of authentication), a 2-byte length (19 to 4096 bytes), and a 1-byte type: 1 OPEN, 2 UPDATE, 3 NOTIFICATION, 4 KEEPALIVE. A session begins with the TCP three-way handshake to port 179. Each side sends an OPEN with the version (4), its ASN, the hold time it proposes, its BGP identifier and optional parameters such as capabilities (4-byte ASN, multiprotocol, route refresh). The peers agree on the lower of the two hold times, and a KEEPALIVE acknowledges the OPEN. Then they exchange UPDATE messages. An UPDATE has three parts: a list of withdrawn prefixes, a set of path attributes, and a list of prefixes that share those attributes (NLRI). One UPDATE can announce many prefixes with identical attributes, which is why attributes are kept separate. When something goes wrong the sender emits a NOTIFICATION with an error code and subcode and closes the connection.\n\nThe session state machine has six states. Idle: no resources allocated, waiting for a start event. Connect: waiting for the TCP connection to complete, with a ConnectRetry timer (120 seconds by default). Active: the router is actively trying to open the TCP connection again after a failure, so a session that hovers between Connect and Active signals a TCP problem. OpenSent: TCP is up and the OPEN was sent, waiting for the peer's OPEN. OpenConfirm: OPENs exchanged, waiting for a KEEPALIVE or a NOTIFICATION. Established: UPDATEs flow. Now trace a route. AS 65001 owns 203.0.113.0/24 and its router announces it to its eBGP neighbour in AS 65002 with AS_PATH [65001] and NEXT_HOP set to its own interface address. Router in AS 65002 stores it, and when it re-advertises to AS 65003 it prepends its ASN, so the path becomes [65002 65001], and sets the next hop to its own address on that link. Each hop adds one AS to the path, which both detects loops and measures path length. If the origin AS withdraws the prefix, withdrawal UPDATEs propagate similarly.",
+      "code": "Common header (19 bytes)\n+--------------------------------------------------+\n| Marker (16 bytes, all 1s)                        |\n+------------------------+------------+------------+\n| Length (2 bytes)       | Type (1)   |            |\n+------------------------+------------+------------+\nOPEN body : Version(1)=4 | My AS(2) | Hold Time(2) | BGP ID(4)\n            | Opt Parm Len(1) | Optional params\nUPDATE    : Withdrawn Len(2) | Withdrawn routes | Total Attr Len(2)\n            | Path attributes | NLRI (len,prefix) ...\nNOTIFY    : Error code(1) | Subcode(1) | Data\nKEEPALIVE : header only (19 bytes)\n\nAnnouncement of 203.0.113.0/24:\n  AS65001 -> AS65002:  AS_PATH [65001]          NEXT_HOP 192.0.2.1\n  AS65002 -> AS65003:  AS_PATH [65002 65001]    NEXT_HOP 192.0.2.5\n  AS65003 sees its own number in a path? -> reject (loop)\n\nDecision (RFC 4271 section 9.1.2.2, highest rule first):\n  1 highest LOCAL_PREF        5 prefer eBGP over iBGP\n  2 shortest AS_PATH          6 lowest IGP cost to NEXT_HOP\n  3 lowest ORIGIN (IGP<EGP<?) 7 lowest BGP identifier\n  4 lowest MED (same AS)      8 lowest peer address"
     },
     {
-      "heading": "Path attributes",
+      "heading": "Variants & Types",
       "bullets": [
-        "AS_PATH: the list of ASes the route traversed; each AS prepends its own number when advertising to an eBGP peer. Also used for loop prevention: a router rejects a route containing its own ASN.",
-        "NEXT_HOP: the address to forward to.",
-        "ORIGIN: how the route entered BGP (IGP, EGP, incomplete).",
-        "LOCAL_PREF: preference inside an AS; higher is better; not sent to other ASes.",
-        "MED: hint to a neighbour AS about the preferred entry point; lower is better."
+        "**eBGP**: between ASes; the next hop is rewritten to the sender, AS_PATH is prepended, TTL is 1 by default so peers are directly connected unless `ebgp-multihop` is set.",
+        "**iBGP**: between routers in one AS; AS_PATH is not changed, NEXT_HOP is preserved unless `next-hop-self` is set, and LOCAL_PREF is carried. A route learned via iBGP is not passed to another iBGP peer, which forces a full mesh or a scaling aid.",
+        "**Route reflectors (RFC 4456)**: a reflector accepts routes from clients and re-advertises them to other iBGP peers, breaking the full-mesh requirement. Loop control uses ORIGINATOR_ID and CLUSTER_LIST.",
+        "**Confederations (RFC 5065)**: split an AS into sub-ASes that appear as one AS externally.",
+        "**Well-known attributes**: ORIGIN (1), AS_PATH (2), NEXT_HOP (3) are mandatory and must be recognised; LOCAL_PREF (5) is well-known for iBGP, ATOMIC_AGGREGATE (6) is discretionary. **Optional**: MED (4, non-transitive), AGGREGATOR (7, transitive), COMMUNITY (RFC 1997), large communities (RFC 8092).",
+        "**Multiprotocol BGP (RFC 4760)**: MP_REACH_NLRI and MP_UNREACH_NLRI carry IPv6, MPLS VPN (VPNv4), and EVPN routes.",
+        "**Relationship types**: customer (pays the AS above), provider, and settlement-free peer. Customers' routes are exported to everyone; peer and provider routes are exported only to customers (valley-free routing).",
+        "**Vendor extras**: Cisco WEIGHT (local, highest wins, checked before LOCAL_PREF), route maps, prefix lists, AS-path regular expressions."
       ]
     },
     {
-      "heading": "Best-path selection",
-      "body": "When several routes to the same prefix exist, BGP picks one in a fixed order (RFC 4271 section 9.1):",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "Highest LOCAL_PREF.",
-        "Shortest AS_PATH.",
-        "Lowest ORIGIN (IGP < EGP < incomplete).",
-        "Lowest MED (among routes from the same neighbouring AS).",
-        "Prefer eBGP over iBGP.",
-        "Lowest IGP cost to the NEXT_HOP.",
-        "Lowest BGP identifier (final tie-breaker)."
+        "**Table size**: the global IPv4 table holds roughly 1 million prefixes and IPv6 about 200,000 or more; a full-table router needs several GB for RIBs with multiple peers. Memory is roughly 100 to 500 bytes per path.",
+        "**Messages**: header 19 bytes, OPEN at least 29, KEEPALIVE 19, UPDATE at least 23, maximum message 4096 bytes (extended message support raises it to 65535, RFC 8654).",
+        "**Convergence**: slow compared to IGPs. The MinRouteAdvertisementInterval is 30 seconds for eBGP and 5 seconds for iBGP, so a withdrawal can take tens of seconds per AS hop; global convergence after a failure has been measured in minutes. Path exploration can send many intermediate updates before settling.",
+        "**Session cost**: one TCP connection per peer, state O(peers x prefixes). A route reflector with 1,000 clients holds all their routes.",
+        "**Churn**: the Internet sees on the order of hundreds of thousands of updates per hour in the default-free zone, so routers need CPU headroom for bursts after a session reset.",
+        "**Decision cost**: O(candidate paths) per prefix, comparing a fixed sequence of attributes, cheap compared with table size."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Session stuck in Idle, Connect or Active**: no TCP path to the neighbour's address, wrong neighbour IP or ASN, a firewall blocking 179, or a missing route to the peer loopback; eBGP over loopbacks needs multihop and an update-source.",
+        "**Next-hop unreachable in iBGP**: iBGP preserves the eBGP next hop, so interior routers need a route to it, or use `next-hop-self`; otherwise the route is present but not usable.",
+        "**iBGP split horizon**: not re-advertising iBGP-learned routes to iBGP peers causes black holes if you forget the full mesh or reflector. Synchronisation was historically used and is now disabled.",
+        "**Prefix hijacking and route leaks**: BGP trusts what neighbours say. The 2008 YouTube incident (Pakistan Telecom leaked a more-specific /24) and the 2021 Facebook outage (a configuration change withdrew its own prefixes and DNS) show the impact. Defences: prefix filters, maximum-prefix limits, RPKI ROV, ASPA, and IRR data.",
+        "**MED misuse**: MED is compared only between paths from the same neighbouring AS unless `always-compare-med` is set; inconsistent comparison can cause oscillation and non-deterministic choice.",
+        "**AS_PATH prepending is only a hint**: it lengthens the path but the receiver can still override with LOCAL_PREF.",
+        "**Asymmetric routing**: outbound path selection is by your policy, inbound by the neighbours' policies, so paths are often asymmetric and stateful firewalls can break.",
+        "**Session reset churn and flap damping**: resets reload full tables; route flap damping suppresses unstable prefixes but can penalise legitimate ones, so it is used sparingly.",
+        "**Missing TCP protections**: unauthenticated sessions can be reset or spoofed; use TCP MD5 or TCP-AO (RFC 5925) and GTSM (TTL 255 check)."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Internet transit and peering**: tier-1 carriers, IXP route servers, content networks and eyeballs all exchange routes with BGP.",
+        "**Multihoming**: an enterprise buys transit from two ISPs and uses its own ASN and provider-independent prefix; LOCAL_PREF picks outbound, prepending and communities influence inbound.",
+        "**Cloud connectivity**: AWS Direct Connect, Azure ExpressRoute, Google Cloud Interconnect and VPN gateways all use BGP to exchange prefixes.",
+        "**Data-centre fabrics**: RFC 7938 describes eBGP as the sole protocol in large leaf-spine fabrics, with one ASN per rack or per tier; EVPN over BGP distributes MAC and IP reachability for VXLAN.",
+        "**Anycast and DDoS mitigation**: the same prefix is announced from many sites, and remote triggered blackhole (RTBH) communities drop attack traffic.",
+        "**Traffic engineering with communities**: customers tag routes with provider-defined communities to set local preference, prepend on export or blackhole.",
+        "**Monitoring**: RIPE RIS, RouteViews, bgp.tools and BMP (BGP Monitoring Protocol, RFC 7854) show announcements and detect hijacks."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is BGP?** The path-vector exterior gateway protocol between autonomous systems, over TCP port 179, driven by policy.",
+        "**Why TCP?** Reliable, ordered delivery with flow control and only incremental updates after the first table exchange.",
+        "**Message types?** OPEN, UPDATE, NOTIFICATION, KEEPALIVE; ROUTE-REFRESH was added later.",
+        "**States?** Idle, Connect, Active, OpenSent, OpenConfirm, Established.",
+        "**eBGP versus iBGP?** eBGP connects different ASes and prepends the ASN; iBGP connects routers within one AS, preserves attributes and does not re-advertise iBGP routes to iBGP peers.",
+        "**Path selection order?** Highest LOCAL_PREF, shortest AS_PATH, lowest origin, lowest MED, eBGP over iBGP, lowest IGP metric to next hop, lowest router ID (Cisco puts WEIGHT first).",
+        "**How does BGP prevent loops?** AS_PATH: reject any route that already contains your own ASN; iBGP uses split horizon, route reflectors use cluster lists.",
+        "**How can you influence inbound traffic?** AS-path prepending, MED, selective advertisement of more-specific prefixes, and provider communities."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Policy and business relationships",
-      "summary": "Customer, peer, provider.",
+      "title": "Autonomous systems and ASNs",
+      "summary": "What an AS is and how numbers are assigned.",
       "sections": [
         {
-          "body": "ASes prefer routes from customers (they pay) over peers (settlement-free) over providers (cost money), by setting LOCAL_PREF. They filter exports so they do not give free transit: customer routes go to everyone, peer and provider routes go only to customers."
+          "body": "A public ASN is allocated by the regional Internet registries (ARIN, RIPE NCC, APNIC, LACNIC, AFRINIC) to organisations that need independent routing, typically multihomed networks. Original ASNs were 16 bits: 0 and 65535 are reserved, 64496 to 64511 are documentation, and 64512 to 65534 are private, used for internal designs and for fabrics that must not leak. RFC 6793 extended ASNs to 32 bits, with 4200000000 to 4294967294 as private. Old speakers that only understand 2-byte ASNs see the placeholder AS_TRANS 23456 in place of a larger number, and the real path is carried in the optional AS4_PATH attribute. An AS is not the same as an organisation: some companies hold several, and some ASNs represent a single region or product network."
         }
       ]
     },
     {
-      "title": "iBGP rules",
-      "summary": "Full mesh, route reflectors, confederations.",
+      "title": "UPDATE message and path attributes",
+      "summary": "What is inside the message that carries routes.",
       "sections": [
         {
-          "body": "A router does not re-advertise a route learned from one iBGP peer to another iBGP peer, to avoid loops. So iBGP needs a full mesh, or route reflectors (RFC 4456) or confederations to scale."
+          "body": "An UPDATE contains Withdrawn Routes Length (2 bytes), withdrawn prefixes, Total Path Attribute Length (2 bytes), the attributes, and NLRI. Each attribute is a type-length-value: a flags byte (optional, transitive, partial, extended length), a type code, a length and a value. ORIGIN says how the route entered BGP: 0 IGP, 1 EGP, 2 incomplete. AS_PATH is a sequence of segments, each AS_SEQUENCE (ordered) or AS_SET (unordered, from aggregation). NEXT_HOP is the IP address to forward to. MED (type 4) is a hint from a neighbour about its preferred entry point. LOCAL_PREF (type 5) is set inside an AS and shared among iBGP peers; higher wins. ATOMIC_AGGREGATE and AGGREGATOR record aggregation. Unknown optional transitive attributes are passed along, with the partial bit set, while unknown optional non-transitive ones are dropped."
         }
       ]
     },
     {
-      "title": "Why BGP converges slowly",
-      "summary": "Path exploration.",
+      "title": "The decision process",
+      "summary": "How a router picks one best path per prefix.",
       "sections": [
         {
-          "body": "A withdrawn route may trigger a sequence of progressively longer alternative paths before settling. Timers such as MRAI (minimum route advertisement interval) and route-flap damping add delay, so global convergence can take minutes."
+          "body": "First, a route is only eligible if its next hop is reachable and import policy accepts it. Among eligible paths to the same prefix, the RFC order is: highest degree of preference (LOCAL_PREF, or a policy value); shortest AS_PATH; lowest ORIGIN; lowest MED among routes from the same neighbouring AS; prefer eBGP-learned over iBGP-learned; lowest interior cost to the next hop (hot-potato routing); lowest BGP identifier; lowest peer address. Many implementations add multipath, allowing several equal paths into the FIB, and Cisco inserts WEIGHT as the first criterion. The practical use is to encode business rules in LOCAL_PREF, for example customer routes at 300, peer routes at 200, provider routes at 100, so revenue-bearing paths win regardless of AS path length.",
+          "code": "route-map FROM-CUSTOMER permit 10\n set local-preference 300\nroute-map FROM-PEER permit 10\n set local-preference 200\nroute-map FROM-TRANSIT permit 10\n set local-preference 100"
         }
       ]
     },
     {
-      "title": "Prefix hijacks and RPKI",
-      "summary": "Security gaps.",
+      "title": "iBGP, full mesh and route reflectors",
+      "summary": "Distributing external routes inside an AS.",
       "sections": [
         {
-          "body": "BGP trusts what neighbours announce. A mistaken or malicious announcement of someone else's prefix can attract traffic. RPKI route-origin validation (ROV) and prefix filtering reduce this; BGPsec adds path validation but is rarely deployed."
+          "body": "Because iBGP does not alter AS_PATH, it cannot use it for loop detection, so a router never advertises a route learned from one iBGP peer to another. All iBGP routers must therefore peer with each other: n(n-1)/2 sessions, 4,950 for 100 routers. Route reflectors relax the rule: a reflector sends client-learned routes to other clients and non-clients, so clients need a session only with the reflector. Reflectors often work in redundant pairs sharing a cluster ID, and hierarchical designs scale further. Confederations divide the AS into sub-ASes, each internally fully meshed, with eBGP-like sessions between them. iBGP next hops usually point to the border router's loopback, resolved via the IGP, which is why a healthy IGP is a prerequisite for BGP."
         }
       ]
     },
     {
-      "title": "Communities",
-      "summary": "Tagging routes.",
+      "title": "Policy: filters, communities and prepending",
+      "summary": "The tools that implement business relationships.",
       "sections": [
         {
-          "body": "Communities (RFC 1997) are 32-bit tags attached to routes, such as 'do not export' or 'set local preference 80', letting neighbours signal policy without per-route configuration."
+          "body": "Prefix lists accept only expected prefixes with permitted lengths, such as /24 or shorter. AS-path filters check origin or transit ASNs. Communities are 32-bit tags (written ASN:value) attached to routes: well-known ones include NO_EXPORT (do not advertise outside the AS or confederation), NO_ADVERTISE and NO_PEER. Providers publish community lists that let customers request a local preference, prepending or a blackhole. Prepending adds your ASN extra times on export to make a path look longer and attract less traffic, which only influences ASes that compare path length before local preference. Selective de-aggregation, announcing a /24 on one link and the covering /23 on both, steers inbound traffic using the longest-prefix rule. Together these tools give coarse inbound and fine outbound control."
+        }
+      ]
+    },
+    {
+      "title": "Hijacks, leaks and RPKI",
+      "summary": "Security of the routing system.",
+      "sections": [
+        {
+          "body": "Original BGP has no way to verify that an AS is allowed to originate a prefix or that a path is real. A hijack happens when an AS originates someone else's prefix, usually a more-specific one so it wins by longest-prefix match. A route leak happens when an AS re-announces routes against the business rules, for example passing one provider's routes to another, attracting transit traffic it cannot handle; the 2019 Verizon and Cloudflare incident was of this type. RPKI ties prefixes to authorised origin ASNs through signed ROAs (route origin authorisations), and routers validate announcements as valid, invalid or not found (route origin validation, RFC 6811); ASPA and BGPsec cover paths. Complementary hygiene is MANRS: filter customers, anti-spoofing, coordination and global validation. Origin validation alone does not stop forged paths that keep the legitimate origin."
+        }
+      ]
+    },
+    {
+      "title": "Convergence, damping and graceful restart",
+      "summary": "Why BGP is slow and how operators keep it stable.",
+      "sections": [
+        {
+          "body": "Timers deliberately limit the update rate. After a failure, path exploration lets routers cycle through longer alternate paths before the withdrawal wins, and the 30-second advertisement interval for eBGP adds delay at each AS hop. Operators accelerate neighbour failure detection with BFD instead of waiting for the 90-second hold timer, and use fast external fallover on directly connected links. Route flap damping gives an unstable prefix a penalty that decays exponentially, suppressing it above a threshold; RIPE recommends milder settings because aggressive damping hurt legitimate routes. Graceful restart (RFC 4724) keeps forwarding using stale routes while a control plane restarts, and the End-of-RIB marker signals that the initial dump is complete. Add-path (RFC 7911) advertises more than one path per prefix to speed convergence."
+        }
+      ]
+    },
+    {
+      "title": "BGP in data centres",
+      "summary": "Using eBGP as the fabric routing protocol.",
+      "sections": [
+        {
+          "body": "Large leaf-spine fabrics often choose eBGP over an IGP, as in RFC 7938: it is simple operationally, has policy and filtering built in, and avoids IGP flooding limits. Typical design: each leaf (or rack) gets its own private ASN, spines share one ASN or each their own, and ECMP spreads traffic across all spines. AS_PATH loop prevention can block valid routes when leaves share an ASN, so `allowas-in` or unique ASNs are used. Servers can run BGP too (for anycast services or Kubernetes with Calico and MetalLB) peering with the top-of-rack switch. Unnumbered peering over IPv6 link-local addresses and BGP with BFD are common, and EVPN extends the same sessions to carry layer 2 and layer 3 overlay reachability."
         }
       ]
     }
   ],
   "takeaways": [
-    "BGP is a path-vector protocol between ASes over TCP port 179.",
-    "AS_PATH carries the route history and prevents loops.",
-    "Best path: LOCAL_PREF, then shortest AS_PATH, then origin, MED, eBGP over iBGP, IGP cost, router ID.",
-    "Policy, not speed, drives BGP; security relies on filtering and RPKI."
+    "BGP-4 is a path-vector protocol between autonomous systems that carries prefixes with attributes such as AS_PATH, NEXT_HOP, LOCAL_PREF and MED over TCP port 179.",
+    "The four message types are OPEN, UPDATE, NOTIFICATION and KEEPALIVE; the states run Idle, Connect, Active, OpenSent, OpenConfirm, Established.",
+    "AS_PATH both measures path length and prevents loops: a router rejects routes containing its own ASN.",
+    "Selection is policy first: highest LOCAL_PREF, then shortest AS_PATH, origin, MED, eBGP over iBGP, lowest IGP cost, router ID.",
+    "iBGP does not re-advertise iBGP routes, so it needs a full mesh, route reflectors or confederations, and a working IGP for next hops.",
+    "Default timers are 90 s hold and 30 s keepalive, so BGP converges in tens of seconds to minutes; BFD speeds failure detection.",
+    "BGP trusts its neighbours: protect it with prefix filters, max-prefix limits, RPKI origin validation and TCP authentication."
+  ],
+  "practice": [
+    {
+      "title": "Name the four BGP message types and the fields of the common header",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Trace the AS_PATH of a prefix across three ASes and show where a loop would be rejected",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain the difference between eBGP and iBGP regarding AS_PATH, next hop and re-advertisement",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Given five candidate paths with different LOCAL_PREF, AS_PATH length and MED, pick the best and justify each step",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "A BGP session flaps between Active and Connect: list your diagnostic steps from TCP reachability to configuration",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design a multihomed enterprise with two ISPs: outbound by LOCAL_PREF, inbound by prepending and de-aggregation",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Replace a 60-router iBGP full mesh with route reflectors, choosing cluster IDs and describing loop prevention",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Walk through how an accidental /24 leak spreads, why it wins, and which controls (ROV, max-prefix, filters) would have stopped it",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
       "label": "RFC 4271: A Border Gateway Protocol 4 (BGP-4)",
-      "url": "https://www.rfc-editor.org/rfc/rfc4271"
+      "url": "https://www.rfc-editor.org/rfc/rfc4271.txt"
     },
     {
-      "label": "RFC 1997: BGP Communities Attribute",
-      "url": "https://www.rfc-editor.org/rfc/rfc1997"
+      "label": "RFC 4456: BGP Route Reflection",
+      "url": "https://www.rfc-editor.org/rfc/rfc4456"
     },
     {
       "label": "RFC 6811: BGP Prefix Origin Validation",
       "url": "https://www.rfc-editor.org/rfc/rfc6811"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Explain AS_PATH loop prevention",
-      "difficulty": "Easy"
     },
     {
-      "title": "Pick the best path among four routes",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Prefer one provider by setting LOCAL_PREF",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Describe a prefix hijack and how RPKI mitigates it",
-      "difficulty": "Hard"
+      "label": "RFC 7938: Use of BGP for Routing in Large-Scale Data Centers",
+      "url": "https://www.rfc-editor.org/rfc/rfc7938"
     }
   ]
 }

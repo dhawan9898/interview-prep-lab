@@ -1,96 +1,228 @@
 {
-  "summary": "Subnetting splits an IP network into smaller networks by borrowing host bits for the network part. With CIDR the boundary can be at any bit, written as a prefix length such as /26.",
+  "summary": "Subnetting splits an IP address into a network prefix and a host part, and lets you carve one address block into smaller networks sized to need. The prefix length (CIDR notation such as /26) tells every router and host which addresses are on-link and which must go through a gateway. Being able to compute the network address, broadcast address, usable host range and host count in your head is one of the most commonly tested networking skills. It underpins routing tables, VPC design, firewall rules and address plans.",
   "sections": [
     {
-      "heading": "Prefix notation",
-      "body": "A CIDR address is an IP address followed by a slash and the number of leading network bits (RFC 4632). 192.168.1.0/26 has 26 network bits and 6 host bits.",
+      "heading": "Overview",
+      "body": "Every IPv4 address is 32 bits, split by a mask into a network prefix (the leading bits, shared by all hosts on one link) and a host identifier (the remaining bits). A router forwards by prefix; a host uses its own mask to decide whether a destination is on-link (ARP for it directly) or off-link (send to the gateway). Early IPv4 fixed the split by address class (A, B, C), which wasted enormous amounts of space. Classless Inter-Domain Routing (CIDR, RFC 4632) replaced it in the 1990s with variable-length prefixes written as address/length. Subnetting is the act of borrowing host bits to make more, smaller networks; supernetting (route aggregation) is the reverse, merging adjacent blocks into one shorter prefix."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "/24 = 255.255.255.0 (256 addresses)",
-        "/25 = 255.255.255.128 (128)",
-        "/26 = 255.255.255.192 (64)",
-        "/27 = 255.255.255.224 (32)",
-        "/28 = 255.255.255.240 (16)",
-        "/30 = 255.255.255.252 (4)"
+        "**Prefix length**: the number of leading 1 bits in the mask. `/24` means a 255.255.255.0 mask.",
+        "**Subnet mask**: 32 bits with ones in the network part and zeros in the host part. Always contiguous ones in CIDR.",
+        "**Network address**: host bits all 0. It identifies the subnet and cannot be given to a host.",
+        "**Broadcast address**: host bits all 1. A packet sent to it reaches every host on the subnet.",
+        "**Usable hosts**: 2^h minus 2, where h is the number of host bits (not subtracting 2 for /31 and /32).",
+        "**Block size**: the step between consecutive subnets in the interesting octet, equal to 256 minus the mask value in that octet.",
+        "**Wildcard mask**: the bitwise inverse of the subnet mask, used by OSPF network statements and Cisco ACLs. For /24 it is 0.0.0.255.",
+        "**VLSM**: Variable Length Subnet Masking, using different prefix lengths inside one address block so each subnet fits its size.",
+        "**Aggregation (supernetting)**: advertising several contiguous prefixes as one shorter prefix, keeping routing tables small.",
+        "**CIDR block**: an aligned range of 2^h addresses whose first address has h trailing zero bits."
       ]
     },
     {
-      "heading": "The four numbers you compute",
+      "heading": "How It Works",
+      "body": "To work out a subnet, convert to binary, or better, use the block-size method. Take 192.168.10.77/26. A /26 leaves 6 host bits, so the block size is 2^6 = 64 and subnets begin at 0, 64, 128, 192 in the last octet. The address 77 falls in the block that starts at 64, so the network is 192.168.10.64 and the broadcast is 64 + 63 = 127, giving 192.168.10.127. Usable hosts run from .65 to .126, which is 2^6 minus 2 = 62 of them. Two addresses are on the same subnet exactly when they have equal values after ANDing with the mask. A host checks this before sending: equal means ARP for the target, different means send to the default gateway. The same operations in C show how little work is involved. The mask for prefix length n is the top n bits set, the network is address AND mask, and the broadcast is network OR the inverted mask. Be careful with n = 0, where a shift by 32 is undefined behavior in C, and with host byte order: do the math in host order and convert with `ntohl` and `htonl` only at the edges.",
+      "code": "Address     192.168.10.77   = 11000000.10101000.00001010.01001101\nMask /26    255.255.255.192 = 11111111.11111111.11111111.11000000\nAND         network         = 11000000.10101000.00001010.01000000 = .64\nOR ~mask    broadcast       = 11000000.10101000.00001010.01111111 = .127\nFirst host .65   Last host .126   Hosts 2^6 - 2 = 62\n\nVLSM plan for 192.168.1.0/24: needs 100, 50, 20 and 2 hosts\n 100 hosts -> /25 (126)  192.168.1.0/25     range .0   to .127\n  50 hosts -> /26 (62)   192.168.1.128/26   range .128 to .191\n  20 hosts -> /27 (30)   192.168.1.192/27   range .192 to .223\n   2 hosts -> /30 (2)    192.168.1.224/30   range .224 to .227\n (allocate largest first so every block stays aligned)\n\n#include <stdint.h>\n#include <stdio.h>\n\nstatic uint32_t mask_of(int n) {            /* n in 0..32 */\n    return n == 0 ? 0 : 0xFFFFFFFFu << (32 - n);\n}\n\nvoid describe(uint32_t ip, int n) {          /* ip in host order */\n    uint32_t m = mask_of(n);\n    uint32_t net = ip & m;\n    uint32_t bcast = net | ~m;\n    uint64_t hosts = (n >= 31) ? (n == 31 ? 2 : 1)\n                               : (1ull << (32 - n)) - 2;\n    printf(\"net %u.%u.%u.%u  bcast %u.%u.%u.%u  hosts %llu\\n\",\n        net >> 24, (net >> 16) & 255, (net >> 8) & 255, net & 255,\n        bcast >> 24, (bcast >> 16) & 255, (bcast >> 8) & 255, bcast & 255,\n        (unsigned long long)hosts);\n}\n\nint same_subnet(uint32_t a, uint32_t b, int n) {\n    return ((a ^ b) & mask_of(n)) == 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Network address: IP AND mask.",
-        "Broadcast address: all host bits set to 1.",
-        "First usable host: network + 1.",
-        "Last usable host: broadcast - 1.",
-        "Usable hosts: 2^h - 2, where h is the number of host bits."
+        "**Classful addressing (historical)**: Class A 0.0.0.0 to 127.255.255.255 with /8, Class B 128 to 191 with /16, Class C 192 to 223 with /24, Class D 224 to 239 multicast, Class E 240 and up reserved. Obsolete for routing but still used in textbooks and in old automatic summarization behavior.",
+        "**Fixed-length subnetting**: every subnet in a block has the same mask. Simple but wasteful.",
+        "**VLSM**: different masks per subnet. Requires a classless routing protocol (OSPF, EIGRP, BGP, RIPv2) that sends the mask with each route.",
+        "**Supernetting and summarization**: combine 2^k aligned contiguous blocks into a /(n-k). Example: 10.1.0.0/24 through 10.1.3.0/24 becomes 10.1.0.0/22.",
+        "**/31 point-to-point links (RFC 3021)**: two addresses, no network or broadcast, saves half the space on router links.",
+        "**/32 host routes**: loopbacks and single-host routes. No hosts to subtract.",
+        "**Private ranges (RFC 1918)**: 10.0.0.0/8, 172.16.0.0/12 (172.16 to 172.31) and 192.168.0.0/16.",
+        "**Other special blocks**: 127.0.0.0/8 loopback, 169.254.0.0/16 link-local, 100.64.0.0/10 carrier-grade NAT, 224.0.0.0/4 multicast, 192.0.2.0/24, 198.51.100.0/24 and 203.0.113.0/24 for documentation.",
+        "**IPv6 subnetting**: the standard subnet is a /64. Sites get a /48 (65,536 subnets) or /56, and nibble-aligned splits are easy to read."
       ]
     },
     {
-      "heading": "Worked example: 192.168.1.130/26",
-      "body": "A /26 has block size 64 in the last octet (256 - 192). Blocks start at 0, 64, 128, 192. The address 130 falls in the block starting at 128.",
-      "code": "network    192.168.1.128\nbroadcast  192.168.1.191\nfirst host 192.168.1.129\nlast host  192.168.1.190\nhosts      2^6 - 2 = 62"
-    },
-    {
-      "heading": "Dividing a network",
-      "body": "To split 192.168.1.0/24 into four equal subnets, borrow 2 bits: /26. The subnets are .0/26, .64/26, .128/26, .192/26, each with 62 usable hosts."
-    },
-    {
-      "heading": "Special prefixes",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "/31: point-to-point links with two usable addresses (RFC 3021).",
-        "/32: a single host route.",
-        "Private ranges (RFC 1918): 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16.",
-        "Link-local: 169.254.0.0/16."
+        "**Host count**: a /24 has 254 usable hosts, /25 has 126, /26 has 62, /27 has 30, /28 has 14, /29 has 6, /30 has 2, /31 has 2 (point to point), /32 has 1.",
+        "**Subnet count**: borrowing b bits from a block yields 2^b subnets. A /24 split into /27s gives 2^3 = 8 subnets of 30 hosts each.",
+        "**Mask cheat sheet**: /25 is 128, /26 is 192, /27 is 224, /28 is 240, /29 is 248, /30 is 252 in the last octet. Block sizes are 128, 64, 32, 16, 8 and 4.",
+        "**Address waste**: each non-/31 subnet loses 2 addresses. Cloud providers lose more: AWS reserves 5 per subnet (network, router, DNS, future, broadcast), Azure reserves 5 too.",
+        "**Routing table size**: aggregation shrinks it. The global IPv4 table is around 1 million prefixes; without CIDR it would be unmanageable.",
+        "**Longest-prefix match**: forwarding compares against the most specific matching prefix, so a /24 beats a /16 for the same address. Lookup is done in tries or TCAM in hardware.",
+        "**Efficiency of allocation**: sizing a subnet to need rather than class cuts waste from up to 99 percent, as with a 300-host site given a Class B, to under 50 percent in the worst case."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Off-by-two host counts**: 2^h minus 2 for ordinary subnets, not 2^h. Exceptions are /31 and /32.",
+        "**Misaligned blocks**: a /26 must start at a multiple of 64. `192.168.1.32/26` is not a valid network address; it belongs to the block at .0.",
+        "**Overlapping subnets**: two subnets that share addresses cause ambiguous routing. Allocate largest first and keep a ledger.",
+        "**Wrong aggregation**: 10.1.1.0/24 and 10.1.2.0/24 cannot be merged into a /23 because 10.1.1.0 is not on a /23 boundary (the third octet must be even). Only aligned neighbors summarize.",
+        "**Non-contiguous masks**: 255.0.255.0 is legal on very old gear but unsupported by CIDR and every modern system.",
+        "**Mask mismatch between hosts**: one host with /16 and another with /24 on the same wire leads to one-way connectivity, because each decides on-link versus off-link differently.",
+        "**Forgetting growth**: sizing a subnet exactly to today's host count forces painful renumbering later. Leave 30 to 50 percent headroom.",
+        "**IPv6 mistakes**: using subnets longer than /64 on normal LANs breaks SLAAC; assuming /64 is wasteful when it is not.",
+        "**Wildcard versus mask**: ACLs and OSPF use wildcard masks; interfaces use subnet masks. Mixing them silently matches the wrong range."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Enterprise address plans**: 10.0.0.0/8 carved into site, building and VLAN subnets with VLSM and summarized at each distribution layer.",
+        "**Cloud VPCs**: a VPC gets a CIDR such as 10.20.0.0/16, divided into per-AZ public and private subnets (/24 or /20). Peering needs non-overlapping CIDRs.",
+        "**Kubernetes and containers**: pod CIDR and service CIDR must not overlap each other or the node network; default ranges collide with corporate VPNs more often than you would expect.",
+        "**ISPs and the Internet**: customers receive /24 to /29 allocations; a provider announces a covering aggregate through BGP.",
+        "**Firewall rules and ACLs**: everything is written as prefix lists, so correct CIDR math is security-relevant.",
+        "**Router links**: /30 or /31 for point-to-point links, /32 for loopbacks and router IDs."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How many hosts in a /27?** 32 addresses minus 2 = 30 usable.",
+        "**What are the network and broadcast addresses of 172.16.45.200/20?** A /20 has a 16-block in the third octet. 45 falls in the block 32 to 47, so network 172.16.32.0 and broadcast 172.16.47.255.",
+        "**How do you decide if two hosts are on the same subnet?** AND each address with the mask; equal results mean same subnet.",
+        "**Why avoid classful thinking?** CIDR makes the prefix length explicit; the first bits of the address say nothing about the mask.",
+        "**What is route summarization?** Replacing several contiguous prefixes by one shorter prefix to shrink tables and hide churn.",
+        "**What is a /31 used for?** Point-to-point links, with both addresses usable (RFC 3021).",
+        "**What mask for 500 hosts?** 9 host bits gives 510 usable, so /23.",
+        "**Is 10.0.0.0/8 routable on the Internet?** No. RFC 1918 private space needs NAT to reach the Internet."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "VLSM",
-      "summary": "Different sized subnets from one block.",
+      "title": "Binary and the block-size method",
+      "summary": "Two ways to calculate any subnet fast.",
       "sections": [
         {
-          "body": "Variable Length Subnet Masks let you give each segment only what it needs: allocate the largest subnet first, then carve smaller ones from what remains. Example: 10.0.0.0/24 into a /25 for 100 hosts, a /26 for 50, and /30s for router links."
+          "body": "The binary method writes the address and mask in binary, ANDs them for the network, and sets host bits to 1 for the broadcast. The block-size method is the interview shortcut: find the octet where the mask is not 0 or 255 (the interesting octet), compute block size = 256 minus the mask value, and list multiples of that block size. The address falls into one of those blocks; the network is the block start and the broadcast is the next block start minus 1. For 172.16.45.200 with mask 255.255.240.0, the interesting octet is the third, block size 256 - 240 = 16, blocks 0, 16, 32, 48. 45 sits in 32 to 47, so the subnet is 172.16.32.0/20 with broadcast 172.16.47.255."
         }
       ]
     },
     {
-      "title": "Route aggregation (supernetting)",
-      "summary": "Combining prefixes.",
+      "title": "Designing a VLSM plan",
+      "summary": "Allocate by size, largest first.",
       "sections": [
         {
-          "body": "Contiguous, aligned blocks collapse into one shorter prefix: 192.168.0.0/24 and 192.168.1.0/24 become 192.168.0.0/23. Aggregation shrinks routing tables and is the point of CIDR."
+          "body": "List every subnet with its host requirement, add headroom, and round each up to the next power of two plus 2: 100 hosts need 128 addresses (/25), 50 hosts need 64 (/26), 20 need 32 (/27), a router link needs /30 or /31. Sort in descending order and allocate sequentially from the start of the block, which keeps each subnet naturally aligned and leaves one contiguous free tail. Record the plan in a table or IPAM tool with purpose, VLAN and gateway (conventionally the first or last usable address). Check at the end that no ranges overlap and that you still have a free block for growth."
         }
       ]
     },
     {
-      "title": "Quick method for any prefix",
-      "summary": "Block-size trick.",
+      "title": "Summarization and supernetting",
+      "summary": "Merging routes into one prefix.",
       "sections": [
         {
-          "body": "Find the interesting octet, compute block size = 256 - mask value in that octet, then find the multiple of the block size at or below the address. That multiple is the network; the next multiple minus one is the broadcast."
+          "body": "Two prefixes can merge into one when they are the same size, adjacent, and the first is aligned to the double size. 192.168.0.0/24 and 192.168.1.0/24 merge to 192.168.0.0/23, but 192.168.1.0/24 and 192.168.2.0/24 do not. To find the summary of a set, write the addresses in binary and keep the leading bits all share. For 10.1.0.0/24 to 10.1.3.0/24: the third octet runs 00000000 to 00000011, so 6 bits of that octet are common, and the summary is 10.1.0.0/22 with 8+8+6 = 22 bits. Summaries must not cover addresses you do not own; if they do, use a more specific route or a null route to prevent loops."
         }
       ]
     },
     {
-      "title": "Same subnet or not?",
-      "summary": "The test hosts perform.",
+      "title": "Special-purpose addresses",
+      "summary": "Blocks with defined meanings.",
       "sections": [
         {
-          "body": "A host ANDs the destination with its own mask; if the result equals its own network, it ARPs for the destination directly, otherwise it sends to the default gateway. A wrong mask breaks this decision and causes odd one-way connectivity.",
-          "code": "same_subnet = (src & mask) == (dst & mask)"
+          "body": "Documentation blocks 192.0.2.0/24, 198.51.100.0/24 and 203.0.113.0/24 are safe to use in examples and never routed.",
+          "bullets": [
+            "**0.0.0.0/8**: this network; 0.0.0.0 as source means unspecified, and `0.0.0.0/0` is the default route.",
+            "**127.0.0.0/8**: loopback. Everything in the block returns to the local host.",
+            "**169.254.0.0/16**: link-local (APIPA), assigned when DHCP fails.",
+            "**100.64.0.0/10**: shared space for carrier-grade NAT (RFC 6598).",
+            "**224.0.0.0/4**: multicast. 224.0.0.1 all hosts, 224.0.0.5 and .6 OSPF.",
+            "**240.0.0.0/4**: reserved; `255.255.255.255` is limited broadcast."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Point-to-point links: /30, /31 and /127",
+      "summary": "Saving addresses on router links.",
+      "sections": [
+        {
+          "body": "A /30 leaves 2 usable addresses out of 4. RFC 3021 lets a /31 use both of its 2 addresses because on a point-to-point link there is no need for a network or broadcast address, so a /31 uses half the space. Most routers support it, though some older hosts do not. IPv6 uses a /127 for the same purpose (RFC 6164), avoiding the ping-pong problem with the subnet-router anycast address on /64 links. Loopbacks and host routes use /32 and /128."
+        }
+      ]
+    },
+    {
+      "title": "IPv6 subnetting",
+      "summary": "Prefix planning with a 128-bit address.",
+      "sections": [
+        {
+          "body": "An IPv6 LAN subnet is a /64, leaving 64 bits for the interface identifier, as SLAAC and neighbor discovery assume. A site typically gets a /48 (65,536 /64s) or /56 (256 /64s). Plans align subnets on nibble boundaries so a hex digit maps cleanly to a level in the hierarchy: `2001:db8:abcd:0012::/64` could be site abcd, building 0, VLAN 0x12. There is no host-count arithmetic, no broadcast address and no need to conserve; the discipline is about hierarchy and aggregation. Point-to-point links get /127, loopbacks /128."
+        }
+      ]
+    },
+    {
+      "title": "CIDR and the global routing table",
+      "summary": "Why classless routing saved the Internet.",
+      "sections": [
+        {
+          "body": "By 1993 Class B space was nearly exhausted and the routing table was growing faster than hardware could keep up. CIDR (RFC 1519, now RFC 4632) removed class boundaries so allocations could match need, and made aggregation possible: an ISP receives a big block, assigns pieces to customers and announces one route. Routers use longest-prefix match, so a more specific route (say a customer's /24 inside the ISP's /16) overrides the aggregate. Deaggregation for traffic engineering or by accident is what drives the global table growth seen today."
+        }
+      ]
+    },
+    {
+      "title": "Subnet planning for cloud and containers",
+      "summary": "Avoiding CIDR collisions.",
+      "sections": [
+        {
+          "body": "Pick a non-overlapping plan across all environments from the start. VPCs that will be peered or joined through a transit gateway need disjoint ranges. Reserve at least a /16 per VPC, split into per-availability-zone subnets, and keep a separate range for Kubernetes pods and services (for example 10.244.0.0/16 and 10.96.0.0/12 defaults) that does not collide with on-premise 10.0.0.0/8 use. Remember provider reservations (5 addresses per subnet on AWS) and that managed services may demand specific minimum sizes such as /28 or /24. IPAM tools prevent overlaps by checking before allocation."
         }
       ]
     }
   ],
   "takeaways": [
-    "CIDR /n = n network bits; host bits h = 32 - n.",
-    "Usable hosts = 2^h - 2 (except /31 and /32).",
-    "Block size in the interesting octet = 256 - mask value.",
-    "VLSM allocates by need; aggregation shortens routing tables."
+    "The prefix length says how many leading bits identify the network; the rest identify the host.",
+    "Usable hosts = 2^h minus 2 (network and broadcast), except /31 with 2 and /32 with 1.",
+    "Block size = 256 minus the interesting mask octet; networks start at multiples of it.",
+    "Two hosts share a subnet if (a AND mask) equals (b AND mask); that is how a host decides to ARP or use the gateway.",
+    "VLSM allocates the largest subnets first so blocks stay aligned and free space stays contiguous.",
+    "Aggregation merges adjacent aligned blocks into a shorter prefix, such as four /24s into one /22.",
+    "RFC 1918 private ranges are 10/8, 172.16/12 and 192.168/16; IPv6 LAN subnets are /64."
+  ],
+  "practice": [
+    {
+      "title": "Find the network, broadcast, first and last host for 192.168.10.77/26",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "How many usable hosts and subnets do you get from splitting a /24 into /28s",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Choose the smallest mask for a subnet that must hold 500 hosts and list its usable range",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Build a VLSM plan inside 10.10.0.0/22 for subnets of 400, 200, 100, 50 hosts and three router links",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Summarize 172.16.4.0/24 through 172.16.7.0/24 and explain why 172.16.5.0/24 through 172.16.8.0/24 cannot be merged",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Given 172.16.45.200/20, list network, broadcast, and the next two subnets",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a C function that finds the shortest prefix covering a list of IPv4 addresses",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a non-overlapping CIDR plan for three VPCs, an on-premise data center and a Kubernetes cluster that will all be interconnected",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
       "label": "RFC 4632: Classless Inter-domain Routing (CIDR)",
-      "url": "https://www.rfc-editor.org/rfc/rfc4632"
+      "url": "https://www.rfc-editor.org/rfc/rfc4632.txt"
+    },
+    {
+      "label": "Reference: Subnet (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Subnet"
     },
     {
       "label": "RFC 1918: Address Allocation for Private Internets",
@@ -99,28 +231,6 @@
     {
       "label": "RFC 3021: Using 31-Bit Prefixes on IPv4 Point-to-Point Links",
       "url": "https://www.rfc-editor.org/rfc/rfc3021"
-    },
-    {
-      "label": "Reference: Subnetwork (Wikipedia)",
-      "url": "https://en.wikipedia.org/wiki/Subnet"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Network, broadcast, and host range for 172.16.37.200/21",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Split 192.168.10.0/24 into four subnets",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "VLSM plan for 100, 50, 20, and 2 hosts",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Summarize four contiguous /24s into one prefix",
-      "difficulty": "Medium"
     }
   ]
 }

@@ -1,94 +1,249 @@
 {
-  "summary": "DNS translates names such as www.example.com into IP addresses through a hierarchy of servers. A stub resolver asks a recursive resolver, which walks the hierarchy from the root down and caches the answers.",
+  "summary": "DNS is the distributed, hierarchical database that turns names such as www.example.com into IP addresses and other records. A stub resolver on your host asks a recursive resolver, which walks from the root servers to the top-level domain servers to the zone's authoritative servers, caching every answer for its TTL. Almost every connection you make starts with a DNS lookup, so its latency, caching, failure modes and security (spoofing, amplification, DNSSEC, DoT and DoH) come up constantly in operations and interviews.",
   "sections": [
     {
-      "heading": "The hierarchy",
-      "body": "Names are read right to left: root (.), top-level domain (com), second-level (example), host (www). Each level is a zone served by authoritative name servers that delegate to the next level with NS records (RFC 1035)."
+      "heading": "Overview",
+      "body": "People remember names and machines route on addresses, so something must map one to the other. Early networks used a single HOSTS.TXT file, which stopped scaling in the 1980s. The Domain Name System, specified mainly in RFC 1034 (concepts) and RFC 1035 (implementation and message format), replaced it with a hierarchy of name servers, each responsible for a piece of the name space and each able to delegate sub-pieces to others. No server knows everything; every server knows how to find the next one down.\n\nThree roles matter. The **stub resolver** is the small library in your operating system (`getaddrinfo()` and friends) that sends one query and waits. The **recursive resolver** (your ISP's, your company's, or a public one such as 1.1.1.1 or 8.8.8.8) does the legwork and caches results. The **authoritative servers** hold the actual records for a zone and answer without recursion.\n\nDNS is also much more than address lookup. It carries mail routing (MX), service discovery (SRV), domain ownership proofs (TXT), certificate restrictions (CAA), reverse lookups (PTR), and security signatures (DNSSEC). It is a global, eventually consistent, heavily cached key-value store keyed by name and type."
     },
     {
-      "heading": "Resolution walk",
-      "body": "For a cold cache the recursive resolver performs iterative queries:",
-      "code": "1. Client -> recursive resolver: www.example.com A?\n2. Resolver -> root server: referral to .com TLD servers\n3. Resolver -> .com TLD server: referral to example.com name servers\n4. Resolver -> example.com authoritative: A 93.184.216.34, TTL 3600\n5. Resolver caches it and answers the client"
-    },
-    {
-      "heading": "Message format",
-      "body": "A DNS message has a 12-byte header (ID, flags, and four counts) followed by Question, Answer, Authority, and Additional sections. Flags include QR (query/response), AA (authoritative), TC (truncated), RD (recursion desired), RA (recursion available), and RCODE.",
+      "heading": "Core Concepts",
       "bullets": [
-        "The ID matches responses to queries.",
-        "Names are sequences of length-prefixed labels, and may be compressed with 2-byte pointers to earlier occurrences.",
-        "Resource records have NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA."
+        "**Domain name**: a dot-separated sequence of labels read right to left, from the root (an empty label, written as a trailing dot) down to the host. Each label is at most 63 bytes and the whole name at most 255 bytes in wire form.",
+        "**Zone**: a contiguous part of the name tree managed as one unit and served by a set of authoritative servers. A zone ends where it delegates with NS records. A domain and a zone are not the same thing.",
+        "**Authoritative server**: a server holding the zone data; its responses carry the AA (authoritative answer) flag.",
+        "**Recursive resolver**: accepts queries with RD (recursion desired) set and returns a final answer or an error after chasing referrals itself.",
+        "**Stub resolver**: client side code that sends a single recursive query to a configured resolver (see `/etc/resolv.conf`).",
+        "**Resource record (RR)**: NAME, TYPE, CLASS, TTL, RDLENGTH, RDATA. Class is almost always IN (Internet).",
+        "**RRset**: all records sharing the same name, type and class. They are cached, returned and signed together.",
+        "**TTL**: a 32-bit count of seconds that tells caches how long they may keep a record. It is the only consistency mechanism DNS has.",
+        "**Referral**: a response with no answer but with NS records in the Authority section (and often addresses in Additional) pointing to the next servers to ask.",
+        "**Glue record**: an A or AAAA record for a name server that lives inside the zone it serves, supplied by the parent so the lookup does not loop. For example, ns1.example.com must be given as an address by the .com servers.",
+        "**NXDOMAIN**: RCODE 3, the name does not exist at all. **NODATA** is NOERROR with an empty answer: the name exists but not with that type.",
+        "**Root servers**: 13 server names (a.root-servers.net to m.root-servers.net) served by many anycast instances around the world. Resolvers ship with a list of their addresses (root hints)."
       ]
     },
     {
-      "heading": "Record types",
+      "heading": "How It Works",
+      "body": "Walk through a cold-cache lookup of www.example.com A on a laptop. The stub resolver sends a single query with RD=1 to the recursive resolver, which then performs iterative queries (RD=0 in effect) to each authoritative layer:",
       "bullets": [
-        "A / AAAA: IPv4 / IPv6 address.",
-        "NS: authoritative name server for a zone.",
-        "CNAME: alias to a canonical name.",
-        "MX: mail exchanger with a preference.",
-        "PTR: reverse lookup from address to name.",
-        "TXT: free text (SPF, DKIM, verification).",
-        "SOA: zone authority and timers."
+        "**1. Stub to resolver**: the laptop checks its local cache and `/etc/hosts`, then sends UDP port 53 to the resolver: QNAME www.example.com, QTYPE A, QCLASS IN.",
+        "**2. Resolver to root**: the resolver has no cached data, so it asks a root server for the same question. The root does not know the answer and replies with a referral: NS records for the .com servers plus glue addresses.",
+        "**3. Resolver to TLD**: it asks one of the .com servers. The reply is another referral: NS records for example.com (and glue if needed).",
+        "**4. Resolver to authoritative**: it asks an example.com server, which answers authoritatively: `www.example.com. 3600 IN A 192.0.2.10` with AA set.",
+        "**5. Cache and answer**: the resolver stores the answer (and the NS and delegation data learned along the way) for their TTLs, then returns the answer with RA set to the stub. The next lookup of any name under example.com can skip steps 2 and 3.",
+        "**6. CNAME chains**: if the authoritative server returns `www CNAME web.cdn.net`, the resolver restarts the lookup for the new name and returns the whole chain.",
+        "**7. Failures**: a timeout leads the resolver to try another server in the NS set; SERVFAIL tells the client the resolver could not get a valid answer; NXDOMAIN is cached as a negative answer."
+      ],
+      "code": "Stub -> Resolver : www.example.com A ? (RD=1)\nResolver -> Root : www.example.com A ?\nRoot -> Resolver : referral  com.      NS a.gtld-servers.net  (+glue)\nResolver -> .com : www.example.com A ?\n.com -> Resolver : referral  example.com. NS ns1.example.com (+glue)\nResolver -> ns1  : www.example.com A ?\nns1 -> Resolver  : answer    www.example.com. 3600 IN A 192.0.2.10  (AA)\nResolver -> Stub : answer (RA=1), TTL counts down from the cached value"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Recursive versus iterative queries**: a recursive query asks the server to do all the work; an iterative query accepts a referral. Stubs send recursive, resolvers send iterative.",
+        "**Forwarders**: a resolver (such as a home router) that does not walk the tree but forwards everything to an upstream recursive resolver.",
+        "**Record types**: A (IPv4), AAAA (IPv6), NS, CNAME, MX, PTR, TXT, SOA, SRV, CAA, plus DNSSEC types DS, DNSKEY, RRSIG, NSEC and NSEC3, and the newer SVCB and HTTPS types.",
+        "**Transport**: classic DNS over UDP 53 with TCP 53 as fallback. DNS over TLS (DoT, port 853) and DNS over HTTPS (DoH, port 443) encrypt the stub-to-resolver hop; DNS over QUIC (DoQ, port 853) does the same over QUIC.",
+        "**DNSSEC**: records are signed so a validating resolver can detect forgery, using a chain of trust from the root key through DS records at each delegation. It provides authenticity and integrity, not confidentiality.",
+        "**Anycast and GeoDNS**: the same address announced from many places (root servers, public resolvers), or answers varied by client location (CDNs).",
+        "**mDNS and LLMNR**: multicast name resolution on a local link (`.local`) with no server at all."
       ]
     },
     {
-      "heading": "Transport",
-      "body": "DNS uses UDP port 53 for normal queries and TCP port 53 for zone transfers and when responses are truncated (TC bit). The original UDP limit was 512 bytes; EDNS0 (RFC 6891) lets clients advertise larger buffers."
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Cold lookup**: three or four sequential round trips (root, TLD, authoritative, sometimes more with CNAMEs or missing glue). With 20 to 50 ms each that is 60 to 200 ms on a cache miss.",
+        "**Warm lookup**: a cache hit at the recursive resolver takes one RTT to the resolver, often 1 to 10 ms. A hit in the local stub or browser cache takes microseconds.",
+        "**Message size**: 12-byte header plus question plus records. The original UDP limit is 512 bytes (RFC 1035). EDNS0 (RFC 6891) lets a client advertise a bigger buffer, commonly 1232 bytes to avoid IP fragmentation, and answers beyond that set TC (truncated) so the client retries over TCP.",
+        "**Name limits**: 63 bytes per label, 255 bytes per name (wire form, including length bytes), so a printed name is at most 253 characters.",
+        "**Cache hit rates**: resolvers answer well over 90 percent of queries from cache because popularity is heavily skewed and TTLs run from minutes to hours.",
+        "**Amplification**: a 60-byte query can trigger a 4,000-byte DNSSEC or ANY response, a factor of 50 or more, which attackers abuse with spoofed source addresses.",
+        "**Retries**: stubs typically retry after about 1 to 5 seconds with several attempts and servers; a dead first resolver adds seconds to every lookup."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**TTL misconceptions**: changing a record does not update caches that already hold the old value. Lower the TTL well before a planned migration, and expect some clients to ignore it.",
+        "**CNAME at the apex**: a CNAME cannot coexist with other records at the same name, and the zone apex needs SOA and NS records, so a CNAME there is illegal. Providers offer ALIAS or ANAME records as a workaround.",
+        "**Missing glue**: delegating `example.com` to `ns1.example.com` without glue creates a circular dependency and a broken zone.",
+        "**Cache poisoning**: an off-path attacker races forged answers to a resolver. The Kaminsky attack (2008) showed that a 16-bit ID alone was not enough, so resolvers now randomise the UDP source port and may use 0x20 case randomisation, DNS cookies and DNSSEC.",
+        "**Negative caching**: an NXDOMAIN is cached for the SOA minimum or the SOA TTL (RFC 2308), so creating a record right after someone looked it up may not be visible for a while.",
+        "**Search domains and ndots**: in `/etc/resolv.conf`, names with fewer dots than `ndots` (Kubernetes sets 5) are tried with each search suffix first, multiplying lookups and latency.",
+        "**Using `gethostbyname`**: deprecated, IPv4 only, not thread safe. Use `getaddrinfo()` and iterate over all results.",
+        "**Assuming one address**: a name may return many A and AAAA records; clients should try them in order and use Happy Eyeballs (RFC 8305) to prefer whichever connects first.",
+        "**Trusting reverse DNS**: PTR records are controlled by the address owner, so they prove nothing unless confirmed with a forward lookup.",
+        "**Open resolvers**: a recursive resolver exposed to the whole internet is an amplification tool; restrict it to your clients."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Every connection**: browsers, mobile apps and curl resolve before connecting, and may cache internally (Chrome has its own host cache and can use DoH).",
+        "**CDNs and load balancing**: DNS answers steer users to nearby or healthy servers using short TTLs, weighted or geographic records.",
+        "**Service discovery**: Kubernetes CoreDNS gives every service a name such as `svc.namespace.svc.cluster.local`; SRV records locate ports.",
+        "**Email**: MX records route mail; TXT records carry SPF, DKIM and DMARC policies that receivers check on every message.",
+        "**Certificates and ownership**: ACME DNS-01 challenges prove domain control with a TXT record; CAA limits which authorities may issue.",
+        "**Operations**: `dig +trace` follows the delegation chain from the root; `dig +short`, `dig @server` and `dig -x` inspect single steps; `resolvectl query` shows what systemd-resolved does.",
+        "**Privacy and policy**: public resolvers, DoH/DoT, split-horizon DNS for private zones, and blocklists at the resolver all rely on DNS being the choke point."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What happens when you type a URL?** DNS lookup (stub, recursive, root, TLD, authoritative), then TCP and TLS handshakes, then HTTP.",
+        "**Recursive or iterative?** Stub to resolver is recursive; resolver to authoritative servers is iterative.",
+        "**TCP or UDP?** UDP by default; TCP for responses with TC set, zone transfers (AXFR), and for DoT.",
+        "**What is a TTL for?** How long a cache may reuse a record; the only knob to trade freshness against load.",
+        "**What does the Authority section carry?** NS (referral) or SOA (negative answer) records.",
+        "**Difference between NXDOMAIN and NODATA?** Name absent versus name present with no record of that type.",
+        "**What is glue?** Address records for in-zone name servers supplied by the parent.",
+        "**How is DNS poisoned and defended?** Forged responses; mitigated by random ports and IDs, 0x20, cookies, DNSSEC.",
+        "**Why a 512 byte limit?** The original design kept messages in one unfragmented UDP packet; EDNS0 raises it.",
+        "**Why can't you CNAME the apex?** Because CNAME excludes all other records, and the apex needs SOA and NS."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Caching and TTL",
-      "summary": "Why DNS scales.",
+      "title": "DNS message format",
+      "summary": "Header, four sections, and the flag bits.",
       "sections": [
         {
-          "body": "Every record carries a TTL telling resolvers how long to cache it. Caching, including negative caching of NXDOMAIN (RFC 2308), absorbs most queries; lowering a TTL before a migration speeds failover."
+          "body": "Every query and response uses the same layout: a fixed 12-byte header followed by Question, Answer, Authority and Additional sections. The header holds a 16-bit ID, 16 bits of flags, and four 16-bit counts (QDCOUNT, ANCOUNT, NSCOUNT, ARCOUNT).",
+          "bullets": [
+            "**QR** (1 bit): 0 query, 1 response.",
+            "**Opcode** (4 bits): 0 standard query, 1 inverse (obsolete), 2 status, 4 notify, 5 update.",
+            "**AA**: authoritative answer. **TC**: truncated. **RD**: recursion desired. **RA**: recursion available.",
+            "**Z** (3 bits): reserved; modern use includes AD and CD bits for DNSSEC.",
+            "**RCODE** (4 bits): 0 NOERROR, 1 FORMERR, 2 SERVFAIL, 3 NXDOMAIN, 4 NOTIMP, 5 REFUSED."
+          ]
         }
       ]
     },
     {
-      "title": "Recursive versus iterative",
-      "summary": "Who does the work.",
+      "title": "A query on the wire",
+      "summary": "Byte-level view of a lookup for example.com A.",
       "sections": [
         {
-          "body": "A stub resolver asks for a complete answer (recursive query). The resolver then queries servers iteratively, following referrals. Authoritative servers normally do not recurse for outsiders."
+          "body": "A 29-byte query. Names are length-prefixed labels ending with a zero byte. A response repeats the question and then answers. Compression replaces a repeated name with a 2-byte pointer whose top two bits are 11 and whose remaining 14 bits are an offset from the message start, so 0xC00C points at offset 12, the first question name.",
+          "code": "Query (hex):\nabcd 0100 0001 0000 0000 0000      ID, flags RD=1, QD=1, AN=0, NS=0, AR=0\n07 6578616d706c65 03 636f6d 00     7 'example' 3 'com' 0\n0001 0001                          QTYPE=A, QCLASS=IN\n\nAnswer RR in the response:\nc00c 0001 0001 00000e10 0004 c000020a\n  name=ptr to offset 12, type A, class IN, TTL=3600, RDLENGTH=4, 192.0.2.10"
         }
       ]
     },
     {
-      "title": "DNSSEC",
-      "summary": "Authenticating answers.",
+      "title": "Resolving from C",
+      "summary": "getaddrinfo is the portable stub-resolver API.",
       "sections": [
         {
-          "body": "DNSSEC signs records (RRSIG), publishes keys (DNSKEY), and chains trust from the root through DS records, letting validators detect forged answers. It authenticates data but does not encrypt queries."
+          "body": "`getaddrinfo()` consults `/etc/nsswitch.conf` (hosts file, then DNS, and so on) and returns a linked list of addresses, IPv4 and IPv6 together. Always loop through the list rather than using the first element.",
+          "code": "struct addrinfo hints = {.ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM};\nstruct addrinfo *res, *p;\nint rc = getaddrinfo(\"www.example.com\", \"443\", &hints, &res);\nif (rc != 0) { fprintf(stderr, \"%s\\n\", gai_strerror(rc)); return 1; }\nfor (p = res; p; p = p->ai_next) {\n    int fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);\n    if (fd >= 0 && connect(fd, p->ai_addr, p->ai_addrlen) == 0)\n        break;                  /* connected */\n    if (fd >= 0) close(fd);\n}\nfreeaddrinfo(res);"
         }
       ]
     },
     {
-      "title": "Encrypted DNS",
-      "summary": "DoT and DoH.",
+      "title": "Caching, TTL and negative caching",
+      "summary": "Why DNS scales and why changes are slow.",
       "sections": [
         {
-          "body": "DNS over TLS (RFC 7858, port 853) and DNS over HTTPS (RFC 8484) hide queries from on-path observers."
+          "body": "Each cached RRset expires after its TTL, and the TTL counts down as it sits in the cache, so downstream clients receive the remaining time. Resolvers also cache NS and glue data, so only the first lookup under a zone pays for the upper levels. Negative answers (NXDOMAIN and NODATA) are cached too, for the smaller of the SOA TTL and the SOA minimum field (RFC 2308).\n\nPlanning a migration: lower the TTL to 60 to 300 seconds at least one old-TTL period before the change, switch the record, then raise the TTL again. Some resolvers enforce a floor or cap, and browsers and language runtimes may keep their own caches on top of the OS one."
         }
       ]
     },
     {
-      "title": "Debugging with dig",
-      "summary": "Common commands.",
+      "title": "Zones, delegation and zone transfer",
+      "summary": "How authority is divided and replicated.",
       "sections": [
         {
-          "body": "`dig +trace example.com` shows the delegation walk; `dig @8.8.8.8 example.com MX` queries a specific server; `dig -x 8.8.8.8` does a reverse lookup.",
-          "code": "$ dig +short example.com A\n93.184.216.34"
+          "body": "A parent zone delegates a child by publishing NS records for it at the delimiter name. The child zone's own apex has an SOA record (primary server, admin mailbox, serial, refresh, retry, expire, minimum) and NS records. Secondary servers copy the zone from the primary with AXFR (full) or IXFR (incremental) over TCP, triggered by the serial number in the SOA, and a NOTIFY message prods them to refresh quickly.\n\nBecause a zone's NS set should have at least two servers on different networks, a single outage does not take a domain offline."
+        }
+      ]
+    },
+    {
+      "title": "DNSSEC chain of trust",
+      "summary": "Authenticating answers without encrypting them.",
+      "sections": [
+        {
+          "body": "A signed zone publishes DNSKEY records and an RRSIG signature over each RRset. The parent publishes a DS record, a hash of the child's key-signing key. A validating resolver starts from the root's trust anchor and checks root DNSKEY, then the .com DS and DNSKEY, then the zone's, down to the answer. NSEC or NSEC3 records give signed proofs that a name does not exist. A failed validation yields SERVFAIL, so a misconfigured key rollover can take a domain offline for validating users."
+        }
+      ]
+    },
+    {
+      "title": "Encrypted DNS: DoT and DoH",
+      "summary": "Protecting the stub-to-resolver hop.",
+      "sections": [
+        {
+          "body": "Plain DNS is readable and modifiable by anyone on the path. DNS over TLS wraps the same messages in TLS on port 853. DNS over HTTPS carries them in HTTPS requests on port 443 (RFC 8484), blending in with web traffic, which helps against blocking but complicates enterprise filtering. Neither protects the resolver-to-authoritative leg, and the resolver still sees every name you look up. Operators choose resolvers by trust and policy rather than by protocol alone."
+        }
+      ]
+    },
+    {
+      "title": "DNS attacks and defences",
+      "summary": "Poisoning, amplification, tunnelling, hijacking.",
+      "sections": [
+        {
+          "body": "Know each attack and its counter.",
+          "bullets": [
+            "**Cache poisoning**: random source port and ID (about 32 bits of entropy combined), 0x20 encoding, DNS cookies, DNSSEC.",
+            "**Reflection and amplification**: spoofed queries to open resolvers or authoritative servers; mitigate with response rate limiting (RRL), closing open resolvers and BCP 38 ingress filtering.",
+            "**DNS tunnelling**: data hidden in long labels and TXT answers; detect with volume and entropy analysis.",
+            "**Registrar or NS hijack**: attacker changes delegation; protect accounts and use registry locks.",
+            "**Dangling CNAME takeover**: a CNAME pointing to a deleted cloud resource that someone else can claim; audit records."
+          ]
         }
       ]
     }
   ],
   "takeaways": [
-    "DNS is a hierarchy: root, TLD, domain, host; NS records delegate.",
-    "Resolvers cache by TTL; a cold lookup walks root -> TLD -> authoritative.",
-    "UDP/53 normally, TCP/53 for large responses and zone transfers.",
-    "DNSSEC authenticates; DoT/DoH encrypt."
+    "DNS maps names to records through a hierarchy: root, TLD, authoritative, with each level delegating via NS records.",
+    "The stub sends one recursive query; the recursive resolver iterates through referrals and caches everything.",
+    "A message is a 12-byte header plus Question, Answer, Authority and Additional sections; names use length-prefixed labels and 0xC0 pointers.",
+    "UDP port 53 by default (512 bytes, more with EDNS0); TCP when TC is set, for zone transfers, and for DoT.",
+    "TTL is the only freshness control, and negative answers are cached too (RFC 2308).",
+    "NXDOMAIN means the name does not exist; NOERROR with no answers (NODATA) means no record of that type.",
+    "Glue prevents circular dependencies when a name server lives inside the zone it serves.",
+    "Spoofing is countered by random ports and IDs and DNSSEC; DoT and DoH protect only the client-to-resolver hop."
+  ],
+  "practice": [
+    {
+      "title": "Run dig +trace for a domain and label each referral and the final answer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Decode the 12-byte header and flags of a captured DNS response",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain the difference between NXDOMAIN and NODATA with dig examples",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write a C program using getaddrinfo that tries every address until one connects",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Hand-encode a DNS query for a name with three labels and decode a compressed answer",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Plan a zero-downtime IP migration choosing TTL values and timing",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why a CNAME at the zone apex breaks things and name two workarounds",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Describe the Kaminsky attack, why 16 bits were not enough, and which mitigations stack",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Trace DNSSEC validation from the root trust anchor down to an A record",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Debug slow lookups in a Kubernetes pod caused by ndots and search domains",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -100,26 +255,16 @@
       "url": "https://www.rfc-editor.org/rfc/rfc1034"
     },
     {
-      "label": "RFC 4033: DNS Security Introduction and Requirements",
-      "url": "https://www.rfc-editor.org/rfc/rfc4033"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Use dig +trace and label each referral",
-      "difficulty": "Easy"
+      "label": "RFC 2308: Negative Caching of DNS Queries",
+      "url": "https://www.rfc-editor.org/rfc/rfc2308"
     },
     {
-      "title": "Predict cache behaviour from a set of TTLs",
-      "difficulty": "Medium"
+      "label": "RFC 6891: Extension Mechanisms for DNS (EDNS(0))",
+      "url": "https://www.rfc-editor.org/rfc/rfc6891"
     },
     {
-      "title": "Explain CNAME chains and why a CNAME cannot sit at the zone apex",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Find DNSSEC records in a response",
-      "difficulty": "Hard"
+      "label": "RFC 8484: DNS Queries over HTTPS (DoH)",
+      "url": "https://www.rfc-editor.org/rfc/rfc8484"
     }
   ]
 }

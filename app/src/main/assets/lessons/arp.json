@@ -1,94 +1,222 @@
 {
-  "summary": "ARP (Address Resolution Protocol) maps a known IPv4 address to the MAC address needed to deliver a frame on the local network segment. It is a broadcast request answered by a unicast reply, cached for reuse.",
+  "summary": "ARP (Address Resolution Protocol, RFC 826) lets an IPv4 host find the MAC address that goes with a neighbor's IP address on the same Layer 2 network. A host broadcasts 'who has this IP?', the owner answers with its MAC, and the answer is cached for later frames. Without it, no IPv4 packet could be placed in an Ethernet frame. You see it on every LAN, in every packet capture, and in attacks such as ARP spoofing that exploit its lack of authentication.",
   "sections": [
     {
-      "heading": "Why ARP exists",
-      "body": "IP chooses a next-hop IP address, but an Ethernet switch delivers by MAC address. Before sending, a host must learn the MAC that corresponds to the next hop's IP. For off-subnet destinations the next hop is the default gateway, so ARP resolves the gateway, not the final server."
+      "heading": "Overview",
+      "body": "IP routes on 32-bit addresses, but Ethernet delivers on 48-bit MAC addresses. When a host decides that the next hop for a packet is 192.168.1.20, it still needs the MAC that belongs to that address before it can build the frame. ARP is the glue. It is deliberately tiny: one packet format used as a request and a reply, a cache in every host, and no configuration. RFC 826 was written for 10 Mb/s Ethernet but was generalized so the same packet can map any protocol address to any hardware address, which is why the header carries explicit length fields. In practice it is only used for IPv4 over Ethernet or Wi-Fi. IPv6 replaces it with Neighbor Discovery."
     },
     {
-      "heading": "How resolution works",
+      "heading": "Core Concepts",
       "bullets": [
-        "The host checks its ARP cache for the target IP.",
-        "On a miss it broadcasts an ARP Request to ff:ff:ff:ff:ff:ff: 'Who has 192.168.1.1? Tell 192.168.1.10'.",
-        "Every host on the segment sees it; only the owner of that IP replies.",
-        "The owner sends a unicast ARP Reply containing its MAC.",
-        "The requester caches the mapping with a timeout and sends the queued packet."
+        "**Resolution**: turning a next-hop IPv4 address into a MAC. Only the next hop is resolved, never a remote host: for an off-link target you ARP for the gateway.",
+        "**ARP request**: a broadcast frame (destination `ff:ff:ff:ff:ff:ff`, EtherType 0x0806) asking who owns the target IP. The target hardware field is left zero.",
+        "**ARP reply**: a unicast frame back to the requester carrying the owner's MAC in the sender hardware field.",
+        "**ARP cache (neighbor table)**: IP to MAC mappings with timers, such as `ip neigh` on Linux or `arp -a` on Windows.",
+        "**Sender and target fields**: SHA and SPA are the sender's MAC and IP; THA and TPA are the target's. A reply swaps them.",
+        "**Gratuitous ARP**: a host announces its own mapping by putting its own IP in both sender and target protocol fields. Used after an address change or failover.",
+        "**Proxy ARP**: a router answers requests on behalf of hosts that are actually behind it.",
+        "**ARP probe**: a request with sender IP `0.0.0.0` to check for an address conflict before using an address (RFC 5227).",
+        "**Broadcast domain scope**: ARP never crosses a router, because routers do not forward Layer 2 broadcasts."
       ]
     },
     {
-      "heading": "Packet format (RFC 826)",
+      "heading": "How It Works",
+      "body": "Suppose host A (192.168.1.10, MAC `aa:aa:aa:aa:aa:aa`) wants to send an IP packet to B (192.168.1.20). A masks both addresses with its subnet mask, sees B is on-link, and checks its ARP cache. On a miss, A parks the packet in a small queue, builds an ARP request and broadcasts it. Every host on the segment receives and parses it, but only B sees its own IP in the target field. B stores A's IP to MAC mapping (it will need it soon anyway), builds a reply with its MAC and unicasts it to A. A caches the entry, releases the queued packet and sends the IP frame. If nobody answers, A retries a few times (Linux defaults to three probes about a second apart) and then reports host unreachable. The receive algorithm in RFC 826 is worth knowing because interviewers ask why a host learns from requests it did not send. On any ARP packet the receiver first checks that it understands the hardware and protocol types. It then looks for an existing cache entry for the sender's protocol address; if one exists it updates the MAC and marks that it merged. Next it asks: is the target protocol address mine? If not, it stops, having possibly refreshed an entry. If it is mine and no merge happened, it adds the sender to the cache. Finally, if the opcode is a request, it swaps the sender and target fields, inserts its own MAC and replies. This design means a request teaches the target about the requester, so the reply's follow-up traffic needs no second ARP round trip.",
+      "code": "ARP packet for IPv4 over Ethernet: 28 bytes, carried in an Ethernet frame\n(EtherType 0x0806), padded to the 46-byte payload minimum.\n\n 0        8        16               31\n+-----------------+-----------------+\n| Hardware type   | Protocol type   |  0x0001 Ethernet / 0x0800 IPv4\n+--------+--------+-----------------+\n| HLEN=6 | PLEN=4 | Operation       |  1 request, 2 reply\n+--------+--------+-----------------+\n| Sender MAC (6 bytes)              |\n| Sender IP  (4 bytes)              |\n| Target MAC (6 bytes)              |  all zero in a request\n| Target IP  (4 bytes)              |\n+-----------------------------------+\n\nRequest: A asks for 192.168.1.20\n eth dst ff:ff:ff:ff:ff:ff  src aa:aa:aa:aa:aa:aa  type 0x0806\n op=1 SHA=aa:..:aa SPA=192.168.1.10 THA=00:..:00 TPA=192.168.1.20\nReply: B answers A\n eth dst aa:aa:aa:aa:aa:aa  src bb:bb:bb:bb:bb:bb  type 0x0806\n op=2 SHA=bb:..:bb SPA=192.168.1.20 THA=aa:..:aa TPA=192.168.1.10\n\n/* ARP on the wire as a C struct (network byte order) */\n#include <stdint.h>\n#include <arpa/inet.h>\n#include <string.h>\n\nstruct arp_ipv4 {\n    uint16_t htype;     /* 1 = Ethernet */\n    uint16_t ptype;     /* 0x0800 = IPv4 */\n    uint8_t  hlen;      /* 6 */\n    uint8_t  plen;      /* 4 */\n    uint16_t oper;      /* 1 request, 2 reply */\n    uint8_t  sha[6];\n    uint8_t  spa[4];\n    uint8_t  tha[6];\n    uint8_t  tpa[4];\n} __attribute__((packed));   /* sizeof == 28 */\n\nint is_request_for_me(const struct arp_ipv4 *p, const uint8_t my_ip[4]) {\n    return ntohs(p->oper) == 1 && memcmp(p->tpa, my_ip, 4) == 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Hardware type (2 bytes): 1 for Ethernet.",
-        "Protocol type (2): 0x0800 for IPv4.",
-        "Hardware address length (1): 6; protocol address length (1): 4.",
-        "Operation (2): 1 = request, 2 = reply.",
-        "Sender hardware address and sender protocol address.",
-        "Target hardware address (zero in a request) and target protocol address."
+        "**Standard request/reply**: the case above, request broadcast and reply unicast.",
+        "**Gratuitous ARP**: sender and target IP are the same (request or reply form). Neighbors refresh their caches. VRRP and HSRP use it after failover to repoint switches and hosts at the new active router.",
+        "**ARP probe and announcement**: RFC 5227 Address Conflict Detection. Probe with sender IP 0.0.0.0, then announce once the address is yours.",
+        "**Proxy ARP**: a router replies with its own MAC for addresses on another interface. Lets old hosts without a default route work, but hides topology and balloons ARP tables.",
+        "**RARP**: Reverse ARP, opcodes 3 and 4, let a diskless machine learn its IP from its MAC. Replaced by BOOTP and DHCP.",
+        "**Inverse ARP**: opcodes 8 and 9, used on Frame Relay to learn the IP at the far end of a virtual circuit.",
+        "**Static ARP entries**: manually pinned `arp -s` mappings that never age; used for security or for devices that do not answer ARP.",
+        "**IPv6 Neighbor Discovery**: NS and NA messages (ICMPv6 types 135 and 136) sent to a solicited-node multicast address. It replaces ARP for IPv6 and is multicast, not broadcast."
       ]
     },
     {
-      "heading": "Receiving algorithm",
-      "body": "On any ARP packet the receiver first updates an existing cache entry for the sender if one exists. If the packet targets this host it also adds the sender to its cache, and, if it is a request, swaps the fields and unicasts a reply. This is why a request also teaches the target about the requester, saving a second ARP exchange."
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Packet size**: 28 bytes of ARP, padded to a 64-byte Ethernet frame (60 bytes seen in a capture).",
+        "**Lookup cost**: one cached lookup is a hash lookup, effectively constant. A miss costs one round trip, normally well under 1 ms on a LAN.",
+        "**Cache timeouts**: Linux marks entries reachable for about 15 to 45 seconds (base_reachable_time 30 s, randomized 0.5x to 1.5x), then verifies with unicast probes. Windows is similar. Many switches and routers use 4 hours.",
+        "**Broadcast load**: every request reaches every host in the VLAN. A /16 with thousands of hosts can see significant ARP chatter, one reason to keep VLANs to /24 or smaller.",
+        "**Retries**: Linux sends up to `mcast_solicit` = 3 broadcast probes at `retrans_time` = 1 s before declaring failure, so an unreachable neighbor costs about 3 seconds.",
+        "**Table limits**: Linux garbage collects the neighbor table at `gc_thresh1/2/3` = 128/512/1024 entries by default; large routers must raise them or they drop resolutions."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**ARP is unauthenticated**: any host can answer any request or send an unsolicited reply. ARP spoofing (poisoning) lets an attacker sit in the middle of two hosts.",
+        "**Duplicate IP**: two hosts claiming one address produce a flapping ARP entry and intermittent connectivity. Look for two different MACs answering one IP.",
+        "**Wrong mask, wrong ARP target**: a host with a mask that is too wide ARPs for off-link addresses and gets no answer, so those hosts look unreachable.",
+        "**Stale entries after failover**: if a standby takes over an IP without sending a gratuitous ARP, peers keep sending to the old MAC until their entries expire.",
+        "**ARP storms**: loops without spanning tree, or a misconfigured scanner, flood the VLAN with broadcasts.",
+        "**Proxy ARP surprises**: hosts with a wrong mask can still appear to work, because a router answers for them, and the problem is only found later.",
+        "**Forgetting that ARP is Layer 2 only**: pinging a remote host never produces an ARP for that host. It produces one for the default gateway."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Every IPv4 LAN**: first packet to a new neighbor triggers an ARP exchange, and typical cache entries live tens of seconds.",
+        "**Failover**: VRRP, HSRP, keepalived and cloud floating IPs send gratuitous ARP so that switches and hosts learn the new MAC at once.",
+        "**Switch security**: Dynamic ARP Inspection checks ARP packets against the DHCP snooping binding table and drops forged ones. Port security and static bindings are alternatives.",
+        "**Network scanning**: `arp-scan` and `nmap -sn` on a local subnet use ARP because hosts that block ICMP still answer ARP.",
+        "**Data center overlays**: EVPN suppresses ARP broadcasts by having leaf switches answer from a learned IP to MAC table.",
+        "**Debugging**: `ip neigh show`, `arp -a` and `tcpdump -n arp` are the first tools for 'host on my subnet is unreachable'."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why is ARP a broadcast?** The requester does not yet know the target's MAC, so it must ask everybody on the segment.",
+        "**Is the reply broadcast too?** No. The responder knows the requester's MAC from the request and unicasts back.",
+        "**What layer is ARP?** It sits between Layer 2 and 3. It rides directly in Ethernet (EtherType 0x0806), not inside IP.",
+        "**How does a host reach an address on another subnet?** It ARPs for the default gateway and sends the frame to the gateway's MAC while keeping the remote IP as the destination address.",
+        "**What is gratuitous ARP for?** Duplicate-address detection and refreshing neighbors' caches after an IP or MAC change.",
+        "**How do you stop ARP spoofing?** Dynamic ARP Inspection, static entries for critical hosts, port security and encrypted protocols above.",
+        "**What replaced ARP in IPv6?** Neighbor Discovery, using ICMPv6 neighbor solicitation to a solicited-node multicast address."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Gratuitous ARP",
-      "summary": "A host announcing itself.",
+      "title": "The ARP packet field by field",
+      "summary": "Each field of the 28-byte IPv4 over Ethernet message.",
       "sections": [
         {
-          "body": "A host sends an ARP request (or unsolicited reply) for its own IP. It detects duplicate addresses and updates neighbours' caches after a failover, NIC change, or virtual IP move, as used by VRRP/HSRP."
+          "body": "Because HLEN and PLEN are explicit, the same packet layout describes any pair of address families, a design choice RFC 826 made on purpose. A receiver should reject a packet whose lengths do not match what it expects.",
+          "bullets": [
+            "**Hardware type (2 bytes)**: 1 for Ethernet.",
+            "**Protocol type (2 bytes)**: 0x0800 for IPv4, the same values as EtherType.",
+            "**HLEN (1 byte)** and **PLEN (1 byte)**: address lengths, 6 and 4.",
+            "**Operation (2 bytes)**: 1 request, 2 reply (3 and 4 are RARP, 8 and 9 are Inverse ARP).",
+            "**SHA, SPA, THA, TPA**: sender hardware, sender protocol, target hardware, target protocol addresses."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Worked example: first ping to a neighbor",
+      "summary": "Trace the frames, in order, when A pings B.",
+      "sections": [
+        {
+          "body": "Step 1: A runs `ping 192.168.1.20`. IP decides the target is on-link and the cache has no entry, so A queues the ICMP echo. Step 2: A broadcasts the ARP request, 42 content bytes padded to 60 on the wire. Step 3: every host receives it; all but B discard it. B updates its cache with A's mapping. Step 4: B unicasts the reply. Step 5: A caches B's MAC and sends the queued echo request in an Ethernet frame addressed to B's MAC. Step 6: B replies to the echo using its already learned entry, so no further ARP is needed. The first ping typically takes one extra round trip, which is why the first RTT in a ping run is often longer."
+        }
+      ]
+    },
+    {
+      "title": "ARP cache states and timers",
+      "summary": "How an OS decides when to trust or recheck an entry.",
+      "sections": [
+        {
+          "body": "Linux models each neighbor as a small state machine: INCOMPLETE (a request is outstanding), REACHABLE (confirmed recently), STALE (aged, usable but unverified), DELAY (traffic was just sent on a stale entry, give upper layers a chance to confirm), PROBE (sending unicast probes), and FAILED. Upper-layer confirmation, for example a TCP ACK, keeps an entry reachable without any ARP traffic. Compare with routers that keep entries for hours: a long timeout cuts broadcasts but makes failover slow if a gratuitous ARP is lost."
+        }
+      ]
+    },
+    {
+      "title": "Gratuitous ARP and failover",
+      "summary": "Announcing a mapping without being asked.",
+      "sections": [
+        {
+          "body": "A gratuitous ARP puts the host's own IP in both SPA and TPA, and broadcasts it. Neighbors that already have an entry for that IP overwrite the MAC; others may ignore it, depending on the OS. It serves three jobs: detect a duplicate address (if anyone replies, there is a conflict), refresh caches after a NIC swap, and move traffic during failover. Switches also see the frame and update their MAC table, so even the Layer 2 path converges. Cloud and virtual platforms often send several in a row to be safe."
         }
       ]
     },
     {
       "title": "Proxy ARP",
-      "summary": "One device answers for another.",
+      "summary": "Router answers on behalf of other hosts.",
       "sections": [
         {
-          "body": "A router answers ARP requests for hosts behind it so devices without a gateway configured still reach them. It hides topology but enlarges ARP tables and broadcast domains, so it is mostly legacy."
+          "body": "With proxy ARP enabled on an interface, the router replies to requests for addresses it can reach through another interface, returning its own MAC. The asking host thinks the target is on-link and sends the frame to the router, which forwards it normally. It was a stopgap before subnetting was common and for dial-up and VPN clients that appear on a LAN. Today it usually causes trouble: host tables grow, spoofing is easy, and a misconfigured mask goes unnoticed. Most vendors now disable it by default."
         }
       ]
     },
     {
-      "title": "ARP spoofing and defences",
-      "summary": "No authentication.",
+      "title": "ARP spoofing and defenses",
+      "summary": "Poisoning caches to intercept traffic.",
       "sections": [
         {
-          "body": "Any host can send a forged reply, poisoning caches so traffic flows through an attacker (man in the middle). Defences: Dynamic ARP Inspection on switches (validates against DHCP snooping bindings), static entries for critical hosts, and end-to-end encryption such as TLS."
+          "body": "The attacker sends forged replies saying 'the gateway's IP is at my MAC' to the victim and 'the victim's IP is at my MAC' to the gateway. Both caches update because ARP has no authentication, and the attacker forwards traffic between them, reading or editing it. Defenses sit at the switch: Dynamic ARP Inspection validates every ARP packet against trusted DHCP bindings, port security caps MACs per port, and IP source guard blocks spoofed source addresses. On hosts, static entries for the gateway help in small networks. End-to-end encryption (TLS, SSH) limits what a successful poisoning can reveal."
         }
       ]
     },
     {
-      "title": "IPv6 equivalent",
-      "summary": "Neighbor Discovery.",
+      "title": "Neighbor Discovery for IPv6",
+      "summary": "How IPv6 does the same job.",
       "sections": [
         {
-          "body": "IPv6 has no ARP. Neighbor Solicitation and Advertisement messages in ICMPv6 (RFC 4861) use solicited-node multicast groups instead of broadcast, and can be secured with SEND."
+          "body": "IPv6 uses ICMPv6 Neighbor Solicitation (type 135) and Neighbor Advertisement (type 136) instead of ARP. The request goes to a solicited-node multicast address `ff02::1:ffXX:XXXX`, built from the low 24 bits of the target address, so only hosts whose addresses share those bits even process it. That removes the broadcast-to-everyone cost of ARP. NDP also covers router discovery, address autoconfiguration, duplicate address detection and redirects. RFC 4861 defines it, and SEND (RFC 3971) adds cryptographic protection."
         }
       ]
     },
     {
-      "title": "Inspecting the cache",
-      "summary": "Commands.",
+      "title": "Reading ARP in captures and tools",
+      "summary": "Commands and filters for troubleshooting.",
       "sections": [
         {
-          "body": "Linux: `ip neigh show`. Windows: `arp -a`. Entries move through states such as REACHABLE, STALE, and FAILED as they age or fail to resolve.",
-          "code": "$ ip neigh show\n192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE"
+          "body": "Signs of trouble in a capture: many requests with no reply (host down or wrong VLAN), replies from two different MACs for one IP (duplicate address or spoofing), and a steady stream of requests for the same IP (cache entry not being kept).",
+          "code": "ip neigh show                     # Linux neighbor table with state\nip neigh flush dev eth0           # clear cached entries\narp -a                            # BSD, macOS, Windows view\narping -I eth0 192.168.1.20       # send ARP requests, check who answers\ntcpdump -n -e arp                 # show MACs and ARP fields\n# Wireshark filters: arp.opcode == 1   arp.duplicate-address-detected"
         }
       ]
     }
   ],
   "takeaways": [
-    "ARP resolves an IPv4 address to a MAC address on the local segment only.",
-    "Request is broadcast; reply is unicast; results are cached with a timeout.",
-    "For remote destinations ARP resolves the default gateway.",
-    "ARP is unauthenticated, so use DAI and encryption."
+    "ARP maps a next-hop IPv4 address to a MAC address, only on the local broadcast domain.",
+    "A request is a broadcast with an all-zero target MAC; the reply is a unicast to the requester.",
+    "The packet is 28 bytes: hardware type 1, protocol type 0x0800, lengths 6 and 4, opcode 1 or 2, then four addresses.",
+    "For off-link destinations a host ARPs for the default gateway, not for the remote address.",
+    "ARP has no authentication, so spoofing is easy; Dynamic ARP Inspection is the switch-level defense.",
+    "Gratuitous ARP announces a mapping and is used for duplicate detection and failover.",
+    "IPv6 replaces ARP with Neighbor Discovery over ICMPv6 and solicited-node multicast."
+  ],
+  "practice": [
+    {
+      "title": "Capture an ARP exchange and label each field, noting which frame is broadcast and which unicast",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Show the ARP cache before and after pinging a neighbor and explain the extra latency on the first ping",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain what host A sends on the wire to reach 10.0.5.9 when its address is 10.0.1.7/24",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Parse a 42-byte ARP hex dump by hand and decide whether it is a request, reply or gratuitous ARP",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why a duplicate IP causes intermittent loss and how you would prove it from a capture",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write C code that builds a valid ARP request frame for a given IP and sends it on a raw socket",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design the switch configuration that blocks ARP spoofing on an access VLAN",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compare ARP with IPv6 Neighbor Discovery and explain why solicited-node multicast scales better",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
       "label": "RFC 826: An Ethernet Address Resolution Protocol",
-      "url": "https://www.rfc-editor.org/rfc/rfc826"
+      "url": "https://www.rfc-editor.org/rfc/rfc826.txt"
+    },
+    {
+      "label": "RFC 5227: IPv4 Address Conflict Detection",
+      "url": "https://www.rfc-editor.org/rfc/rfc5227"
     },
     {
       "label": "RFC 4861: Neighbor Discovery for IP version 6",
@@ -97,24 +225,6 @@
     {
       "label": "Reference: Ethernet frame (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Ethernet_frame"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Capture an ARP exchange in Wireshark and label each field",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Show the ARP cache before and after pinging a neighbour",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Build a raw ARP request with scapy",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Detect ARP spoofing from duplicate MAC entries",
-      "difficulty": "Hard"
     }
   ]
 }

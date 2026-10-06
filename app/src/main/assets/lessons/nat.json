@@ -1,86 +1,219 @@
 {
-  "summary": "NAT rewrites IP addresses (and usually ports) as packets cross a router so many hosts on a private network can share one public address. It conserves IPv4 addresses but breaks the end-to-end model.",
+  "summary": "Network Address Translation (NAT, RFC 3022) rewrites IP addresses, and usually transport ports, in packets as they cross a router so that many hosts with private addresses can share a few public ones. It was the stopgap that kept IPv4 alive after address exhaustion, and it is now in every home router, cloud VPC gateway and carrier-grade deployment. NAT breaks the end-to-end model, so you need to know how its translation table works, why inbound connections fail, and how STUN, port forwarding and ALGs work around it.",
   "sections": [
     {
-      "heading": "Basic NAT versus NAPT",
-      "body": "RFC 3022 defines two traditional forms.",
+      "heading": "Overview",
+      "body": "IPv4 has about 4.3 billion addresses, and by the early 1990s it was clear they would run out. Part of the answer was CIDR and aggregation (RFC 4632); another part was reuse: RFC 1918 reserved three blocks that anyone may use inside their own network without coordination, 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16. Packets with those source addresses cannot be routed on the public Internet, so a device on the border has to translate them. NAT, specified for the traditional case in RFC 3022, does this: it keeps a table that maps inside addresses to outside addresses, rewrites headers on the way out, and reverses the rewrite on the way back. The most common form is NAPT (network address and port translation, also called PAT or masquerading), which lets one public address serve tens of thousands of simultaneous connections by also rewriting the source port. The side effects are significant. Inbound connections are not possible unless a mapping exists, some protocols embed addresses in their payloads, and the router now holds per-flow state. This lesson explains the mechanism, the variants (basic NAT, NAPT, twice NAT, carrier-grade NAT, NAT64), behaviour classes that matter for peer-to-peer, and the pitfalls interviewers like."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Basic NAT: one-to-one mapping of private to public addresses; each internal host needs its own public address while it is active.",
-        "NAPT (PAT, 'NAT overload'): maps (private IP, port) to (public IP, assigned port), so thousands of hosts share one public address, distinguished by port."
+        "**Inside (private) and outside (public) realms**: the inside network uses private addresses; the outside realm is the Internet or a provider network. The NAT device sits on the boundary.",
+        "**Inside local, inside global**: the same host seen from two sides. Inside local is its private address (192.168.1.20), inside global is the public address it is translated to (203.0.113.5).",
+        "**Translation table or mapping**: entries of the form (private IP, private port, protocol) to (public IP, public port), with a timeout. Linux calls this connection tracking (conntrack).",
+        "**Basic NAT**: translates only the IP address, one to one or from a pool. It needs as many public addresses as simultaneous inside hosts.",
+        "**NAPT**: translates address and port (or ICMP query identifier), many to one. This is what home routers do.",
+        "**Source NAT (SNAT) and destination NAT (DNAT)**: SNAT changes the source of outbound traffic; DNAT changes the destination of inbound traffic (port forwarding). Both are applied to the same flow in opposite directions.",
+        "**Static versus dynamic mapping**: static mappings are configured and permanent (a published server); dynamic ones are created when an inside host sends the first packet and expire after idle time.",
+        "**Bi-directional and twice NAT**: RFC 3022 describes outbound-only traditional NAT, a bi-directional variant that also allows inbound sessions via DNS-assisted static mappings, and twice NAT which rewrites both source and destination, used when two networks have overlapping addresses.",
+        "**ALG (application level gateway)**: code in the NAT that rewrites addresses embedded in payload, such as FTP PORT commands or SIP SDP bodies.",
+        "**CGNAT (carrier-grade NAT)**: an ISP-scale NAT sharing public addresses among customers, using the 100.64.0.0/10 shared address space of RFC 6598 on the customer side."
       ]
     },
     {
-      "heading": "Outbound translation",
-      "body": "When an internal host opens a connection, the NAT creates a binding and rewrites the source.",
-      "code": "inside host      NAT                      outside server\n10.0.0.5:51000 -> [203.0.113.1:62001]   -> 198.51.100.7:443\n   table: 10.0.0.5:51000 <-> 203.0.113.1:62001 (TCP)"
+      "heading": "How It Works",
+      "body": "Follow a single outbound connection through a NAPT device. A laptop at 192.168.1.20 opens a TCP connection from source port 51000 to a web server at 198.51.100.7 port 443. The router has public address 203.0.113.5. The first packet (SYN) arrives on the inside interface. The router looks for a mapping; finding none, it allocates a public port, say 40001, stores the mapping (TCP, 192.168.1.20:51000) to 203.0.113.5:40001 together with the remote endpoint, rewrites the source address and port, incrementally updates the IP and TCP checksums, and forwards. When the server replies to 203.0.113.5:40001, the router looks up the mapping in reverse, rewrites the destination to 192.168.1.20:51000 and forwards inside. Every later packet of the flow takes the same translation. The mapping lives until a FIN and RST handshake completes or an idle timer expires. Packets from outside that match no mapping have no inside target, so they are dropped, which is the accidental firewall effect of NAT.\n\nThe checksum rewrite is cheap because the Internet checksum is a one's complement sum: changing a 16-bit field from m to m' only requires HC' = ~(~HC + ~m + m') as in RFC 1624, instead of re-summing the packet. The TCP and UDP checksums cover a pseudo-header with the source and destination addresses, so they must be updated whenever an address changes, and the IP header checksum as well. Below is a small C model of the outbound path and mapping lookup.",
+      "code": "Outbound:\n  before  src 192.168.1.20:51000   dst 198.51.100.7:443\n  after   src 203.0.113.5:40001    dst 198.51.100.7:443\nReturn:\n  before  src 198.51.100.7:443     dst 203.0.113.5:40001\n  after   src 198.51.100.7:443     dst 192.168.1.20:51000\n\nTable entry: TCP 192.168.1.20:51000 <-> 203.0.113.5:40001 -> 198.51.100.7:443\n\nstruct map {\n    uint32_t in_ip;  uint16_t in_port;\n    uint16_t out_port; uint8_t proto; time_t last_seen;\n};\nstatic struct map tbl[65536];  /* indexed by out_port */\n\nuint16_t nat_out(uint8_t proto, uint32_t ip, uint16_t port) {\n    for (int p = 1024; p < 65536; p++) {\n        struct map *m = &tbl[p];\n        if (m->out_port == p && m->proto == proto &&\n            m->in_ip == ip && m->in_port == port) {\n            m->last_seen = time(NULL);\n            return p;                  /* existing mapping */\n        }\n    }\n    for (int p = 1024; p < 65536; p++)\n        if (tbl[p].out_port == 0) {    /* free slot */\n            tbl[p] = (struct map){ip, port, p, proto, time(NULL)};\n            return p;\n        }\n    return 0;                          /* ports exhausted */\n}"
     },
     {
-      "heading": "Inbound translation",
-      "body": "A reply to 203.0.113.1:62001 matches the binding, so the NAT rewrites the destination back to 10.0.0.5:51000 and forwards it. Packets with no matching binding are dropped, which is why NAT acts as an accidental inbound firewall."
-    },
-    {
-      "heading": "Checksums",
-      "body": "TCP and UDP checksums include a pseudo-header with the IP addresses, so the NAT must adjust them. RFC 3022 explains an incremental update using the arithmetic difference of the old and new values rather than recomputing from scratch."
-    },
-    {
-      "heading": "Limitations",
+      "heading": "Variants & Types",
       "bullets": [
-        "Protocols that embed addresses in the payload (FTP active mode, SIP, H.323) need an ALG to fix the payload and sequence numbers.",
-        "ICMP errors contain an embedded header that must also be translated.",
-        "Fragments after the first lack ports, so mapping fails without reassembly.",
-        "Inbound connections need port forwarding or traversal tricks.",
-        "Bindings expire after idle time; long-lived idle connections need keepalives."
+        "**Static NAT (one to one)**: one inside address to one outside address, permanent, usable for inbound; typical for a public server behind a firewall.",
+        "**Dynamic NAT (pool)**: inside hosts borrow addresses from a pool; concurrency limited by pool size.",
+        "**NAPT, overload, PAT, masquerade**: many to one using ports. Linux: `iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE`.",
+        "**Port forwarding (DNAT)**: map outside port 8080 to inside 192.168.1.50:80 so Internet clients can reach an internal server.",
+        "**Twice NAT**: rewrites both ends; solves overlapping address spaces after a merger or between two VPNs using 10.0.0.0/8.",
+        "**Cone NAT classes (RFC 3489 terms)**: full cone (any outside host may send to the mapped port), restricted cone (only hosts the inside host has sent to), port-restricted cone (host and port must match), symmetric (a different mapping per destination, so a mapped port is only usable by that destination). RFC 4787 replaces these labels with mapping behaviour (endpoint-independent, address-dependent, address and port-dependent) and filtering behaviour.",
+        "**Carrier-grade NAT**: ISP-side NAPT sharing one address among tens to hundreds of customers; two layers of NAT in sequence (NAT444) when the home router also translates.",
+        "**NAT64 and DNS64**: translate IPv6-only clients to IPv4 servers (RFC 6146), used on mobile networks.",
+        "**NAT66 and NPTv6**: prefix translation for IPv6, rarely recommended."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Per-packet cost**: a hash lookup of the 5-tuple plus a header rewrite and incremental checksum, O(1); hardware NAT forwards at line rate.",
+        "**State**: one entry per active flow. A conntrack entry costs about 300 bytes in Linux, so one million flows is about 300 MB. The default table size is often 65,536 to 262,144, and a busy gateway needs `nf_conntrack_max` raised.",
+        "**Port space**: 16-bit ports give at most 65,535 per IP and protocol, about 64,000 usable above 1023. With endpoint-independent mapping one public IP supports roughly 64,000 simultaneous flows from all clients; address-dependent mapping lets the same port be reused for different destinations.",
+        "**CGNAT sizing**: ISPs assign each subscriber a port block, for example 1,000 to 4,000 ports, so 16 to 64 subscribers can share one public IP.",
+        "**Timeouts**: RFC 5382 requires TCP established-connection idle timeout of at least 2 hours 4 minutes; RFC 4787 requires UDP timeouts of at least 2 minutes, with 5 minutes recommended. Short UDP timeouts force apps to send keepalives every 20 to 30 seconds.",
+        "**Latency**: negligible for flows already in the table; a first packet needs table allocation, microseconds in software."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**No inbound connectivity**: peers behind NAT cannot accept connections unless a mapping exists. This breaks naive peer-to-peer, VoIP and games and drives STUN, TURN, UPnP and ICE.",
+        "**Protocols that embed addresses**: FTP active mode, SIP/SDP, H.323, IRC DCC and PPTP carry IPs or ports in payloads. Without an ALG the peer receives a private address. IPsec ESP has no ports to rewrite, so NAT traversal wraps ESP in UDP 4500 (NAT-T).",
+        "**Checksum errors**: forgetting to update the TCP or UDP pseudo-header checksum after address translation produces packets that every receiver discards. Offload engines (checksum offload) can hide this in tests.",
+        "**Fragmentation**: only the first fragment carries ports, so NAT must reassemble or track the IP ID to translate later fragments; many devices drop fragments.",
+        "**Hairpinning**: an inside host that connects to the public address of another inside host must have its connection looped back through NAT. Without hairpin support, `http://public-ip` works from outside but not from inside.",
+        "**Port exhaustion**: a single client that opens thousands of short connections, or a CGNAT block that is too small, runs out of ports; new connections fail while old ones work. Mitigations: larger port blocks, shorter timeouts for TIME_WAIT and UDP, connection pooling.",
+        "**NAT is not a firewall**: the default drop of unsolicited inbound packets is a side effect; static mappings, UPnP and hole-punching all open paths. Always write explicit firewall rules.",
+        "**Logging and attribution**: with CGNAT many users share an IP, so abuse reports need timestamp plus source port, and ISPs must log mappings."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Home and office routers**: one public address, DHCP-assigned private subnet, PAT out and optional port forwards in.",
+        "**Cloud VPCs**: AWS NAT Gateway, Azure NAT Gateway and Google Cloud NAT give private subnets outbound-only Internet access; each public IP supports about 55,000 simultaneous connections per destination (AWS) before ErrorPortAllocation.",
+        "**Kubernetes and containers**: Docker's bridge network and kube-proxy use SNAT/DNAT through iptables or nftables for pod and service traffic.",
+        "**Mobile carriers and ISPs**: CGNAT with 100.64.0.0/10, and NAT64 on IPv6-only mobile networks.",
+        "**Overlapping networks and mergers**: twice NAT between two sites that both use 10.0.0.0/16.",
+        "**Load balancers**: DNAT to a pool of backends, with SNAT so replies return through the balancer.",
+        "**Peer-to-peer apps**: WebRTC uses ICE with STUN and TURN servers to establish connections through NATs."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What does NAT do?** Rewrites addresses (and ports) between a private and a public realm using a translation table, to conserve public IPv4 addresses.",
+        "**NAT versus PAT?** Basic NAT maps address to address; PAT multiplexes many inside hosts onto one address using unique source ports.",
+        "**Why can't I reach a host behind NAT from outside?** No mapping exists until the inside host sends first; fix with port forwarding, UPnP, or hole punching.",
+        "**How does the router know where a reply goes?** The destination public IP and port are looked up in the table to recover the private IP and port.",
+        "**What are the NAT types?** Full cone, restricted cone, port-restricted cone, symmetric; symmetric is hardest for peer-to-peer.",
+        "**Does NAT improve security?** Marginally and by accident; it hides internal addressing but is not a substitute for a stateful firewall.",
+        "**How does IPv6 change this?** Abundant addresses make NAT unnecessary; global addresses and a stateful firewall give reachability with control."
       ]
     }
   ],
   "subtopics": [
     {
+      "title": "Private address ranges",
+      "summary": "RFC 1918 blocks, shared CGNAT space and other special addresses.",
+      "sections": [
+        {
+          "body": "RFC 1918 reserves 10.0.0.0/8 (16.7 million addresses), 172.16.0.0/12 (about 1 million, covering 172.16.0.0 to 172.31.255.255) and 192.168.0.0/16 (65,536). RFC 6598 adds 100.64.0.0/10 for carrier-grade NAT between an ISP and its subscribers; it is neither private nor public, and CPE must not use it on the LAN. Link-local 169.254.0.0/16 is for autoconfiguration when DHCP fails, 127.0.0.0/8 is loopback, and TEST-NET blocks (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) are for documentation, which is why the examples use them. Routers must not forward private source addresses to the public Internet, and edge filters (bogon lists) drop them."
+        }
+      ]
+    },
+    {
+      "title": "NAPT table lifecycle",
+      "summary": "Creation, refresh and expiry of mappings.",
+      "sections": [
+        {
+          "body": "A mapping is created on the first outbound packet. For TCP, the table tracks connection state: SYN seen, established, FIN or RST. Established idle entries survive at least 2 hours 4 minutes (RFC 5382), but transitory states (half-open, closing) get short timers around 4 minutes or less, which stops a SYN flood from filling the table. UDP entries refresh on every packet in either direction and time out after about 30 seconds to 5 minutes depending on the device. ICMP query mappings use the echo identifier as the port equivalent and expire after about 60 seconds. When the table fills, devices either drop new flows or evict the oldest, which is why timeouts and table size are tuning parameters in production."
+        }
+      ]
+    },
+    {
       "title": "Port forwarding and DNAT",
-      "summary": "Reaching an inside server.",
+      "summary": "Publishing an inside service through a NAT.",
       "sections": [
         {
-          "body": "A static binding maps public IP:port to an internal IP:port so outside clients can reach a server. Linux: `iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 10.0.0.5:80`."
+          "body": "To let outside clients reach a server at 192.168.1.50:80 you create a static destination mapping: public 203.0.113.5:8080 to private 192.168.1.50:80. The router rewrites the destination of inbound packets and the source of outbound replies. On Linux this is a PREROUTING rule. If inside clients should also reach the server using the public name, the NAT needs hairpin handling or split-horizon DNS that answers with the private address. The same DNAT technique implements load balancing: one virtual IP translated to a pool of backends, sometimes with SNAT to force replies through the balancer.",
+          "code": "# Linux nftables / iptables\niptables -t nat -A PREROUTING -p tcp -d 203.0.113.5 --dport 8080 \\\n         -j DNAT --to-destination 192.168.1.50:80\niptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE\nconntrack -L     # list live mappings"
         }
       ]
     },
     {
-      "title": "Source NAT on Linux",
-      "summary": "MASQUERADE.",
+      "title": "NAT behaviour classes and hole punching",
+      "summary": "Cone versus symmetric NATs and what they mean for peers.",
       "sections": [
         {
-          "body": "`iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE` rewrites the source of outgoing packets to the interface's address and tracks connections in conntrack."
+          "body": "In a full cone NAT, once an inside socket has a mapping, any outside host can send to the mapped address. A restricted cone NAT only admits packets from addresses the inside host has already sent to, and port-restricted cone also checks the remote port. A symmetric NAT creates a separate mapping per destination, so the port a server sees is useless to a third peer. UDP hole punching has both peers send to each other's mapped address learned through a rendezvous server; the outbound packets create the mapping and filter state needed for the peer's packets to pass. It works with the three cone types and fails when both sides are symmetric, where a relay (TURN) is needed. RFC 4787 asks NATs to keep endpoint-independent mapping, which maximises the chance that punching works."
         }
       ]
     },
     {
-      "title": "NAT types and traversal",
-      "summary": "Peer-to-peer problems.",
+      "title": "STUN, TURN and ICE",
+      "summary": "The toolkit WebRTC uses to traverse NATs.",
       "sections": [
         {
-          "body": "Full cone, restricted cone, port-restricted cone, and symmetric NATs differ in who may use a mapping. VoIP and games use STUN, TURN, and ICE (RFC 8445) to punch through or relay; symmetric NAT is the hardest."
+          "body": "STUN lets a host learn its public mapped address and port by asking a server on the Internet: the server replies with the source address it saw. TURN allocates a relay address on a public server and forwards traffic for hosts that cannot be reached directly; it always works but costs bandwidth. ICE collects every candidate address (host, server-reflexive from STUN, relayed from TURN), exchanges them through signalling, tests pairs with connectivity checks and picks the best working one, preferring direct over relayed. Typical outcomes: most WebRTC calls connect directly and a minority fall back to TURN. Related port-mapping protocols let applications ask the router for a mapping: UPnP IGD, NAT-PMP and PCP."
         }
       ]
     },
     {
-      "title": "CGNAT and IPv6",
-      "summary": "Scaling and the way out.",
+      "title": "Application level gateways",
+      "summary": "Rewriting addresses inside payloads.",
       "sections": [
         {
-          "body": "Carrier-grade NAT (100.64.0.0/10, RFC 6598) shares one address across many customers. IPv6 restores end-to-end addressing and removes the need for NAT, using firewalls for protection instead."
+          "body": "FTP's active mode sends a PORT command containing the client's IP and port as ASCII text. A NAT that only edits headers would let the server try to connect to an unreachable private address. An FTP ALG inspects the control channel, rewrites the text with the public address and a new port, creates the mapping for the data connection, and fixes TCP sequence numbers when the text length changes. The same idea applies to SIP, RTSP, H.323 and ICMP error messages, whose embedded original header must be translated too. ALGs are fragile: they break with encryption, new protocol versions and non-standard ports, so modern protocols avoid embedding addresses and use passive modes or STUN instead."
+        }
+      ]
+    },
+    {
+      "title": "Carrier-grade NAT",
+      "summary": "NAT444 at ISP scale and its consequences.",
+      "sections": [
+        {
+          "body": "When an ISP runs out of public IPv4 addresses it places a large NAT in its network and gives subscribers addresses from 100.64.0.0/10. The subscriber's home router translates once, and the CGNAT translates again, giving the chain private to shared to public, called NAT444. Consequences: port forwarding on the home router no longer helps because the outer NAT blocks inbound; many users share an IP, so IP-based rate limits, blocklists and geolocation misbehave; ISPs must log subscriber, port block and time for lawful attribution; and per-subscriber port quotas can break heavy applications. Deterministic NAT assigns a fixed port range per subscriber, reducing logging. Dual-stack with IPv6 offloads most traffic from the CGNAT, and 464XLAT is a deployment that combines NAT64 and a client-side translator."
+        }
+      ]
+    },
+    {
+      "title": "NAT64, NPTv6 and IPv6",
+      "summary": "Translation in an IPv6 world.",
+      "sections": [
+        {
+          "body": "IPv6 was designed to remove the need for NAT: every host can have a global address and be protected by a stateful firewall. Translation still appears in two places. NAT64 (RFC 6146) with DNS64 lets IPv6-only clients reach IPv4 servers: DNS64 synthesises AAAA records by embedding the IPv4 address in a /96 prefix such as 64:ff9b::/96, and the NAT64 gateway translates between families. NPTv6 (RFC 6296) swaps one /48 prefix for another without touching the rest of the address and without ports, used for multihoming and renumbering. Both are far simpler than NAPT because they need little or no state."
         }
       ]
     }
   ],
   "takeaways": [
-    "NAT rewrites addresses; NAPT also rewrites ports to share one public IP.",
-    "A translation table binds inside and outside tuples and expires idle entries.",
-    "Checksums must be adjusted; embedded addresses need ALGs.",
-    "NAT breaks inbound reachability; IPv6 removes the need for it."
+    "NAT rewrites source or destination addresses (and ports in NAPT) using a translation table, so many private hosts share few public IPv4 addresses.",
+    "RFC 1918 private ranges are 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16; 100.64.0.0/10 is shared space for CGNAT.",
+    "Outbound packets create mappings; unsolicited inbound packets have none and are dropped, so inbound services need port forwarding or traversal tricks.",
+    "NAT must update IP and TCP or UDP checksums, and ALGs must fix addresses embedded in payloads such as FTP and SIP.",
+    "Cone NATs (full, restricted, port-restricted) allow hole punching; symmetric NAT usually forces a TURN relay.",
+    "Port space (about 64,000 ports per IP and protocol) and conntrack size are the practical scaling limits.",
+    "NAT is not a firewall, and IPv6 removes the need for it apart from NAT64 and prefix translation."
+  ],
+  "practice": [
+    {
+      "title": "Translate a packet by hand: given a table entry and an outbound TCP packet, write the rewritten source address and port",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "List the three RFC 1918 ranges and explain why 172.32.0.1 is not private",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why a laptop behind a home router cannot be pinged from the Internet",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write iptables rules for masquerading a LAN and forwarding port 2222 to an internal SSH server",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compute the new TCP checksum after changing one 16-bit field using the RFC 1624 formula",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Size conntrack for a gateway handling 200,000 flows, and pick timeouts that survive a SYN flood",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Two peers behind symmetric NATs want a direct UDP link: describe why hole punching fails and what ICE does instead",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a CGNAT port-block allocation for 10,000 subscribers using 160 public IPs and justify the block size and logging",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "RFC 3022: Traditional IP Network Address Translator",
-      "url": "https://www.rfc-editor.org/rfc/rfc3022"
+      "label": "RFC 3022: Traditional IP Network Address Translator (Traditional NAT)",
+      "url": "https://www.rfc-editor.org/rfc/rfc3022.txt"
+    },
+    {
+      "label": "RFC 1918: Address Allocation for Private Internets",
+      "url": "https://www.rfc-editor.org/rfc/rfc1918"
     },
     {
       "label": "RFC 4787: NAT Behavioral Requirements for UDP",
@@ -89,24 +222,6 @@
     {
       "label": "RFC 5382: NAT Behavioral Requirements for TCP",
       "url": "https://www.rfc-editor.org/rfc/rfc5382"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Fill in the translation table for three hosts sharing one IP",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Configure port forwarding with iptables",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Explain why active FTP breaks behind NAT",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Compare cone and symmetric NAT for peer-to-peer",
-      "difficulty": "Hard"
     }
   ]
 }

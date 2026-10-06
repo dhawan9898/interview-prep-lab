@@ -1,94 +1,244 @@
 {
-  "summary": "DHCP automatically gives a host an IP address, mask, gateway, and DNS servers for a limited lease. A client finds a server with a broadcast, accepts an offer, and renews before the lease expires.",
+  "summary": "DHCP (RFC 2131) hands a host an IPv4 address, subnet mask, default gateway, DNS servers and other settings on a time-limited lease. A client with no address broadcasts a DISCOVER, picks one of the OFFERs, REQUESTs it and receives an ACK (the DORA exchange), then renews at half the lease time and rebinds at 87.5 percent. Nearly every laptop, phone and cloud instance boots through DHCP, and it is also a favourite target for rogue-server and starvation attacks.",
   "sections": [
     {
-      "heading": "The four-message exchange (DORA)",
-      "body": "RFC 2131 defines the sequence. Clients use UDP port 68 and servers port 67. The client has no address yet, so it sends from 0.0.0.0 to 255.255.255.255.",
-      "code": "Client                               Server\n  --- DHCPDISCOVER (broadcast) --->   find servers\n  <-- DHCPOFFER  (offers address)\n  --- DHCPREQUEST (broadcast) ---->   accept one offer\n  <-- DHCPACK    (lease details)       committed"
+      "heading": "Overview",
+      "body": "Configuring every host by hand does not scale and is error prone. The Dynamic Host Configuration Protocol, defined in RFC 2131 with options in RFC 2132, lets a server on the network lease out addresses and push configuration. It grew out of BOOTP (RFC 951) and keeps its packet layout, which is why the message has legacy fields such as `sname` and `file`.\n\nThe central problem is chicken and egg: the client needs an IP address to talk, and it is asking for one. DHCP solves it with link-layer broadcasts. The client sends from `0.0.0.0` port 68 to `255.255.255.255` port 67 and identifies itself by its MAC address (`chaddr`) or a client identifier option. A server replies with an offer, and nothing is final until the server acknowledges the client's request.\n\nAn address is **leased**, not owned. The server remembers the binding for a lease time, the client must renew it, and the server reclaims the address if the client disappears. That is how a pool of 200 addresses can serve thousands of devices that come and go."
     },
     {
-      "heading": "Why REQUEST is broadcast",
-      "body": "If several servers offered, the client's broadcast REQUEST names the chosen server so the others can withdraw their offers and free the address."
-    },
-    {
-      "heading": "What the ACK carries",
+      "heading": "Core Concepts",
       "bullets": [
-        "yiaddr: the assigned address.",
-        "Options: subnet mask (1), router (3), DNS servers (6), lease time (51), domain name (15), and more.",
-        "The transaction ID (xid) and client hardware address (chaddr) identify the client."
+        "**Lease**: a time-limited binding of an IP address (and options) to a client, tracked by the server with an expiry time.",
+        "**DORA**: the four messages Discover, Offer, Request, Acknowledge.",
+        "**Scope or pool**: the range of addresses a server may hand out for a subnet, minus exclusions.",
+        "**Reservation**: a static mapping from a MAC address or client ID to a fixed IP, still configured on the server.",
+        "**xid**: a 32-bit random transaction ID the client chooses so replies can be matched to requests.",
+        "**chaddr and client identifier**: the client hardware address (16-byte field) and the optional option 61 that identifies a client across interface changes.",
+        "**yiaddr**: 'your IP address', the address the server is giving the client. **ciaddr** is the client's current address (set only when it is already bound), **siaddr** is the next server for boot, and **giaddr** is the relay agent address.",
+        "**Server identifier (option 54)**: the IP of the server, used by the client to say which offer it accepted.",
+        "**Relay agent**: a router that forwards broadcasts as unicast to a server on another subnet and fills in giaddr.",
+        "**T1 and T2**: the renewal and rebinding timers, defaulting to 50 percent and 87.5 percent of the lease.",
+        "**Option**: a type-length-value item after the 236-byte fixed header and the magic cookie 99.130.83.99. Option 53 carries the message type; 255 ends the list."
       ]
     },
     {
-      "heading": "Lease lifecycle and timers",
+      "heading": "How It Works",
+      "body": "A laptop joins a network with a /24 and a server at 192.168.1.1. Messages travel over UDP: client port 68, server port 67. The MAC addresses and the transaction ID tie them together.",
       "bullets": [
-        "BOUND: the client uses the address and sets timers.",
-        "T1 = 50% of the lease: enter RENEWING and unicast a REQUEST to the original server.",
-        "T2 = 87.5%: if still unanswered, enter REBINDING and broadcast a REQUEST to any server.",
-        "At 100%: the lease expires, the client must stop using the address and restart in INIT.",
-        "DHCPRELEASE hands the address back early."
+        "**1. DISCOVER**: the client, in INIT, broadcasts from 0.0.0.0 to 255.255.255.255. It includes option 53=1, a client identifier, and a parameter request list (option 55) naming what it wants, for example mask, router and DNS. It may hint with option 50 (requested IP). The client sets the BROADCAST flag if it cannot receive unicast before it has an address.",
+        "**2. OFFER**: each server that has a free address for the subnet replies with option 53=2, yiaddr=192.168.1.50, lease time (51), server identifier (54) and the options asked for. It reserves the address for a short time. The client is now in SELECTING and gathers offers for a moment.",
+        "**3. REQUEST**: the client picks one offer and broadcasts option 53=3, with option 54 naming the chosen server and option 50 naming the offered address. Broadcast is deliberate: servers that lost see it and release their held addresses. The client is in REQUESTING.",
+        "**4. ACK**: the chosen server records the lease and replies option 53=5 with yiaddr, lease time and options. If anything is wrong it sends NAK (6) instead. The client moves to BOUND.",
+        "**5. Verification**: RFC 2131 says the client SHOULD probe the address with ARP before using it. If a reply comes, it sends DECLINE (type 4) and restarts; otherwise it announces itself with a gratuitous ARP and starts using the address.",
+        "**6. Renewal at T1**: at 50 percent of the lease the client unicasts a REQUEST (with ciaddr set) to the same server. An ACK extends the lease and resets T1 and T2.",
+        "**7. Rebinding at T2**: if the server was silent until 87.5 percent, the client broadcasts REQUEST to any server. An ACK from any server continues the lease.",
+        "**8. Expiry and release**: at 100 percent without an ACK the client must stop using the address and return to INIT. A polite client sends DHCPRELEASE when leaving."
+      ],
+      "code": "Client (0.0.0.0:68)                     Server (192.168.1.1:67)\n  -- DHCPDISCOVER  xid=0x3903F326  -->    broadcast  255.255.255.255\n  <- DHCPOFFER     yiaddr=192.168.1.50 --   lease=86400 s\n  -- DHCPREQUEST   opt50=.50 opt54=.1 -->   broadcast\n  <- DHCPACK       yiaddr=192.168.1.50 --   opts: mask,router,dns\n  (ARP probe .50, gratuitous ARP, BOUND)\n  ... T1 = 43200 s: unicast REQUEST -> ACK renews\n  ... T2 = 75600 s: broadcast REQUEST if no reply"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Dynamic allocation**: addresses come from a pool for a limited lease; the normal mode.",
+        "**Automatic allocation**: the server assigns a permanent address from the pool the first time a client asks (effectively an infinite lease).",
+        "**Manual allocation**: an administrator maps a MAC to an address; DHCP only delivers it.",
+        "**INIT-REBOOT**: a client that restarts with a still-valid remembered lease skips DISCOVER and broadcasts a REQUEST for its old address, with no server identifier. It gets an ACK, or a NAK if it moved to a different network.",
+        "**DHCPINFORM**: a host with a static address asks only for options.",
+        "**Relayed DHCP**: a relay agent forwards across routers, optionally adding option 82 (relay agent information, RFC 3046) such as the switch port.",
+        "**DHCPv6 (RFC 8415)**: uses UDP 546 (client) and 547 (server) with link-local multicast, messages Solicit, Advertise, Request, Reply, and works alongside SLAAC router advertisements.",
+        "**Fallback**: with no server, many hosts self-assign a 169.254.0.0/16 link-local address (RFC 3927)."
       ]
     },
     {
-      "heading": "Other messages",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "DHCPNAK: server says the requested address is invalid (client moved networks).",
-        "DHCPDECLINE: client found the offered address already in use (ARP probe) and rejects it.",
-        "DHCPINFORM: client has an address but wants configuration options only."
+        "**Message count**: 4 for a fresh lease, 2 per renewal.",
+        "**Size**: fixed header 236 bytes plus 4-byte magic cookie plus options; messages are padded to at least 300 bytes for BOOTP relay compatibility, and a typical packet on the wire is around 342 bytes with Ethernet, IP and UDP headers.",
+        "**Time to configure**: DORA itself is a few milliseconds on a LAN, but clients usually wait for an ARP probe and sometimes up to a second or more for offers. Wi-Fi association and 802.1X add more.",
+        "**Retransmission**: RFC 2131 suggests a backoff of 4, 8, 16, 32 and 64 seconds, each randomised by plus or minus 1 second, to avoid synchronised storms after a power cut.",
+        "**Lease arithmetic**: with a 24 hour lease, T1 is 12 h, T2 is 21 h. Server load scales with devices divided by lease time. 10,000 clients on an 8 hour lease each renew every 4 hours, about 0.7 requests per second.",
+        "**Pool sizing**: it must cover the peak number of active clients over the lease length, not the number of devices owned. Short leases (1 to 2 hours) suit guest Wi-Fi and conferences; long ones suit stable office networks."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Rogue DHCP server**: any host answering DISCOVER can steer clients to a malicious gateway or DNS. Defend with DHCP snooping on switches, which only allows server replies on trusted ports.",
+        "**Address starvation**: an attacker forging many MACs drains the pool. Limit MACs per port (port security) and rate-limit DHCP.",
+        "**Broadcast does not cross routers**: without a relay agent a remote subnet gets no addresses. Check `giaddr` and the relay's configuration.",
+        "**Pool exhaustion**: long leases and many transient devices leave no free addresses; the symptom is clients falling back to 169.254.x.x.",
+        "**Duplicate addresses**: a static host inside the pool collides with a leased one. Exclude statics from the range or reserve them; servers can ping before offering.",
+        "**Time sync assumptions**: lease times are durations relative to receipt, so they do not need synchronised clocks, but servers do stamp expirations and must keep their lease database consistent across restarts.",
+        "**Not honouring the REQUEST target**: a client accepting multiple offers, or a server ignoring option 54, wastes addresses.",
+        "**Stale DNS**: renewed or changed addresses must be updated in DNS (dynamic DNS updates), or names point at the wrong host.",
+        "**Mixing up REQUEST contexts**: the same message type means different things in SELECTING, INIT-REBOOT, RENEWING and REBINDING; the field combinations (ciaddr, option 50, option 54) tell them apart."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Home and office networks**: the router runs a DHCP server that provides gateway, DNS and lease for everything on Wi-Fi.",
+        "**Enterprises**: dedicated servers (ISC Kea, Windows Server DHCP, Infoblox) with scopes per VLAN, relays on routers, and reservations for printers and phones.",
+        "**Cloud VPCs**: instances receive their private address by DHCP from the virtual network; AWS DHCP option sets control DNS and domain.",
+        "**PXE booting**: options 66 and 67 or the next-server and file fields point a machine to a TFTP server and boot image, which is how fleets are installed.",
+        "**ISPs**: edge routers use DHCP (and DHCPv6 prefix delegation) to configure customer gateways.",
+        "**Debugging tools**: `dhclient -v`, `nmcli`, `journalctl -u NetworkManager`, `tcpdump -n -i eth0 port 67 or port 68`, and `ip addr` show the exchange, lease times and assigned options."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Name the four DHCP messages.** DISCOVER, OFFER, REQUEST, ACK.",
+        "**Which ports and transport?** UDP, server 67, client 68.",
+        "**Why is REQUEST broadcast?** So every offering server learns which offer was accepted and can free the others.",
+        "**How can a client without an IP use UDP?** It sends from 0.0.0.0 to the broadcast address using its MAC for identification, using raw or packet sockets.",
+        "**When does renewal happen?** T1 = 50 percent, unicast to the same server. T2 = 87.5 percent, broadcast to any server.",
+        "**What if the lease expires?** The client stops using the address and starts over from DISCOVER.",
+        "**How does DHCP work across subnets?** A relay agent forwards the broadcast as unicast and sets giaddr.",
+        "**What is DHCP snooping?** A switch feature that blocks DHCP server messages from untrusted ports and builds a binding table.",
+        "**DHCP versus BOOTP?** DHCP adds dynamic leases, options and reuse, but is wire compatible."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Relay agents",
-      "summary": "Crossing routers.",
+      "title": "DHCP message layout",
+      "summary": "The 236-byte BOOTP-style fixed header plus options.",
       "sections": [
         {
-          "body": "Broadcasts do not cross routers, so a relay agent on the client's subnet forwards requests to the server as unicast and records its own address in giaddr. The server uses giaddr to choose the right scope and replies via the relay."
+          "body": "All fields are big-endian. Variable data begins after the fixed header with the magic cookie.",
+          "code": "op(1)   htype(1)  hlen(1)  hops(1)\nxid (4)\nsecs(2)           flags(2)   <- top bit = BROADCAST\nciaddr(4)  client address (if already bound)\nyiaddr(4)  'your' address, assigned by server\nsiaddr(4)  next server (TFTP)\ngiaddr(4)  relay agent\nchaddr(16) client hardware address\nsname(64)  server host name (or options overflow)\nfile(128)  boot file name (or options overflow)\noptions    magic 63 82 53 63, then TLVs, ends with 255\n\nop: 1 = BOOTREQUEST (client to server), 2 = BOOTREPLY"
         }
       ]
     },
     {
-      "title": "Client states",
-      "summary": "INIT to BOUND.",
+      "title": "Important options",
+      "summary": "The options a client usually asks for.",
       "sections": [
         {
-          "body": "INIT -> SELECTING (collect offers) -> REQUESTING -> BOUND -> RENEWING -> REBINDING, with a return to INIT on NAK or expiry."
+          "body": "Options are TLVs: one byte code, one byte length, then data. Code 0 is padding and 255 is end.",
+          "bullets": [
+            "**1** subnet mask; **3** routers; **6** DNS servers; **12** host name; **15** domain name; **28** broadcast address.",
+            "**50** requested IP address; **51** lease time; **53** message type; **54** server identifier.",
+            "**55** parameter request list (what the client wants); **58** renewal T1; **59** rebinding T2; **61** client identifier.",
+            "**119** domain search list; **121** classless static routes; **66 and 67** TFTP server and boot file name.",
+            "**82** relay agent information, added by relays or switches."
+          ]
         }
       ]
     },
     {
-      "title": "Reservations and scopes",
-      "summary": "Server configuration.",
+      "title": "Message types in option 53",
+      "summary": "Eight values, with their direction.",
       "sections": [
         {
-          "body": "A scope is the pool and options for a subnet. Reservations bind a MAC address to a fixed IP so a device such as a printer always receives the same address."
+          "body": "Client to server: 1 DISCOVER, 3 REQUEST, 4 DECLINE (offered address is in use), 7 RELEASE (giving it up), 8 INFORM (options only). Server to client: 2 OFFER, 5 ACK, 6 NAK (request refused, the client must restart at INIT). The DECLINE case follows the client's ARP probe: if someone already answers for the offered address, the client declines it and, after a short pause, begins again."
         }
       ]
     },
     {
-      "title": "Security: rogue servers and starvation",
-      "summary": "Attacks and defences.",
+      "title": "Client state machine",
+      "summary": "INIT to BOUND and back.",
       "sections": [
         {
-          "body": "A rogue DHCP server can hand out a malicious gateway or DNS. Starvation attacks exhaust the pool with fake MACs. Switch features: DHCP snooping (only trusted ports may send server replies, and it builds a binding table) and port security."
+          "body": "The RFC 2131 states and transitions:",
+          "bullets": [
+            "**INIT**: no lease; send DISCOVER and move to SELECTING.",
+            "**SELECTING**: waiting for offers; on one, send REQUEST and move to REQUESTING.",
+            "**REQUESTING**: waiting for ACK; ACK leads to BOUND, NAK back to INIT.",
+            "**BOUND**: using the lease; at T1 go to RENEWING.",
+            "**RENEWING**: unicast REQUEST to the leasing server; ACK returns to BOUND; at T2 go to REBINDING.",
+            "**REBINDING**: broadcast REQUEST; ACK returns to BOUND; at expiry or NAK go to INIT.",
+            "**INIT-REBOOT and REBOOTING**: restart with a remembered lease; broadcast REQUEST, ACK leads to BOUND, NAK to INIT."
+          ]
         }
       ]
     },
     {
-      "title": "DHCPv6",
-      "summary": "IPv6 equivalent.",
+      "title": "Relay agents and option 82",
+      "summary": "Reaching a server on another subnet.",
       "sections": [
         {
-          "body": "DHCPv6 (RFC 8415) uses Solicit, Advertise, Request, and Reply on UDP 546/547. Often combined with SLAAC; prefix delegation hands routers a whole prefix."
+          "body": "A relay (often the default gateway, configured as an 'IP helper') listens for client broadcasts on its interface. It sets giaddr to the address of that interface, increments hops, optionally appends option 82 with circuit and remote IDs, and unicasts the packet to the configured server. The server uses giaddr to choose the scope (the address range for that subnet) and sends replies to giaddr on port 67, which the relay then delivers to the client on its local segment, broadcasting or unicasting to the client's MAC depending on the BROADCAST flag."
+        }
+      ]
+    },
+    {
+      "title": "Lease time and timer arithmetic",
+      "summary": "Working out T1, T2 and expiry.",
+      "sections": [
+        {
+          "body": "For a lease of L seconds received at time 0, default T1 = 0.5 L and T2 = 0.875 L. Servers may override with options 58 and 59, but they must satisfy T1 < T2 < L. Example: L = 3600 s gives T1 = 1800 s and T2 = 3150 s. A renewal ACK restarts the lease from its arrival time, not from the original grant. If the server never replies, the client sends RENEWING requests periodically (RFC 2131 suggests halving the remaining time, with a floor of 60 s) until T2, and similarly until expiry."
+        }
+      ]
+    },
+    {
+      "title": "Securing DHCP on a LAN",
+      "summary": "Snooping, inspection and rate limits.",
+      "sections": [
+        {
+          "body": "DHCP has no built-in authentication in common use. Switch features supply protection. **DHCP snooping** marks ports as trusted (uplinks, the real server) or untrusted (hosts), drops OFFER and ACK packets from untrusted ports, and builds a table of MAC, IP, VLAN and port. **Dynamic ARP inspection** and **IP source guard** use that table to block spoofed ARP and IP. **Rate limiting** DHCP packets per port and **port security** limit starvation attacks. RFC 3118 authentication exists but is rarely deployed."
+        }
+      ]
+    },
+    {
+      "title": "Seeing DHCP on the wire",
+      "summary": "Capturing and reading the exchange.",
+      "sections": [
+        {
+          "body": "The packet filter for the exchange and a typical decode of the first message look like this:",
+          "code": "sudo tcpdump -n -v -i eth0 'udp port 67 or udp port 68'\n\n0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request from aa:bb:cc:dd:ee:ff\n    Option 53 (Message-Type): Discover\n    Option 55 (Parameter-Request): Subnet-Mask, Default-Gateway, DNS\n192.168.1.1.67 > 255.255.255.255.68: BOOTP/DHCP, Reply, yiaddr 192.168.1.50\n    Option 53: Offer, Option 54: 192.168.1.1, Option 51: 86400"
         }
       ]
     }
   ],
   "takeaways": [
-    "DORA: Discover, Offer, Request, Ack; UDP 67 (server) and 68 (client).",
-    "Leases renew at T1 = 50% (unicast) and T2 = 87.5% (broadcast).",
-    "Relay agents carry requests across routers using giaddr.",
-    "Protect with DHCP snooping."
+    "DHCP gives a host an address, mask, gateway, DNS servers and more on a lease, using UDP port 67 (server) and 68 (client).",
+    "DORA: DISCOVER and REQUEST are broadcasts; OFFER and ACK come from the server.",
+    "The REQUEST is broadcast so that losing servers learn which offer was chosen and release their addresses.",
+    "T1 = 50 percent of the lease (unicast renew), T2 = 87.5 percent (broadcast rebind), 100 percent means stop using the address.",
+    "A NAK or DECLINE returns the client to INIT; a client that restarts uses INIT-REBOOT to try its old lease.",
+    "Routers do not forward broadcasts, so a relay agent sets giaddr and unicasts to the server.",
+    "Rogue servers and starvation are the main threats; DHCP snooping and port security are the standard defences.",
+    "With no answer, hosts self-assign 169.254.0.0/16 link-local addresses."
+  ],
+  "practice": [
+    {
+      "title": "Label the source and destination IP and port of each DORA message",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute T1, T2 and expiry for leases of 1 hour and 24 hours",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Capture a DHCP exchange with tcpdump and read option 53 on each packet",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain what a client does after DHCPNAK and after an ARP conflict",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Draw the full client state machine including INIT-REBOOT",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Configure a relay for two VLANs and say which scope the server chooses from giaddr",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Size a pool for 3,000 devices on a 4 hour lease with 40 percent concurrent presence",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain how a rogue DHCP server hijacks traffic and how DHCP snooping stops it",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Write a C program using a raw or packet socket to send a DISCOVER and parse the OFFER",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -100,26 +250,12 @@
       "url": "https://www.rfc-editor.org/rfc/rfc2132"
     },
     {
-      "label": "RFC 8415: DHCP for IPv6",
+      "label": "RFC 3046: DHCP Relay Agent Information Option",
+      "url": "https://www.rfc-editor.org/rfc/rfc3046"
+    },
+    {
+      "label": "RFC 8415: Dynamic Host Configuration Protocol for IPv6",
       "url": "https://www.rfc-editor.org/rfc/rfc8415"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Order the DORA messages and name the UDP ports",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Compute T1 and T2 for a 24-hour lease",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Configure a relay and explain giaddr",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Defend against a rogue DHCP server with snooping",
-      "difficulty": "Medium"
     }
   ]
 }

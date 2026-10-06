@@ -1,132 +1,223 @@
 {
-  "summary": "ICMP is IP's control and error-reporting protocol. Traceroute turns one ICMP error, Time Exceeded, into a tool for discovering every router on a path by sending probes with increasing TTL.",
+  "summary": "ICMP (Internet Control Message Protocol, RFC 792) is the error-reporting and diagnostic companion of IP: routers and hosts use it to say that a destination is unreachable, that a packet's TTL expired, or that a better route exists, and it carries the echo request and reply behind ping. Traceroute abuses one of those messages, Time Exceeded, by sending probes with TTL 1, 2, 3 and so on so that every router on the path reveals itself. Every network engineer uses these tools daily, and ICMP also underpins path MTU discovery, which keeps TCP working across links of different sizes.",
   "sections": [
     {
-      "heading": "ICMP basics",
-      "body": "ICMP messages ride inside IP packets (protocol 1). Each has a Type, a Code, a checksum, and message-specific data. ICMP reports problems; it does not make IP reliable.",
+      "heading": "Overview",
+      "body": "IP is a best-effort protocol: it does not promise delivery and has no channel for telling a sender what went wrong. ICMP fills that gap. It is carried inside IP datagrams with IP protocol number 1, yet it is considered an integral part of IP, and every IP implementation must support it. RFC 792, published in 1981, defines the original message set: Destination Unreachable, Time Exceeded, Parameter Problem, Source Quench, Redirect, Echo and Echo Reply, Timestamp and Timestamp Reply, and Information Request and Reply. ICMP messages report problems with the delivery of IP datagrams; they do not make IP reliable, because an ICMP message may itself be lost and, by design, nobody reports errors about ICMP errors. ICMP has no ports, so there is no notion of a service bound to ICMP; messages are delivered to the IP layer, which hands them to the transport protocol or the application whose datagram triggered them. IPv6 has its own version, ICMPv6 (IP next header 58, RFC 4443), which is stricter: it also carries neighbour discovery and cannot be blocked wholesale without breaking IPv6. This lesson covers the message format, the important types and codes, how ping and traceroute use them, path MTU discovery, and the security and operational behaviour that interview questions probe."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Type 8 / 0: Echo Request / Echo Reply (ping).",
-        "Type 3: Destination Unreachable (code 0 net, 1 host, 2 protocol, 3 port, 4 fragmentation needed and DF set).",
-        "Type 11: Time Exceeded (code 0 TTL expired in transit, code 1 reassembly time).",
-        "Type 5: Redirect.",
-        "Type 4: Source Quench (obsolete)."
+        "**ICMP header**: 8 bits Type, 8 bits Code, 16 bits Checksum, then 32 bits whose meaning depends on the type. Type picks the message family; Code is a sub-reason.",
+        "**Checksum**: the 16-bit one's complement of the one's complement sum of the whole ICMP message, computed with the checksum field set to zero.",
+        "**Error message versus query message**: errors (types 3, 4, 5, 11, 12) report a failed datagram; queries (echo, timestamp) are request and response pairs.",
+        "**Embedded original datagram**: an error message carries the original IP header plus the first 64 bits (8 bytes) of its payload per RFC 792, enough to include the TCP or UDP ports, so the receiving host can find the socket concerned. Modern routers often include more, up to 576 bytes total (RFC 1812).",
+        "**TTL (time to live)**: an 8-bit IP header field decremented by every router; a router that decrements it to zero discards the packet and sends Time Exceeded. IPv6 calls it hop limit.",
+        "**Hop**: one router traversal. Traceroute's output has one line per hop.",
+        "**Round-trip time (RTT)**: time between sending a probe and receiving the reply, in milliseconds.",
+        "**Rules for generating errors**: never send an ICMP error about an ICMP error, about a non-first fragment, or about a datagram sent to a broadcast or multicast address; this prevents storms.",
+        "**Gateway versus host**: RFC 792 uses gateway for router. Some codes (net unreachable) come from routers, others (port unreachable) from the destination host."
       ]
     },
     {
-      "heading": "How traceroute works",
-      "bullets": [
-        "Send a probe with TTL = 1. The first router decrements it to 0, drops it, and returns ICMP Time Exceeded, revealing its address.",
-        "Send TTL = 2: the second router replies, and so on.",
-        "When the probe finally reaches the destination, it answers differently: ICMP Port Unreachable for UDP probes, or Echo Reply for ICMP probes.",
-        "Three probes per hop are sent; the round-trip times appear on each line."
-      ],
-      "code": "$ traceroute example.com\n 1  192.168.1.1   1.2 ms  1.0 ms  1.1 ms\n 2  10.0.0.1      8.4 ms  8.1 ms  8.6 ms\n 3  * * *                       <- no reply (filtered)\n 4  93.184.216.34 20.3 ms ..."
+      "heading": "How It Works",
+      "body": "Take ping first. The sender builds an Echo Request: type 8, code 0, checksum, a 16-bit identifier and a 16-bit sequence number, plus optional data. It is wrapped in an IP packet with protocol 1. The destination swaps the addresses, changes the type to 0 (Echo Reply), recomputes the checksum and returns the same identifier, sequence and data. The sender matches the reply by identifier and sequence, and computes RTT from a timestamp it stored in the payload. Traceroute works in a different way. It sends a probe with TTL 1. The first router decrements the TTL to 0, drops the packet and returns Time Exceeded (type 11, code 0) from its own address; that address is hop 1. The next probe has TTL 2, which survives the first router and dies at the second, and so on. Three probes are sent per TTL by default, with a limit of 30 hops. The destination answers differently from the routers: for UDP probes aimed at an unused high port it returns Destination Unreachable, code 3 (port unreachable); for ICMP echo probes it returns Echo Reply. Either answer tells traceroute the trace is complete.\n\nWorked example of a three-hop trace from host A (10.0.0.5) to server S (203.0.113.9), with UDP probes: probe 1 uses TTL 1 to port 33434. Router R1 (10.0.0.1) discards it and sends type 11 code 0 to A, quoting the original header and ports. A prints `1  10.0.0.1  0.4 ms`. Probe 2, TTL 2, port 33435, passes R1, dies at R2 (198.51.100.1). Probe 3, TTL 3, reaches S, which has no listener on the port, and replies type 3 code 3. A sees the source address equal to the target and stops. The ports increase per probe so replies can be matched to probes, and the quoted header in the error message carries the port. If a hop sends nothing back in the timeout (5 seconds by default on Linux) A prints an asterisk for that probe.",
+      "code": "ICMP message header (all messages)\n 0               1               2               3\n 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1\n+---------------+---------------+-------------------------------+\n|     Type      |     Code      |           Checksum            |\n+---------------+---------------+-------------------------------+\n|              depends on type (unused / ID+Seq / pointer / MTU)  |\n+-----------------------------------------------------------------+\n| Data: echo payload, or original IP header + 8 bytes of payload  |\n+-----------------------------------------------------------------+\n\n$ traceroute -n 203.0.113.9\ntraceroute to 203.0.113.9, 30 hops max, 60 byte packets\n 1  10.0.0.1       0.41 ms  0.37 ms  0.35 ms\n 2  198.51.100.1    4.82 ms  4.70 ms  4.77 ms\n 3  203.0.113.9     9.15 ms  9.01 ms  9.12 ms\n\nDestination Unreachable (type 3) codes:\n 0 net  1 host  2 protocol  3 port  4 frag needed+DF  5 src route failed"
     },
     {
-      "heading": "Probe types",
+      "heading": "Variants & Types",
       "bullets": [
-        "Linux/Unix traceroute: UDP to high ports (33434 upward) by default; ICMP and TCP modes available.",
-        "Windows tracert: ICMP Echo Requests.",
-        "TCP traceroute (e.g. to port 443) passes firewalls that block UDP/ICMP."
+        "**Type 0 and 8, Echo Reply and Echo Request**: ping. Linux `ping` sends 64 bytes total by default (56 data plus 8 header).",
+        "**Type 3, Destination Unreachable**: codes 0 network, 1 host, 2 protocol, 3 port, 4 fragmentation needed and DF set, 5 source route failed. Later RFCs add 6 to 15 such as 9, 10 and 13 (administratively prohibited).",
+        "**Type 11, Time Exceeded**: code 0 TTL expired in transit, code 1 fragment reassembly time exceeded.",
+        "**Type 12, Parameter Problem**: a pointer byte marks the offending octet in the original header.",
+        "**Type 5, Redirect**: a router tells a host on the same subnet that a better first hop exists; codes 0 network, 1 host, 2 type of service and network, 3 type of service and host.",
+        "**Type 4, Source Quench**: asked a sender to slow down. Deprecated; RFC 6633 says routers must not send it because it was ineffective and exploitable.",
+        "**Types 13 and 14, Timestamp**: obsolete clock queries. Types 15 to 18 (information, address mask) are also obsolete.",
+        "**Traceroute flavours**: UDP (Unix default, destination ports from 33434), ICMP echo (`-I`, Windows `tracert`), TCP SYN (`-T`, `tcptraceroute`, best through firewalls that allow port 443), Paris traceroute (keeps flow-identifying fields constant to follow one ECMP path), MTR (continuous trace with loss statistics), `tracepath` (needs no root, also reports path MTU).",
+        "**ICMPv6**: type 128 echo request, 129 echo reply, 1 destination unreachable, 2 packet too big, 3 time exceeded, 4 parameter problem, plus neighbour discovery types 133 to 137."
       ]
     },
     {
-      "heading": "Reading the output",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "An asterisk means no reply within the timeout: the router may rate-limit or block ICMP, not necessarily drop traffic.",
-        "A sudden latency jump that continues to later hops signals a slow link; a spike on one hop only is often just ICMP deprioritization.",
-        "Different probes can take different paths because of load balancing."
+        "**Per-message size**: 8-byte header plus data; an error message with IP header (20 bytes) and 8 bytes of payload is 36 bytes of ICMP plus its own IP header.",
+        "**Traceroute cost**: hops times probes per hop. A 15-hop path with 3 probes each sends 45 packets; worst case waiting is hops times probes times timeout, for example 30 x 3 x 5 s = 450 s if everything is silent.",
+        "**Router cost**: generating ICMP happens on the router's control-plane CPU (the slow path), not in the forwarding ASIC. Routers therefore rate-limit ICMP, for example one message per 10 ms or a token bucket per interface. Linux defaults to `icmp_ratelimit` of 1000 ms for most error types.",
+        "**RTT accuracy**: the displayed time to an intermediate hop includes the router's slow-path delay, so a hop with high latency followed by lower latency hops is usually not a real problem.",
+        "**PMTUD overhead**: each discovered smaller MTU costs one round trip and one retransmission; the result is cached per destination, typically for 10 minutes on Linux."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Asterisks do not mean loss**: a hop may forward traffic perfectly while rate-limiting or filtering its ICMP replies. Only loss that continues to the final hop is real.",
+        "**Asymmetric paths**: the return path of the ICMP reply may differ from the forward path, so hop RTTs mix two routes. Reverse traceroute needs a vantage point at the other end.",
+        "**Load balancing**: classic traceroute varies the destination port per probe, so ECMP routers may hash probes onto different paths and the output stitches together a path that no packet took. Use Paris traceroute or flow-stable probes.",
+        "**Blocking all ICMP**: dropping type 3 code 4 breaks path MTU discovery and creates black holes where small packets work and large ones hang (the classic symptom: TLS handshake stalls after ClientHello). Allow types 3 and 11 at least; in IPv6 you must also allow type 2.",
+        "**Port unreachable is not an error**: for traceroute it is the success signal, and firewalls that block UDP above 33434 hide the destination.",
+        "**Source address of the error**: it is the router's egress interface for the reply, which can differ from the interface the probe arrived on, so the printed addresses may not match your topology diagram.",
+        "**Attacks**: smurf (echo request to a broadcast address with spoofed source), ping of death (oversize fragmented echo crashing old stacks), ICMP redirect poisoning, ICMP tunnelling for exfiltration, and blind connection reset via forged type 3 messages against TCP. Modern stacks validate the embedded sequence number and ignore redirects by default on servers."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Reachability and latency checks**: ping in monitoring (Nagios, Prometheus blackbox exporter), load balancers and BGP/BFD fallback health checks.",
+        "**Path diagnosis**: traceroute and MTR to find which ISP or hop starts to lose or delay traffic, and to prove to a provider where a fault is.",
+        "**Path MTU discovery**: TCP and QUIC set DF and rely on type 3 code 4 (IPv4) or Packet Too Big (IPv6) to shrink segments; VPN and tunnel designs clamp MSS because of it.",
+        "**Connection teardown signal**: UDP applications learn about a closed port through port unreachable, which a connected UDP socket surfaces as ECONNREFUSED.",
+        "**Cloud and CDN topology mapping**: researchers and operators use traceroute datasets (CAIDA Ark, RIPE Atlas) to map inter-AS links.",
+        "**Firewall policy**: typical allowed inbound set is echo request (optional), type 3, type 11 and type 12."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is ICMP and where does it sit?** A network-layer control protocol carried in IP with protocol number 1; it reports errors and supports diagnostics but has no ports and does not make IP reliable.",
+        "**How does traceroute work?** It sends probes with TTL 1, 2, 3 and so on; each router that decrements TTL to zero returns Time Exceeded; the destination answers with port unreachable (UDP) or echo reply (ICMP).",
+        "**Why does Windows tracert differ from Linux?** Windows sends ICMP echo requests; Linux defaults to UDP to ports from 33434.",
+        "**How does PMTUD work?** Send with DF set; a router with a smaller MTU drops it and returns type 3 code 4 carrying the next-hop MTU; the sender lowers its packet size.",
+        "**Why * * * in the middle but a reply later?** That router drops or rate-limits ICMP replies but still forwards traffic.",
+        "**Can a ping succeed while HTTP fails?** Yes: ICMP and TCP are filtered separately, and MTU or firewall issues can break only one.",
+        "**Which messages does ping use?** Type 8 echo request and type 0 echo reply; in IPv6 types 128 and 129."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Ping and RTT",
-      "summary": "Echo in practice.",
+      "title": "Echo request and reply",
+      "summary": "The query pair behind ping.",
       "sections": [
         {
-          "body": "`ping` sends Echo Requests with identifier and sequence numbers so replies can be matched; it reports round-trip time and loss. Use `ping -M do -s 1472` to test the path MTU with DF set."
+          "body": "The echo request has the layout type 8, code 0, checksum, 16-bit identifier, 16-bit sequence number and optional data. The responder must return the data unchanged in an echo reply (type 0). Ping uses the identifier to tell concurrent ping processes apart (often the process ID) and the sequence number to detect loss, reordering and duplicates. It also stores a send timestamp in the first bytes of the data so that RTT is computed from one packet without separate bookkeeping. Summary lines show packets sent, received, loss percentage and min, average, max and standard deviation of RTT. Variations: `-s` sets payload size, `-M do` sets DF to test MTU, `-t` sets TTL, and `-f` flood mode needs root.",
+          "code": "$ ping -c 3 203.0.113.9\n64 bytes from 203.0.113.9: icmp_seq=1 ttl=57 time=9.12 ms\n64 bytes from 203.0.113.9: icmp_seq=2 ttl=57 time=9.05 ms\n64 bytes from 203.0.113.9: icmp_seq=3 ttl=57 time=9.20 ms\n3 packets transmitted, 3 received, 0% packet loss"
         }
       ]
     },
     {
-      "title": "Path MTU discovery depends on ICMP",
-      "summary": "Why blanket blocking hurts.",
+      "title": "Destination Unreachable codes",
+      "summary": "Which device says what, and what the sender should conclude.",
       "sections": [
         {
-          "body": "ICMP type 3 code 4 tells senders to shrink packets. Filtering all ICMP causes PMTU black holes where TCP connections hang once large packets are sent."
+          "body": "Type 3 comes in several flavours. Code 0 (network unreachable) and code 1 (host unreachable) come from routers that have no route or cannot resolve the final hop with ARP. Code 2 (protocol unreachable) and code 3 (port unreachable) come from the destination host when no process handles the IP protocol or the UDP port. Code 4 means the packet needed fragmentation but DF was set; the lower 16 bits of the unused word carry the next-hop MTU (RFC 1191). Code 5 reports a failed source route. Later additions include 9 and 10 (destination network and host administratively prohibited) and 13 (communication administratively prohibited), which are what firewalls send when they reject rather than silently drop. The distinction between reject and drop matters in design: reject gives fast failure to clients, drop slows scanners."
         }
       ]
     },
     {
-      "title": "Traceroute limitations",
-      "summary": "What it cannot see.",
+      "title": "Time Exceeded and TTL",
+      "summary": "Loop protection and the engine of traceroute.",
       "sections": [
         {
-          "bullets": [
-            "Load-balanced paths show an inconsistent route.",
-            "Return paths may differ (asymmetric routing), so per-hop RTT is misleading.",
-            "MPLS hops may be hidden.",
-            "Firewalls may block probes or replies."
-          ]
+          "body": "The IPv4 header holds an 8-bit TTL, initial values commonly 64 (Linux), 128 (Windows) or 255 (network gear). Each router subtracts one, and if the result is zero it discards the packet and sends Time Exceeded code 0. This bounds the life of packets caught in a routing loop. Code 1 appears when a host cannot reassemble fragments within its timer (typically 30 to 60 seconds). Because the first TTL is known per operating system, the TTL of a received reply hints at the number of hops: a reply with TTL 57 from a 64-start host is 7 hops away. During a routing loop traceroute prints the same pair of routers alternately until the hop limit."
         }
       ]
     },
     {
-      "title": "MTR and paris-traceroute",
-      "summary": "Better tools.",
+      "title": "Traceroute probe types",
+      "summary": "UDP, ICMP, TCP and why firewalls change the answer.",
       "sections": [
         {
-          "body": "MTR runs continuous traceroute with per-hop loss and latency statistics. Paris-traceroute keeps flow identifiers constant so probes follow one load-balanced path."
+          "body": "Classic Unix traceroute sends UDP datagrams to destination ports starting at 33434, increasing per probe, so that a closed port at the destination produces a port-unreachable message. Windows tracert and `traceroute -I` send ICMP echo; the final reply is an Echo Reply. `traceroute -T -p 443` sends TCP SYN, which usually passes firewalls that only admit web traffic; the final host answers SYN-ACK or RST. If a firewall allows only one probe type inbound, the other flavours stall at the border and show asterisks even though the network is fine. Cisco's traceroute uses UDP to port 33434 by default and offers an extended mode to change the port. Choose the probe type that matches the traffic that is failing."
         }
       ]
     },
     {
-      "title": "ICMPv6",
-      "summary": "Essential in IPv6.",
+      "title": "Paris traceroute and ECMP",
+      "summary": "Why classic traceroute can lie on load-balanced paths.",
       "sections": [
         {
-          "body": "ICMPv6 (RFC 4443) also carries Neighbor Discovery and Packet Too Big, so it must not be blocked as casually as ICMPv4."
+          "body": "Routers balance flows across equal-cost links by hashing the 5-tuple (addresses, protocol, ports). Classic UDP traceroute changes the destination port with every probe, so consecutive probes can hash to different branches, and the output may show router names from two branches interleaved, producing false loops, false links and missing links. Paris traceroute keeps the header fields that feed the hash constant and encodes the probe identity elsewhere, for example in the checksum field, so all probes of one trace take one real path. Running it with different flow identifiers enumerates the alternative paths. Dublin traceroute and `mtr --tcp` offer similar behaviour."
+        }
+      ]
+    },
+    {
+      "title": "Path MTU discovery",
+      "summary": "Using type 3 code 4 to size packets correctly.",
+      "sections": [
+        {
+          "body": "With IPv4 the sender sets the DF bit. A router whose next link has a smaller MTU cannot fragment, so it drops the packet and returns type 3 code 4 with the next-hop MTU in the second half of the unused word. The sender then reduces its path MTU estimate and retransmits. IPv6 never fragments in routers, so every too-large packet triggers ICMPv6 Packet Too Big (type 2), and filtering that message guarantees a black hole. Practical defences against broken paths: MSS clamping on tunnels and VPN gateways, PLPMTUD (RFC 4821) which probes with packets of growing size and needs no ICMP, and Linux `tcp_mtu_probing`. A typical Ethernet MTU is 1500; PPPoE gives 1492; IPsec or GRE tunnels often leave 1400 to 1450."
+        }
+      ]
+    },
+    {
+      "title": "Redirects, quench and obsolete messages",
+      "summary": "What the original RFC defined that is now unsafe or unused.",
+      "sections": [
+        {
+          "body": "A Redirect lets a router tell a host on the same subnet that another router is a better next hop for a destination; the host adds a host route. Since attackers can forge redirects to divert traffic, most servers set `accept_redirects` to 0 and routers disable `send_redirects` outside simple edge cases. Source Quench (type 4) asked a sender to slow down, but congestion control moved into TCP and the message was easy to abuse; RFC 6633 deprecated it. Timestamp, Information Request and Address Mask messages are also obsolete, and the last two are replaced by DHCP. A good interview answer names these as examples of how a protocol feature can age badly."
+        }
+      ]
+    },
+    {
+      "title": "ICMP rate limiting and security",
+      "summary": "Why routers and hosts throttle and filter ICMP.",
+      "sections": [
+        {
+          "body": "Because errors are generated on the CPU, a flood of packets with expiring TTL or closed ports can overload a router's control plane, so control-plane policing and per-interface limits are standard. Hosts limit as well; Linux's `icmp_ratelimit` and `icmp_msgs_per_sec` settings throttle error types and echo replies, which is why a flood ping shows loss at the target. From the attack side, smurf attacks multiplied traffic via broadcast echo requests (now blocked by ignoring directed broadcasts), and attackers can map networks with traceroute and use ICMP tunnels to hide traffic. Defences: filter by type instead of dropping all ICMP, ignore broadcast echoes, validate embedded headers, and monitor volume."
         }
       ]
     }
   ],
   "takeaways": [
-    "ICMP reports errors and diagnostics; Type 11 Time Exceeded enables traceroute.",
-    "Traceroute increases TTL by one each probe and records who replies.",
-    "The destination replies with Port Unreachable (UDP) or Echo Reply (ICMP).",
-    "Asterisks and latency spikes need careful interpretation."
+    "ICMP is carried in IP with protocol number 1, has no ports, and reports delivery problems without making IP reliable.",
+    "An ICMP header is Type, Code, 16-bit checksum and a 32-bit type-specific word; errors quote the original IP header plus 8 bytes.",
+    "Ping uses Echo Request (type 8) and Echo Reply (type 0); IPv6 uses 128 and 129.",
+    "Traceroute increments TTL from 1; routers answer Time Exceeded (type 11), the destination answers port unreachable (UDP) or echo reply (ICMP).",
+    "Type 3 code 4 (fragmentation needed, DF set) powers path MTU discovery; blocking it causes hangs on large packets.",
+    "Asterisks in traceroute usually mean filtered or rate-limited ICMP, not packet loss.",
+    "ICMP errors are never generated about other ICMP errors, non-first fragments or broadcast and multicast destinations."
+  ],
+  "practice": [
+    {
+      "title": "List the type and code for echo request, echo reply, port unreachable and TTL expired",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain the difference between the Unix and Windows traceroute probes and what each expects at the destination",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute the ICMP checksum for an echo request with identifier 0x1234, sequence 1 and no data",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "A trace shows hop 6 as * * * but hops 7 to 12 reply normally; give two explanations and a test to tell them apart",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Web pages from one site hang after the TLS ClientHello while ping works; diagnose with ping -M do and fix the cause",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a C program that sends an ICMP echo request on a raw socket and prints the RTT",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Design a traceroute that is correct through ECMP: which header fields must stay fixed and where do you carry the probe ID",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain how a forged ICMP type 3 code 4 or code 1 message could degrade a TCP connection and how stacks defend against it",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
       "label": "RFC 792: Internet Control Message Protocol",
-      "url": "https://www.rfc-editor.org/rfc/rfc792"
+      "url": "https://www.rfc-editor.org/rfc/rfc792.txt"
+    },
+    {
+      "label": "Traceroute (Wikipedia)",
+      "url": "https://en.wikipedia.org/wiki/Traceroute"
+    },
+    {
+      "label": "RFC 1191: Path MTU Discovery",
+      "url": "https://www.rfc-editor.org/rfc/rfc1191"
     },
     {
       "label": "RFC 4443: ICMPv6",
       "url": "https://www.rfc-editor.org/rfc/rfc4443"
-    },
-    {
-      "label": "Reference: Traceroute (Wikipedia)",
-      "url": "https://en.wikipedia.org/wiki/Traceroute"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Interpret a traceroute that contains asterisks",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Find the path MTU with ping and the DF bit",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Explain why hops differ between runs",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Write a toy traceroute with raw sockets",
-      "difficulty": "Hard"
     }
   ]
 }

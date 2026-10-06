@@ -1,68 +1,214 @@
 {
-  "summary": "Longest-prefix match is the rule routers use to choose among overlapping routes: among all entries that match the destination address, pick the one with the longest prefix (the most specific route).",
+  "summary": "Longest-prefix match (LPM) is the rule an IP router uses to pick one forwarding entry when several routes cover the same destination: the entry with the most specific prefix, meaning the most leading address bits in common, wins. It exists because CIDR (RFC 4632) lets prefixes of any length overlap, so aggregation and exceptions can coexist in one table. Every IPv4 and IPv6 forwarding decision on the Internet uses it, in software tries on hosts and in TCAM or algorithmic memory on line-rate routers.",
   "sections": [
     {
-      "heading": "The rule",
-      "body": "Forwarding is done on a longest-match basis (RFC 4632). A destination can match several table entries; the entry whose prefix length is greatest wins.",
-      "code": "Routing table:\n  0.0.0.0/0          -> ISP\n  192.168.0.0/16     -> core\n  192.168.20.16/28   -> branch\n\nDestination 192.168.20.19:\n  matches /0, /16, and /28   -> /28 wins   (branch)\nDestination 192.168.5.7:\n  matches /0 and /16         -> /16 wins   (core)\nDestination 8.8.8.8:\n  matches /0 only           -> default route (ISP)"
+      "heading": "Overview",
+      "body": "A routing table is a list of prefixes, each written as an address plus a length such as `192.168.20.16/28`. A prefix of length L covers every address whose first L bits equal the prefix's first L bits. Before CIDR, addresses were split into fixed classes A, B and C, so a table entry covered exactly one class-sized block and two entries could never overlap. CIDR removed the class boundaries so that a provider could hand out any power-of-two block and advertise a single aggregate for many customers. The price is that one destination can now be covered by several entries at once. LPM is the tie-break that makes this safe: the router picks the matching entry with the greatest prefix length, because a longer prefix is a more specific statement about where the destination lives. The default route `0.0.0.0/0` has length zero, so it matches every address and loses to everything else, which makes it the natural last resort. This lesson covers the rule, the data structures that implement it (binary trie, Patricia trie, multibit trie, TCAM), the interaction with administrative distance, and the failure modes such as hijacks and table growth."
     },
     {
-      "heading": "Why it works",
-      "body": "Specific routes carve exceptions out of broad ones. An ISP can advertise one aggregate for a customer block while a customer that moves providers advertises a longer prefix, and traffic follows the more specific route without rewriting the aggregate."
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Prefix**: an address together with a length L, written `a.b.c.d/L`. Only the first L bits are significant; the remaining bits must be zero in a canonical entry.",
+        "**Prefix length**: the count of fixed leading bits, 0 to 32 for IPv4 and 0 to 128 for IPv6. Longer means fewer addresses covered, so more specific.",
+        "**Match**: a destination matches a prefix when `(dest & mask) == prefix`, where the mask has L leading one bits.",
+        "**Longest-prefix match**: of all matching entries, choose the one with the largest L. RFC 4632 states that forwarding is done on this longest-match basis.",
+        "**Aggregate and more-specific**: an aggregate covers a wide block (a /16), a more-specific carves a smaller block out of it (a /24). The more-specific overrides the aggregate for its own addresses only.",
+        "**Default route**: `0.0.0.0/0` (IPv4) or `::/0` (IPv6), matching everything with length zero.",
+        "**FIB versus RIB**: the routing information base holds every route learned from every protocol; the forwarding information base is the distilled per-prefix best choice that the data plane actually searches.",
+        "**Administrative distance and metric**: tie-breakers used only when two routes have exactly the same prefix and length; they never override prefix length.",
+        "**Next hop and egress interface**: the result of a lookup. The FIB entry says which neighbour address and which port the packet should leave through."
+      ]
     },
     {
-      "heading": "Default route",
-      "body": "0.0.0.0/0 (or ::/0 in IPv6) has prefix length zero, so it matches everything but loses to any other match. It acts as the last resort."
+      "heading": "How It Works",
+      "body": "The lookup is a search problem with a wildcard: given a 32-bit key, find the stored pattern with the longest run of fixed leading bits that agrees with it. The conceptual algorithm is easy to state: test the destination against every entry, keep the matches, return the longest. Real routers cannot afford to scan a million entries per packet, so the work is reorganised. Start with the semantic example, then the data structure.\n\nCheck one match by hand. For `10.1.2.200` against `10.1.2.128/25`, the mask is 255.255.255.128. The last octet 200 is 11001000 in binary and 128 is 10000000. ANDing 200 with 128 gives 128, which equals the prefix's last octet, and the first three octets are identical, so the entry matches. The /24 would also match, but 25 is greater than 24, so the /25 wins. Now see how a binary trie avoids testing every entry: each node represents a bit position, the left edge means the bit is 0, the right edge means 1, and a node carries a next hop if some prefix ends there. A lookup walks the destination bits from the most significant end, and every time it passes a node that carries a route it remembers it. When the walk falls off the tree, the last remembered route is the longest match. The cost is bounded by the address width, not by the number of routes.\n\nInsertion mirrors lookup: walk the first L bits of the prefix, creating nodes as needed, and mark the final node with the next hop. Deletion unmarks the node and prunes any chain that no longer leads to a route. Two practical refinements matter. A Patricia (radix) trie stores a skip count and compresses single-child chains, so a table with N prefixes needs at most about 2N nodes and lookups touch far fewer than 32 nodes on sparse regions. A multibit trie consumes k bits per step (stride 4 or 8, say), which divides memory accesses by k at the cost of controlled prefix expansion: a /22 in an 8-bit-stride trie is expanded into four /24 entries so that every stored prefix ends on a stride boundary. Linux uses an LC-trie (level-compressed) for IPv4 FIB lookups, and BSD kernels use a Patricia tree.",
+      "code": "Table:\n  0.0.0.0/0          -> ISP-A     (default)\n  10.0.0.0/8         -> core\n  10.1.0.0/16        -> site1\n  10.1.2.0/24        -> lab\n  10.1.2.128/25      -> dmz\n\nLookup 10.1.2.200:  /0 /8 /16 /24 /25 all match -> /25, dmz\nLookup 10.1.2.77:   /0 /8 /16 /24 match         -> /24, lab\nLookup 10.1.9.9:    /0 /8 /16 match             -> /16, site1\nLookup 10.200.0.1:  /0 /8 match                 -> /8,  core\nLookup 8.8.8.8:     /0 only                     -> default, ISP-A\n\nstruct node {\n    struct node *child[2];\n    int has_route;\n    int next_hop;\n};\n\nint lookup(const struct node *root, unsigned int dest) {\n    const struct node *n = root;\n    int best = -1;                  /* -1 means no route */\n    for (int i = 31; i >= 0 && n; i--) {\n        if (n->has_route)\n            best = n->next_hop;     /* deeper match overrides */\n        n = n->child[(dest >> i) & 1];\n    }\n    if (n && n->has_route)          /* a /32 ends on the last node */\n        best = n->next_hop;\n    return best;\n}"
     },
     {
-      "heading": "Tie-breakers",
-      "body": "Prefix length is checked first. Only among routes with the same prefix do other criteria apply: lowest administrative distance (which source to trust), then the lowest metric."
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Binary trie**: simplest, one bit per level, up to 32 memory accesses per IPv4 lookup, 128 for IPv6. Good for teaching and small tables.",
+        "**Patricia or radix tree**: compresses non-branching paths; used in BSD routing sockets and many control-plane tables.",
+        "**Multibit and level-compressed tries**: trade memory for speed by stepping several bits at once; Linux `fib_trie` is of this family.",
+        "**Binary search on prefix lengths**: hash each length in a table and binary search over the lengths using marker entries, giving about log2(32) = 5 probes for IPv4.",
+        "**DIR-24-8 style direct tables**: a 2^24 entry array indexed by the top 24 bits plus a small second table for the rare longer prefixes; used by DPDK `rte_lpm`. One or two memory reads per lookup, at the price of about 64 MB for the first stage with 4-byte entries.",
+        "**TCAM**: ternary content-addressable memory compares the key against all entries in parallel, with each bit stored as 0, 1 or don't care. Entries are sorted by descending prefix length so the first hit is the longest. One clock cycle per lookup, regardless of table size.",
+        "**Algorithmic or SRAM-based engines**: newer silicon uses compressed tries in SRAM to avoid TCAM power and cost while sustaining the same rate."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Naive scan**: O(N) per lookup for N routes. With 1,000,000 IPv4 routes that is hopeless at line rate.",
+        "**Binary trie**: O(W) time where W is the address width (32 or 128), and O(N*W) worst-case nodes. Insertion and deletion are also O(W).",
+        "**Patricia**: O(W) worst case but fewer node visits; memory O(N), about 2N nodes.",
+        "**Multibit trie with stride k**: O(W/k) lookups; memory grows with expansion, but updates stay cheap if stride is small.",
+        "**TCAM**: O(1) lookup, but each cell needs roughly 10 to 16 transistors versus 6 for SRAM, so it costs several times more per bit and draws far more power. A 128-bit IPv6 entry takes double the width of a 32-bit IPv4 entry in many designs, so IPv6 routes eat TCAM budget faster.",
+        "**Table size**: the global IPv4 table passed 900,000 prefixes in the mid 2020s and IPv6 passed 200,000. Older line cards sized for 512,000 IPv4 routes hit that cap in August 2014, which caused a widely reported outage wave.",
+        "**Update cost**: TCAM insertions may require moving entries to keep length order, so vendors reserve gaps or use per-length regions."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Confusing prefix length with distance**: a /24 learned by a protocol with a worse administrative distance still beats a /16 from a better one. Distance only compares routes to the identical prefix.",
+        "**Forgetting that specificity attracts traffic**: anyone able to announce a longer prefix steals the traffic. This is how BGP hijacks and accidental leaks work, which is why operators apply prefix filters, maximum-prefix limits and RPKI origin validation.",
+        "**Non-canonical prefixes**: `10.1.2.3/24` has host bits set. Some tools silently mask it to `10.1.2.0/24`, others reject it. Always mask before inserting into a trie.",
+        "**Lookups on the wrong key**: the match uses the destination address only; the source address is irrelevant unless you use policy-based routing.",
+        "**Missing default route**: with no match, the packet is dropped and an ICMP destination-unreachable is generated. Hosts often have a default; core routers in the default-free zone deliberately do not.",
+        "**Overlapping blackhole routes**: a static `/32` or `/24` to Null0 for DDoS mitigation overrides the covering aggregate, which is intended, but a forgotten one silently blackholes a customer.",
+        "**Equal-length ties**: if two routes have the same prefix, the router selects by distance and metric, or installs both for ECMP. Do not rely on insertion order."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "Every IP forwarding path: host stacks, home routers, Linux `ip route`, BSD, Cisco IOS, Juniper Junos, and merchant silicon switches all implement LPM.",
+        "**Route aggregation and de-aggregation**: ISPs advertise a /20 summary while a multihomed customer announces a /24 for traffic engineering; the /24 draws traffic for itself while the /20 covers the rest.",
+        "**Anycast and DDoS scrubbing**: a protected /24 is announced from scrubbing centres, and the longer prefix pulls traffic through them.",
+        "**Cloud and SDN**: VPC route tables in AWS, Azure and GCP also apply longest-prefix selection among overlapping routes, such as a `10.0.0.0/16` local route and a `10.0.5.0/24` peering route.",
+        "**Beyond IP**: ACL optimisation, geo-IP lookups, telephone number routing (country and area code prefixes) and URL routing in API gateways all use the same longest-match idea over a trie."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**State the rule**: of all matching entries, the longest prefix wins; the default route is the shortest and matches everything.",
+        "**Why not first match?**: because tables are not sorted by specificity, and aggregation depends on exceptions overriding aggregates.",
+        "**Data structure answer**: a binary trie remembering the deepest route seen, O(32) per lookup; compress with Patricia or multibit strides.",
+        "**Hardware answer**: TCAM compares all entries in one cycle, sorted by length, at the cost of power and area.",
+        "**Administrative distance versus prefix length**: prefix length first, distance second, metric third.",
+        "**Hijack scenario**: a /24 announced inside someone else's /23 wins everywhere it propagates; defend with RPKI ROAs with maxLength, IRR filters and monitoring."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "How software finds the match",
-      "summary": "Tries.",
+      "title": "CIDR and prefix arithmetic",
+      "summary": "How a prefix maps to a mask, a range and a block size.",
       "sections": [
         {
-          "body": "A binary trie (radix tree) stores prefixes along bit paths. A lookup walks the destination bits and remembers the deepest node that holds a route; that is the longest match. Patricia tries compress single-child chains. Lookup cost is O(address length), at most 32 steps for IPv4.",
-          "code": "node = root; best = none\nfor each bit b of dest:\n  if node has route: best = node.route\n  node = node.child[b]; if node is null: break\nreturn best"
+          "body": "A /L prefix has a mask of L one bits followed by 32-L zero bits and covers 2^(32-L) addresses. A /24 covers 256 addresses, a /28 covers 16, a /30 covers 4 (two usable hosts on a classic subnet), a /32 is a single host. To find the block of an address, AND it with the mask; to find the last address, OR it with the inverted mask. For 192.168.20.19/28 the mask is 255.255.255.240, the network is 192.168.20.16 and the broadcast-style top address is 192.168.20.31. Two prefixes overlap only if one contains the other, never partially, because blocks are aligned to their own size. That nesting property is what makes a trie a natural fit.",
+          "code": "mask(L)  = L == 0 ? 0 : 0xFFFFFFFFu << (32 - L)\nnetwork  = addr & mask\ntop      = network | ~mask\nsize     = 1u << (32 - L)    /* L = 0 needs 64-bit math */"
         }
       ]
     },
     {
-      "title": "How hardware finds the match",
-      "summary": "TCAM.",
+      "title": "Binary trie lookup, step by step",
+      "summary": "Walk the bits and remember the deepest route.",
       "sections": [
         {
-          "body": "High-speed routers use TCAM, which compares the address against every stored prefix in parallel, with masks, returning the first match in one cycle. Entries are ordered by prefix length so the first hit is the longest. TCAM is fast but power-hungry and size-limited, which is why route aggregation matters."
+          "body": "Insert 10.0.0.0/8, 10.1.0.0/16 and 10.1.2.0/24 into an empty trie. The first insert creates 8 nodes along the bits of 10 (00001010) and marks the eighth. The second extends 8 more nodes for 1 (00000001) and marks the sixteenth. The third extends 8 more for 2 and marks the twenty-fourth. Look up 10.1.2.77: the walk passes the marked node at depth 8, remembers core; passes the marked node at depth 16, remembers site1; passes the marked node at depth 24, remembers lab; then follows the bits of 77 until no child exists and returns lab. Look up 10.1.9.9: marks at depths 8 and 16 are seen, then bit 9 diverges from bit 2 below depth 16 and the walk ends with site1. The answer is correct without ever comparing against the other entries."
         }
       ]
     },
     {
-      "title": "Interaction with administrative distance",
-      "summary": "Common confusion.",
+      "title": "Patricia and level-compressed tries",
+      "summary": "Skip single-child chains to cut memory accesses.",
       "sections": [
         {
-          "body": "A /24 route learned via a high-distance protocol still beats a /16 from a low-distance one, because prefix length is evaluated before distance. Distance only decides between routes to the same prefix."
+          "body": "A plain trie spends nodes on long runs where only one branch exists, for example the 24 bits leading to a lone /24. A Patricia trie stores, in each internal node, the index of the next bit to test, so it skips over bits where no stored prefix differs. Lookup then compares the destination against the stored prefix at the leaf to verify the skipped bits. An LC-trie goes further: when a subtree is dense, it replaces several binary levels with one array of 2^k children, indexed by k bits at once. Linux's IPv4 FIB (`fib_trie`) uses this and handles a full Internet table in software. The cost is more complex updates, which Linux handles with RCU so readers never block."
         }
       ]
     },
     {
-      "title": "Black holes and hijacks",
-      "summary": "Specificity cuts both ways.",
+      "title": "Multibit tries and prefix expansion",
+      "summary": "Consume several bits per step by padding prefixes to stride boundaries.",
       "sections": [
         {
-          "body": "Anyone who can announce a more specific prefix attracts that traffic. BGP prefix hijacks use this, so operators use RPKI route-origin validation and prefix filters."
+          "body": "With a stride of 8 bits, a lookup takes at most 4 memory accesses for IPv4. Prefixes whose length is not a multiple of 8 must be expanded: a /20 becomes 16 entries of length 24 in the third-level node (2^(24-20) = 16). When expanded entries collide with real longer prefixes, the longer original wins, so the builder inserts shorter prefixes first and overwrites with longer ones. Controlled prefix expansion is the standard way to trade memory for speed, and variable-stride designs choose strides per level by dynamic programming to minimise total memory under a lookup-depth budget."
+        }
+      ]
+    },
+    {
+      "title": "TCAM and hardware lookup",
+      "summary": "Parallel ternary comparison returns the longest match in one cycle.",
+      "sections": [
+        {
+          "body": "A TCAM cell stores 0, 1 or X (don't care). A /20 prefix is stored with the last 12 bits as X. The key is broadcast to every row, all rows compare in parallel, and a priority encoder returns the lowest-numbered matching row. By storing rows in descending prefix length, the first match is the longest match. The downsides are cost, power (every row switches on every search), and update complexity: inserting a /23 in the middle of the sorted array can force moving many rows. Vendors split TCAM into per-length zones, leave gaps, or use algorithms that guarantee a bounded number of moves. When the FIB exceeds TCAM capacity, the router either drops routes or falls back to slow software forwarding, which is why aggregation is a hardware survival issue and not just tidiness."
+        }
+      ]
+    },
+    {
+      "title": "Routes that look equal but are not",
+      "summary": "Ordering of prefix length, administrative distance and metric.",
+      "sections": [
+        {
+          "body": "A router may hold routes to overlapping prefixes from many sources: connected, static, OSPF, BGP. Selection happens in stages. First, the FIB lookup uses only prefix length: the longest matching prefix decides the candidate set. Within the routes for that exact prefix, the lowest administrative distance picks the protocol (connected 0, static 1, eBGP 20, OSPF 110, iBGP 200 on Cisco). Within a protocol, the metric picks the path, and equal-cost paths may be load-shared with ECMP. So an OSPF /24 with distance 110 beats a static default route with distance 1, since they are different prefixes and the /24 is longer. Floating static routes work by giving a backup route a higher distance than the dynamic one for the same prefix."
+        }
+      ]
+    },
+    {
+      "title": "Hijacks, leaks and RPKI",
+      "summary": "Specificity is a weapon, so origin validation limits it.",
+      "sections": [
+        {
+          "body": "Because the longest prefix wins no matter who announced it, a malicious or misconfigured AS that originates a more-specific prefix attracts traffic from the whole Internet. Notable incidents include the 2008 YouTube hijack by a Pakistani ISP, which announced a /24 inside YouTube's /22, and many cryptocurrency-targeted hijacks. Defences: RPKI route-origin authorisations (ROAs) bind a prefix to an origin ASN and a maxLength, so a /24 under a ROA with maxLength 22 is invalid; IRR-based prefix lists on customer sessions; maximum-prefix limits on peers; and ASPA to validate path plausibility. Conversely, defenders sometimes announce more-specifics to win traffic back during an attack, which is why many networks accept up to /24 on IPv4 and /48 on IPv6 and nothing longer."
+        }
+      ]
+    },
+    {
+      "title": "IPv6 specifics",
+      "summary": "Same rule, 128-bit keys, and different typical lengths.",
+      "sections": [
+        {
+          "body": "IPv6 uses the identical LPM rule with 128-bit addresses. Typical allocations are a /32 to an ISP, a /48 to a site, a /64 to a subnet, and routing on the Internet filters anything longer than /48. Link-local `fe80::/10` and multicast `ff00::/8` are matched by ordinary prefix entries. Because keys are four times wider, plain binary tries cost four times as many steps, so IPv6 relies more on compressed tries, hash-based length search and larger TCAM widths. The default route is `::/0`. A destination in a /64 never needs a host route unless it is a tunnel endpoint or an anycast service."
+        }
+      ]
+    },
+    {
+      "title": "Practical tools and verification",
+      "summary": "How to observe the rule on a real machine.",
+      "sections": [
+        {
+          "body": "On Linux, `ip route get 10.1.2.77` asks the kernel which route it would choose and prints the next hop and source address, which is the quickest way to confirm a longest-match outcome. `ip route show` lists the table, and `ip -6 route` the IPv6 one. On Cisco, `show ip route 10.1.2.77` prints the matching entry and its parent aggregate. Common debugging flow: list all routes that cover the address, sort by prefix length, and check whether a stray more-specific, such as a leftover static or a leaked BGP /25, is overriding the route you expected.",
+          "code": "$ ip route show\ndefault via 192.168.1.1 dev eth0\n10.1.0.0/16 via 10.0.0.2 dev eth1\n10.1.2.0/24 dev eth2 scope link\n$ ip route get 10.1.2.77\n10.1.2.77 dev eth2 src 10.1.2.1"
         }
       ]
     }
   ],
   "takeaways": [
-    "Among matching routes, the longest prefix wins.",
-    "Default route 0.0.0.0/0 matches everything and is least specific.",
-    "Software uses tries; hardware uses TCAM.",
-    "Prefix length is compared before administrative distance and metric."
+    "Of all routes whose prefix covers the destination, the longest prefix wins.",
+    "The default route (length 0) matches everything and is therefore chosen only when nothing else matches.",
+    "Prefix length is compared before administrative distance, and distance before metric.",
+    "A binary trie answers in at most 32 steps (128 for IPv6) by remembering the deepest marked node on the path.",
+    "Hardware uses TCAM sorted by descending prefix length so the first hit is the longest.",
+    "Aggregation shrinks tables, but more-specific announcements override aggregates, which enables traffic engineering and hijacks alike.",
+    "Filter or validate more-specific prefixes (RPKI maxLength, /24 and /48 limits) to blunt hijacks."
+  ],
+  "practice": [
+    {
+      "title": "Pick the next hop for ten destinations against a six-entry table that includes a default route",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write the mask, network address and top address for 172.16.37.200/21",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why an OSPF /24 beats a static /16 even though static has lower administrative distance",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Build a binary trie for five prefixes and trace a lookup that falls off the tree after matching a /16",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement insert and lookup for an IPv4 binary trie in C and test with overlapping prefixes",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Expand a /22 and a /18 into an 8-bit-stride multibit trie and count the resulting entries",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Given a table sorted arbitrarily, design the TCAM layout and update procedure that keeps longest-first order with few moves",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "A /24 hijack appears inside your /22: list the detection signals, the mitigation announcements you can make, and why RPKI maxLength would have helped",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -70,26 +216,12 @@
       "url": "https://www.rfc-editor.org/rfc/rfc4632"
     },
     {
-      "label": "Reference: Longest prefix match (Wikipedia)",
+      "label": "Longest prefix match (Wikipedia)",
       "url": "https://en.wikipedia.org/wiki/Longest_prefix_match"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Choose the route for ten destinations in a six-entry table",
-      "difficulty": "Easy"
     },
     {
-      "title": "Build a binary trie for a routing table",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Implement a longest-prefix lookup in code",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Explain a /24 hijack against a /16",
-      "difficulty": "Hard"
+      "label": "RFC 6811: BGP Prefix Origin Validation",
+      "url": "https://www.rfc-editor.org/rfc/rfc6811"
     }
   ]
 }
