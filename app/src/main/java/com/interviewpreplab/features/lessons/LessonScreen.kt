@@ -54,6 +54,7 @@ import com.interviewpreplab.core.ui.SceneRenderer
 import com.interviewpreplab.features.progress.ProgressViewModel
 import com.interviewpreplab.features.topics.Topic
 import com.interviewpreplab.features.topics.courseOf
+import com.interviewpreplab.ui.components.RichText
 import com.interviewpreplab.ui.components.color
 import com.interviewpreplab.ui.theme.MonospaceFamily
 import kotlinx.coroutines.Dispatchers
@@ -130,10 +131,9 @@ fun LessonScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Text(
-                    lesson?.summary ?: topic.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                RichText(
+                    text = lesson?.summary ?: topic.description,
+                    style = MaterialTheme.typography.bodyLarge
                 )
             }
             if (player.frames.isNotEmpty()) {
@@ -188,11 +188,14 @@ fun LessonScreen(
                     }
                 }
             }
-            items(sections.size) { i -> SectionBlock(sections[i], accent) }
+            if (sections.isNotEmpty()) {
+                item { Text("Notes", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
+            }
+            items(sections.size) { i -> SectionCard(accent) { SectionBlock(sections[i], accent) } }
 
             val subtopics = lesson?.subtopics.orEmpty()
             if (subtopics.isNotEmpty()) {
-                item { Text("Go deeper", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
+                item { Text("Go deeper", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
                 items(subtopics.size) { i -> SubtopicCard(subtopics[i], accent) }
             }
 
@@ -258,7 +261,7 @@ private fun SectionCard(accent: androidx.compose.ui.graphics.Color, content: @Co
 private fun Bullet(text: String) {
     Row(Modifier.padding(top = 4.dp)) {
         Text("•  ", color = MaterialTheme.colorScheme.primary)
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        RichText(text = text, modifier = Modifier.weight(1f))
     }
 }
 
@@ -266,7 +269,7 @@ private fun Bullet(text: String) {
 private fun SectionBlock(section: LessonSection, accent: androidx.compose.ui.graphics.Color) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         section.heading?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = accent) }
-        section.body?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) }
+        section.body?.let { RichText(text = it) }
         section.bullets.orEmpty().forEach { Bullet(it) }
         section.code?.let {
             Text(
@@ -294,7 +297,7 @@ private fun SubtopicCard(sub: Subtopic, accent: androidx.compose.ui.graphics.Col
         ) {
             Column(Modifier.weight(1f)) {
                 Text(sub.title.orEmpty(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                sub.summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                sub.summary?.let { RichText(text = it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (expanded) "Collapse" else "Expand", tint = accent)
         }
