@@ -170,6 +170,48 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/quick-sort/01.webp",
+      "caption": "Quick Sort",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/02.webp",
+      "caption": "Working of Lomuto Partition Algorithm with Illustration (1/6)",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/03.webp",
+      "caption": "Working of Lomuto Partition Algorithm with Illustration (2/6)",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/04.png",
+      "caption": "Working of Lomuto Partition Algorithm with Illustration (3/6)",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/05.webp",
+      "caption": "Working of Lomuto Partition Algorithm with Illustration (4/6)",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/06.png",
+      "caption": "Working of Lomuto Partition Algorithm with Illustration (5/6)",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/07.webp",
+      "caption": "Working of Lomuto Partition Algorithm with Illustration (6/6)",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/quick-sort/08.webp",
+      "caption": "Illustration of QuickSort Algorithm",
+      "source": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
+    }
+  ],
   "takeaways": [
     "Partition around a pivot so the pivot lands in its final place, then sort both sides.",
     "Average O(n log n) with small constants; worst case O(n^2) from unbalanced pivots.",

@@ -192,6 +192,58 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/mst/01.webp",
+      "caption": "Illustration: (1/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/02.webp",
+      "caption": "Illustration: (2/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/03.webp",
+      "caption": "Illustration: (3/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/04.webp",
+      "caption": "Illustration: (4/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/05.webp",
+      "caption": "Illustration: (5/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/06.webp",
+      "caption": "Illustration: (6/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/07.webp",
+      "caption": "Illustration: (7/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/08.webp",
+      "caption": "Illustration: (8/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/09.webp",
+      "caption": "Illustration: (9/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    },
+    {
+      "file": "lesson-images/mst/10.webp",
+      "caption": "Illustration: (10/10)",
+      "source": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
+    }
+  ],
   "takeaways": [
     "An MST connects all V vertices with V - 1 edges, no cycle, and minimum total weight.",
     "Cut property: the cheapest edge across any cut is safe; cycle property: the unique heaviest edge on a cycle is never needed.",

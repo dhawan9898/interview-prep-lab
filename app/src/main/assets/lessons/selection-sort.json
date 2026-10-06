@@ -161,6 +161,38 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/selection-sort/01.webp",
+      "caption": "Selection Sort (1/6)",
+      "source": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    },
+    {
+      "file": "lesson-images/selection-sort/02.webp",
+      "caption": "Selection Sort (2/6)",
+      "source": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    },
+    {
+      "file": "lesson-images/selection-sort/03.webp",
+      "caption": "Selection Sort (3/6)",
+      "source": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    },
+    {
+      "file": "lesson-images/selection-sort/04.webp",
+      "caption": "Selection Sort (4/6)",
+      "source": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    },
+    {
+      "file": "lesson-images/selection-sort/05.webp",
+      "caption": "Selection Sort (5/6)",
+      "source": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    },
+    {
+      "file": "lesson-images/selection-sort/06.webp",
+      "caption": "Selection Sort (6/6)",
+      "source": "https://www.geeksforgeeks.org/selection-sort-algorithm-2/"
+    }
+  ],
   "takeaways": [
     "Selection sort repeatedly finds the minimum of the unsorted part and swaps it into the next position of the sorted prefix.",
     "It always makes exactly n(n-1)/2 comparisons, so best, average and worst time are all Theta(n^2).",

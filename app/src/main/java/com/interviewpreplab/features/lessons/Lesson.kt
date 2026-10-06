@@ -8,6 +8,7 @@ data class Lesson(
     val summary: String? = null,
     val sections: List<LessonSection>? = null,
     val subtopics: List<Subtopic>? = null,
+    val figures: List<Figure>? = null,
     val takeaways: List<String>? = null,
     val references: List<Reference>? = null,
     val practice: List<PracticeItem>? = null
@@ -27,6 +28,9 @@ data class Subtopic(
     // Id of a full child lesson (a Topic whose parentId is this lesson) that goes deeper than this card.
     val topicId: String? = null
 )
+
+// `file` is a path under assets/ (for example lesson-images/bubble-sort/01.webp); `source` is the article it came from.
+data class Figure(val file: String? = null, val caption: String? = null, val source: String? = null)
 
 data class Reference(val label: String? = null, val url: String? = null)
 

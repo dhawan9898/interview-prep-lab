@@ -186,6 +186,23 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/pointer-arithmetic/01.webp",
+      "caption": "Increment/Decrement of a Pointer",
+      "source": "https://www.geeksforgeeks.org/c/pointer-arithmetics-in-c-with-examples/"
+    },
+    {
+      "file": "lesson-images/pointer-arithmetic/02.webp",
+      "caption": "Addition of Integer to Pointer",
+      "source": "https://www.geeksforgeeks.org/c/pointer-arithmetics-in-c-with-examples/"
+    },
+    {
+      "file": "lesson-images/pointer-arithmetic/03.webp",
+      "caption": "Subtraction of Integer to Pointer",
+      "source": "https://www.geeksforgeeks.org/c/pointer-arithmetics-in-c-with-examples/"
+    }
+  ],
   "takeaways": [
     "`p + n` moves `n * sizeof(*p)` bytes; the integer counts elements, not bytes.",
     "`a[i]` is defined as `*(a + i)`, so subscripting is pointer arithmetic plus a dereference.",

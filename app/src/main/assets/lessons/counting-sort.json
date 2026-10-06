@@ -165,6 +165,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/counting-sort/01.webp",
+      "caption": "Working of Counting Sort (1/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/02.webp",
+      "caption": "Working of Counting Sort (2/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/03.webp",
+      "caption": "Working of Counting Sort (3/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/04.webp",
+      "caption": "Working of Counting Sort (4/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/05.webp",
+      "caption": "Working of Counting Sort (5/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/06.webp",
+      "caption": "Working of Counting Sort (6/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/07.webp",
+      "caption": "Working of Counting Sort (7/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/08.webp",
+      "caption": "Working of Counting Sort (8/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/09.webp",
+      "caption": "Working of Counting Sort (9/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/10.webp",
+      "caption": "Working of Counting Sort (10/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/11.webp",
+      "caption": "Working of Counting Sort (11/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "file": "lesson-images/counting-sort/12.webp",
+      "caption": "Working of Counting Sort (12/12)",
+      "source": "https://www.geeksforgeeks.org/counting-sort/"
+    }
+  ],
   "takeaways": [
     "Counting sort sorts integer keys in a known range [0, k] in O(n + k) time and O(n + k) space without comparing elements.",
     "The three steps are histogram, prefix sum, and placement into an output array.",

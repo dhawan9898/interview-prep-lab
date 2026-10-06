@@ -224,6 +224,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/recursion/01.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (1/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/02.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (2/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/03.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (3/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/04.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (4/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/05.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (5/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/06.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (6/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/07.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (7/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/08.webp",
+      "caption": "Example 1 : Sum of Natural Numbers (n=3) (8/8)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/09.webp",
+      "caption": "Example 2 : Factorial of a Number (1/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/10.webp",
+      "caption": "Example 2 : Factorial of a Number (2/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/11.webp",
+      "caption": "Example 2 : Factorial of a Number (3/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    },
+    {
+      "file": "lesson-images/recursion/12.webp",
+      "caption": "Example 2 : Factorial of a Number (4/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
+    }
+  ],
   "takeaways": [
     "Every recursive function needs a base case and a recursive case that moves toward it.",
     "Each call uses a stack frame; recursion depth d costs O(d) space and can overflow the stack.",

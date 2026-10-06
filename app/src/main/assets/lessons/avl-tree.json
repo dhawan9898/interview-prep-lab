@@ -219,6 +219,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/avl-tree/01.webp",
+      "caption": "Example of an AVL Tree:",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/02.webp",
+      "caption": "Example of a BST which is not an AVL Tree:",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/03.webp",
+      "caption": "1. Left-Left Case: (1/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/04.webp",
+      "caption": "1. Left-Left Case: (2/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/05.webp",
+      "caption": "1. Left-Left Case: (3/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/06.webp",
+      "caption": "1. Left-Left Case: (4/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/07.webp",
+      "caption": "1. Left-Left Case: (5/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/08.webp",
+      "caption": "1. Left-Left Case: (6/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/09.webp",
+      "caption": "3. Left-Right Case: (1/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/10.webp",
+      "caption": "3. Left-Right Case: (2/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/11.webp",
+      "caption": "3. Left-Right Case: (3/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "file": "lesson-images/avl-tree/12.webp",
+      "caption": "3. Left-Right Case: (4/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    }
+  ],
   "takeaways": [
     "An AVL tree is a BST where every node's left and right subtree heights differ by at most 1.",
     "Balance factor is height(left) minus height(right); +2 or -2 triggers a rotation.",

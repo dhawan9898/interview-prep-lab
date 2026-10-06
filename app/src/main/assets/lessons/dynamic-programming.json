@@ -217,6 +217,23 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/dynamic-programming/01.webp",
+      "caption": "2. Bottom-Up Approach (Tabulation):",
+      "source": "https://www.geeksforgeeks.org/introduction-to-dynamic-programming-data-structures-and-algorithm-tutorials/"
+    },
+    {
+      "file": "lesson-images/dynamic-programming/02.webp",
+      "caption": "Example of Dynamic Programming (DP)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-dynamic-programming-data-structures-and-algorithm-tutorials/"
+    },
+    {
+      "file": "lesson-images/dynamic-programming/03.webp",
+      "caption": "How will Dynamic Programming (DP) Work?",
+      "source": "https://www.geeksforgeeks.org/introduction-to-dynamic-programming-data-structures-and-algorithm-tutorials/"
+    }
+  ],
   "takeaways": [
     "DP needs optimal substructure and overlapping subproblems; solve each distinct state once and store it.",
     "Define the state, the transition, the base cases and the fill order before writing code.",

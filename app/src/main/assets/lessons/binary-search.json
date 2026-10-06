@@ -172,6 +172,33 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/binary-search/01.webp",
+      "caption": "Binary Search",
+      "source": "https://www.geeksforgeeks.org/binary-search/"
+    },
+    {
+      "file": "lesson-images/binary-search/02.webp",
+      "caption": "How does Binary Search Algorithm work? (1/4)",
+      "source": "https://www.geeksforgeeks.org/binary-search/"
+    },
+    {
+      "file": "lesson-images/binary-search/03.webp",
+      "caption": "How does Binary Search Algorithm work? (2/4)",
+      "source": "https://www.geeksforgeeks.org/binary-search/"
+    },
+    {
+      "file": "lesson-images/binary-search/04.webp",
+      "caption": "How does Binary Search Algorithm work? (3/4)",
+      "source": "https://www.geeksforgeeks.org/binary-search/"
+    },
+    {
+      "file": "lesson-images/binary-search/05.png",
+      "caption": "How does Binary Search Algorithm work? (4/4)",
+      "source": "https://www.geeksforgeeks.org/binary-search/"
+    }
+  ],
   "takeaways": [
     "Halve the range each step by comparing the target with the middle element: O(log n).",
     "Requires sorted data and O(1) random access; it fails silently on unsorted input.",

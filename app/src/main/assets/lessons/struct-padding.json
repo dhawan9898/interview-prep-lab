@@ -208,6 +208,18 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/struct-padding/01.png",
+      "caption": "Data Alignment in Memory (1/2)",
+      "source": "https://www.geeksforgeeks.org/structure-member-alignment-padding-and-data-packing/"
+    },
+    {
+      "file": "lesson-images/struct-padding/02.png",
+      "caption": "Data Alignment in Memory (2/2)",
+      "source": "https://www.geeksforgeeks.org/structure-member-alignment-padding-and-data-packing/"
+    }
+  ],
   "takeaways": [
     "`sizeof(struct)` is the sum of members plus padding, and padding depends on the ABI and member order.",
     "Each member sits at an offset divisible by its alignment; the struct size is a multiple of its largest alignment.",

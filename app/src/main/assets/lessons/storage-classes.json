@@ -182,6 +182,13 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/storage-classes/01.webp",
+      "caption": "Storage Classes in C",
+      "source": "https://www.geeksforgeeks.org/c/storage-classes-in-c/"
+    }
+  ],
   "takeaways": [
     "Storage class controls storage duration, linkage and where a variable lives; scope, lifetime and linkage are three separate ideas.",
     "`auto` locals are the default: created per call, uninitialized, destroyed at block exit.",

@@ -199,6 +199,28 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/union-find/01.webp",
+      "caption": "2. Union: (1/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-disjoint-set-data-structure-or-union-find-algorithm/"
+    },
+    {
+      "file": "lesson-images/union-find/02.webp",
+      "caption": "2. Union: (2/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-disjoint-set-data-structure-or-union-find-algorithm/"
+    },
+    {
+      "file": "lesson-images/union-find/03.webp",
+      "caption": "2. Union: (3/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-disjoint-set-data-structure-or-union-find-algorithm/"
+    },
+    {
+      "file": "lesson-images/union-find/04.webp",
+      "caption": "2. Union: (4/4)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-disjoint-set-data-structure-or-union-find-algorithm/"
+    }
+  ],
   "takeaways": [
     "Union-find maintains disjoint sets with find (which set?) and union (merge two sets).",
     "Each set is a tree; the root is the representative, and `parent[root] == root`.",

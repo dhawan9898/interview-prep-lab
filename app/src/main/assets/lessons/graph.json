@@ -224,6 +224,33 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/graph/01.png",
+      "caption": "A Tree is typically traversed in two ways:",
+      "source": "https://www.geeksforgeeks.org/bfs-vs-dfs-binary-tree/"
+    },
+    {
+      "file": "lesson-images/graph/02.webp",
+      "caption": "Representation of Undirected Graph as Adjacency Matrix:",
+      "source": "https://www.geeksforgeeks.org/graph-and-its-representations/"
+    },
+    {
+      "file": "lesson-images/graph/03.webp",
+      "caption": "Representation of Directed Graph as Adjacency Matrix:",
+      "source": "https://www.geeksforgeeks.org/graph-and-its-representations/"
+    },
+    {
+      "file": "lesson-images/graph/04.webp",
+      "caption": "Representation of Undirected Graph as Adjacency list:",
+      "source": "https://www.geeksforgeeks.org/graph-and-its-representations/"
+    },
+    {
+      "file": "lesson-images/graph/05.webp",
+      "caption": "Representation of Directed Graph as Adjacency list:",
+      "source": "https://www.geeksforgeeks.org/graph-and-its-representations/"
+    }
+  ],
   "takeaways": [
     "A graph is vertices plus edges; choose directed or undirected, weighted or unweighted before coding.",
     "Adjacency list uses O(V + E) memory and suits sparse graphs; adjacency matrix uses O(V^2) memory and gives O(1) edge tests for dense graphs.",

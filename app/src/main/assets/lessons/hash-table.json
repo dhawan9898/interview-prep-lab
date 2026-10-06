@@ -194,6 +194,23 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/hash-table/01.webp",
+      "caption": "What is Hash Table?",
+      "source": "https://www.geeksforgeeks.org/hash-table-data-structure/"
+    },
+    {
+      "file": "lesson-images/hash-table/02.webp",
+      "caption": "Collision resolution techniques:",
+      "source": "https://www.geeksforgeeks.org/hash-table-data-structure/"
+    },
+    {
+      "file": "lesson-images/hash-table/03.png",
+      "caption": "Example Implementation of Hash Table",
+      "source": "https://www.geeksforgeeks.org/hash-table-data-structure/"
+    }
+  ],
   "takeaways": [
     "A hash table finds a key by computing its index, giving O(1) average insert, lookup and delete.",
     "Collisions are unavoidable; resolve them by chaining or by probing in open addressing.",

@@ -182,6 +182,23 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/file-io/01.png",
+      "caption": "Create a File",
+      "source": "https://www.geeksforgeeks.org/c/basics-file-handling-c/"
+    },
+    {
+      "file": "lesson-images/file-io/02.png",
+      "caption": "Write to a File",
+      "source": "https://www.geeksforgeeks.org/c/basics-file-handling-c/"
+    },
+    {
+      "file": "lesson-images/file-io/03.png",
+      "caption": "Write to a Binary File",
+      "source": "https://www.geeksforgeeks.org/c/basics-file-handling-c/"
+    }
+  ],
   "takeaways": [
     "A `FILE *` is a buffered stream over a descriptor; always check `fopen` for `NULL` and `fclose` for failure.",
     "Drive read loops by the return value of the read call (`fgets`, `fread`, `fscanf`), never by `while (!feof(fp))`.",

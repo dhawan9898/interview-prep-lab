@@ -25,6 +25,7 @@ Omit a heading that truly does not apply; never rename it or reorder it. A secti
 ## Other parts
 - `summary`: 3 to 4 sentences. What, why it matters, where used.
 - `subtopics`: 6 to 12. Each has a title, a one-line summary, and 1 to 3 sections (the heading is optional). Unique titles. A subtopic that outgrows ~400 words becomes a child lesson and gets `topicId`.
+- `figures` (optional): `{file, caption, source}`; images bundled under `assets/lesson-images/<topic-id>/`, at most 12 per lesson, shown in an "Illustrations" section. Attribution lives in `docs/IMAGE_SOURCES.md`.
 - `takeaways`: 5 to 8 one-line facts.
 - `practice`: 6 to 10 items, `difficulty` is `Easy`, `Medium` or `Hard`, mix of all three.
 - `references`: at least 2. Source page URLs from `reference-data/manifest.json`, plus RFC or textbook where relevant.

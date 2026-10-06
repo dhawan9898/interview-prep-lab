@@ -198,6 +198,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/dijkstra/01.webp",
+      "caption": "Dijkstra's Algorithm",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/02.webp",
+      "caption": "Detailed Steps: (1/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/03.webp",
+      "caption": "Detailed Steps: (2/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/04.webp",
+      "caption": "Detailed Steps: (3/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/05.webp",
+      "caption": "Detailed Steps: (4/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/06.webp",
+      "caption": "Detailed Steps: (5/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/07.webp",
+      "caption": "Detailed Steps: (6/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/08.webp",
+      "caption": "Detailed Steps: (7/7)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/09.webp",
+      "caption": "Why Does Not Work with Negative Weights: (1/4)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/10.webp",
+      "caption": "Why Does Not Work with Negative Weights: (2/4)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/11.webp",
+      "caption": "Why Does Not Work with Negative Weights: (3/4)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    },
+    {
+      "file": "lesson-images/dijkstra/12.webp",
+      "caption": "Why Does Not Work with Negative Weights: (4/4)",
+      "source": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
+    }
+  ],
   "takeaways": [
     "Dijkstra gives single-source shortest paths when every edge weight is non-negative.",
     "Each round settles the unsettled vertex with the smallest distance, then relaxes its outgoing edges.",

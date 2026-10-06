@@ -216,6 +216,38 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/two-pointers/01.webp",
+      "caption": "Two-Pointer Technique - O(n) time and O(1) space (1/6)",
+      "source": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    },
+    {
+      "file": "lesson-images/two-pointers/02.webp",
+      "caption": "Two-Pointer Technique - O(n) time and O(1) space (2/6)",
+      "source": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    },
+    {
+      "file": "lesson-images/two-pointers/03.webp",
+      "caption": "Two-Pointer Technique - O(n) time and O(1) space (3/6)",
+      "source": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    },
+    {
+      "file": "lesson-images/two-pointers/04.webp",
+      "caption": "Two-Pointer Technique - O(n) time and O(1) space (4/6)",
+      "source": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    },
+    {
+      "file": "lesson-images/two-pointers/05.webp",
+      "caption": "Two-Pointer Technique - O(n) time and O(1) space (5/6)",
+      "source": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    },
+    {
+      "file": "lesson-images/two-pointers/06.webp",
+      "caption": "Two-Pointer Technique - O(n) time and O(1) space (6/6)",
+      "source": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    }
+  ],
   "takeaways": [
     "Two pointers replace an O(n squared) pair search with an O(n) scan by discarding candidates with every move.",
     "Opposite-end pointers need a sorted (monotone) structure; move the pointer whose value makes the sum too small or too large.",

@@ -176,6 +176,13 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/stack-vs-heap/01.jpg",
+      "caption": "Stack vs Heap Memory Allocation",
+      "source": "https://www.geeksforgeeks.org/stack-vs-heap-memory-allocation/"
+    }
+  ],
   "takeaways": [
     "The stack stores one frame per active call and frees it automatically on return; the heap stores blocks that live until you `free` them.",
     "Stack allocation is a pointer move with excellent locality; heap allocation is slower and carries 8 to 16 bytes of overhead per block.",

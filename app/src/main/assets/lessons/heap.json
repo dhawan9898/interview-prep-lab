@@ -222,6 +222,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/heap/01.webp",
+      "caption": "Heap Data Structure (1/4)",
+      "source": "https://www.geeksforgeeks.org/heap-data-structure/"
+    },
+    {
+      "file": "lesson-images/heap/02.webp",
+      "caption": "Heap Data Structure (2/4)",
+      "source": "https://www.geeksforgeeks.org/heap-data-structure/"
+    },
+    {
+      "file": "lesson-images/heap/03.webp",
+      "caption": "Heap Data Structure (3/4)",
+      "source": "https://www.geeksforgeeks.org/heap-data-structure/"
+    },
+    {
+      "file": "lesson-images/heap/04.webp",
+      "caption": "Heap Data Structure (4/4)",
+      "source": "https://www.geeksforgeeks.org/heap-data-structure/"
+    },
+    {
+      "file": "lesson-images/heap/05.webp",
+      "caption": "Valid and Invalid examples of heaps (1/4)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/06.webp",
+      "caption": "Valid and Invalid examples of heaps (2/4)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/07.webp",
+      "caption": "Valid and Invalid examples of heaps (3/4)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/08.webp",
+      "caption": "Valid and Invalid examples of heaps (4/4)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/09.webp",
+      "caption": "How is Binary Heap represented?",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/10.webp",
+      "caption": "Operations on Heap (1/3)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/11.webp",
+      "caption": "Operations on Heap (2/3)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "file": "lesson-images/heap/12.webp",
+      "caption": "Operations on Heap (3/3)",
+      "source": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    }
+  ],
   "takeaways": [
     "A binary heap is a complete binary tree in an array: parent is (i-1)/2, children are 2i+1 and 2i+2 (0-based).",
     "Min-heap root is the minimum; peek is O(1), insert and extract are O(log n) via sift-up and sift-down.",

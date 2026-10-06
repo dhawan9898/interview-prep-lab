@@ -162,6 +162,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/heap-sort/01.webp",
+      "caption": "Step 1: Treat the Array as a Complete Binary Tree",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/02.webp",
+      "caption": "Step 2: Build a Max Heap (1/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/03.webp",
+      "caption": "Step 2: Build a Max Heap (2/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/04.webp",
+      "caption": "Step 2: Build a Max Heap (3/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/05.webp",
+      "caption": "Step 2: Build a Max Heap (4/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/06.webp",
+      "caption": "Step 2: Build a Max Heap (5/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/07.webp",
+      "caption": "Step 2: Build a Max Heap (6/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/08.png",
+      "caption": "Step 2: Build a Max Heap (7/7)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/09.webp",
+      "caption": "Step 3: Sort the array by placing largest element at end of unsorted array. (1/4)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/10.webp",
+      "caption": "Step 3: Sort the array by placing largest element at end of unsorted array. (2/4)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/11.webp",
+      "caption": "Step 3: Sort the array by placing largest element at end of unsorted array. (3/4)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    },
+    {
+      "file": "lesson-images/heap-sort/12.webp",
+      "caption": "Step 3: Sort the array by placing largest element at end of unsorted array. (4/4)",
+      "source": "https://www.geeksforgeeks.org/heap-sort/"
+    }
+  ],
   "takeaways": [
     "Build a max-heap in O(n), then repeatedly swap the root to the end and sift down.",
     "Always O(n log n), in place with O(1) extra space; the only common sort with both guarantees.",

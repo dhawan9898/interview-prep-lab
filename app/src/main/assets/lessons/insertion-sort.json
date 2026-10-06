@@ -162,6 +162,38 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/insertion-sort/01.webp",
+      "caption": "Insertion Sort Algorithm (1/5)",
+      "source": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/insertion-sort/02.webp",
+      "caption": "Insertion Sort Algorithm (2/5)",
+      "source": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/insertion-sort/03.webp",
+      "caption": "Insertion Sort Algorithm (3/5)",
+      "source": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/insertion-sort/04.webp",
+      "caption": "Insertion Sort Algorithm (4/5)",
+      "source": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/insertion-sort/05.webp",
+      "caption": "Insertion Sort Algorithm (5/5)",
+      "source": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    },
+    {
+      "file": "lesson-images/insertion-sort/06.png",
+      "caption": "Illustration",
+      "source": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    }
+  ],
   "takeaways": [
     "Insertion sort grows a sorted prefix by inserting each next element into place, shifting larger elements one slot right.",
     "Best case O(n) on sorted input, worst and average O(n^2), and O(n + inversions) in general.",

@@ -192,6 +192,18 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/strings/01.webp",
+      "caption": "Strings in C",
+      "source": "https://www.geeksforgeeks.org/c/strings-in-c/"
+    },
+    {
+      "file": "lesson-images/strings/02.webp",
+      "caption": "Strings and Pointers in C",
+      "source": "https://www.geeksforgeeks.org/c/strings-in-c/"
+    }
+  ],
   "takeaways": [
     "A C string is a char array ending in `'\\0'`; a string of length n needs n + 1 bytes.",
     "`strlen` scans for the terminator, so it is O(n) and should not sit in a loop condition.",

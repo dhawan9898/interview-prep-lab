@@ -210,6 +210,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/kmp/01.webp",
+      "caption": "KMP Algorithm",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/02.webp",
+      "caption": "Algorithm for Construction of LPS Array (1/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/03.webp",
+      "caption": "Algorithm for Construction of LPS Array (2/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/04.webp",
+      "caption": "Algorithm for Construction of LPS Array (3/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/05.webp",
+      "caption": "Algorithm for Construction of LPS Array (4/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/06.webp",
+      "caption": "Algorithm for Construction of LPS Array (5/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/07.webp",
+      "caption": "Algorithm for Construction of LPS Array (6/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/08.webp",
+      "caption": "Algorithm for Construction of LPS Array (7/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/09.webp",
+      "caption": "Algorithm for Construction of LPS Array (8/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/10.webp",
+      "caption": "Algorithm for Construction of LPS Array (9/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/11.webp",
+      "caption": "Algorithm for Construction of LPS Array (10/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    },
+    {
+      "file": "lesson-images/kmp/12.webp",
+      "caption": "Algorithm for Construction of LPS Array (11/11)",
+      "source": "https://www.geeksforgeeks.org/kmp-algorithm-for-pattern-searching/"
+    }
+  ],
   "takeaways": [
     "KMP finds a pattern in a text in O(n + m) time with O(m) extra space.",
     "The LPS table stores, for each pattern prefix, the length of its longest proper prefix that is also a suffix.",

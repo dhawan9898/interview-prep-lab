@@ -50,6 +50,7 @@ import com.interviewpreplab.features.progress.ProgressViewModel
 import com.interviewpreplab.features.topics.Topic
 import com.interviewpreplab.features.topics.courseOf
 import com.interviewpreplab.features.topics.topicList
+import com.interviewpreplab.ui.components.AssetImage
 import com.interviewpreplab.ui.components.RichText
 import com.interviewpreplab.ui.components.color
 import com.interviewpreplab.ui.theme.MonospaceFamily
@@ -142,6 +143,23 @@ fun LessonScreen(
                 item { Text("Notes", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
             }
             items(sections.size) { i -> SectionCard(accent) { SectionBlock(sections[i], accent) } }
+
+            val figures = lesson?.figures.orEmpty().filter { !it.file.isNullOrBlank() }
+            if (figures.isNotEmpty()) {
+                item { Text("Illustrations", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
+                items(figures.size) { i ->
+                    val fig = figures[i]
+                    SectionCard(accent) {
+                        AssetImage(fig.file.orEmpty(), fig.caption)
+                        Text(
+                            "${fig.caption.orEmpty()}  ·  GeeksforGeeks",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+                }
+            }
 
             val subtopics = lesson?.subtopics.orEmpty()
             if (subtopics.isNotEmpty()) {

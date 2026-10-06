@@ -172,6 +172,13 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/memory-leaks/01.webp",
+      "caption": "Memory Leak in C",
+      "source": "https://www.geeksforgeeks.org/what-is-memory-leak-how-can-we-avoid/"
+    }
+  ],
   "takeaways": [
     "A leak is an allocation whose last pointer is lost (or never released) before `free`; the OS reclaims it at exit, but long-running programs run out of memory.",
     "Valgrind reports definitely, indirectly and possibly lost plus still-reachable; fix definite losses first and look for growth in reachable memory.",

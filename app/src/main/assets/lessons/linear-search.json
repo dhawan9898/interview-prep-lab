@@ -157,6 +157,23 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/linear-search/01.webp",
+      "caption": "Linear Search Algorithm (1/3)",
+      "source": "https://www.geeksforgeeks.org/linear-search/"
+    },
+    {
+      "file": "lesson-images/linear-search/02.webp",
+      "caption": "Linear Search Algorithm (2/3)",
+      "source": "https://www.geeksforgeeks.org/linear-search/"
+    },
+    {
+      "file": "lesson-images/linear-search/03.webp",
+      "caption": "Linear Search Algorithm (3/3)",
+      "source": "https://www.geeksforgeeks.org/linear-search/"
+    }
+  ],
   "takeaways": [
     "Check elements in order until you hit the target or run out: O(n) time, O(1) space.",
     "Needs no sorting and no random access, so it works on lists, files and streams.",

@@ -177,6 +177,38 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/circular-queue/01.webp",
+      "caption": "dequeue() : (1/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    },
+    {
+      "file": "lesson-images/circular-queue/02.webp",
+      "caption": "dequeue() : (2/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    },
+    {
+      "file": "lesson-images/circular-queue/03.webp",
+      "caption": "dequeue() : (3/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    },
+    {
+      "file": "lesson-images/circular-queue/04.webp",
+      "caption": "dequeue() : (4/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    },
+    {
+      "file": "lesson-images/circular-queue/05.webp",
+      "caption": "dequeue() : (5/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    },
+    {
+      "file": "lesson-images/circular-queue/06.webp",
+      "caption": "dequeue() : (6/6)",
+      "source": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    }
+  ],
   "takeaways": [
     "A circular queue reuses slots by wrapping indices with `(i + 1) % N`, so FIFO operations stay O(1) with a fixed array.",
     "Full and empty look identical when only two indices are used; fix it with a count, a wasted slot or a flag.",

@@ -207,6 +207,13 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/preprocessor/01.png",
+      "caption": "C Preprocessors",
+      "source": "https://www.geeksforgeeks.org/c/cc-preprocessors/"
+    }
+  ],
   "takeaways": [
     "The preprocessor is pure text and token substitution: it runs before compilation and knows nothing about types or scopes.",
     "Parenthesize every macro parameter and the whole body, or precedence will bite: `SQR(a+b)` must not become `a+b*a+b`.",

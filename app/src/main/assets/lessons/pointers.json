@@ -207,6 +207,13 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/pointers/01.png",
+      "caption": "Pointers in C",
+      "source": "https://www.geeksforgeeks.org/c/c-pointers/"
+    }
+  ],
   "takeaways": [
     "A pointer stores an address; `&x` gets one, `*p` follows one, and `*&x` is just `x`.",
     "All object pointers on a 64-bit platform are 8 bytes, whatever they point to; the type controls access width and arithmetic stride.",

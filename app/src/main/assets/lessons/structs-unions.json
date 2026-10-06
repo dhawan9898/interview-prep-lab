@@ -202,6 +202,23 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/structs-unions/01.webp",
+      "caption": "C Structures",
+      "source": "https://www.geeksforgeeks.org/c/structures-c/"
+    },
+    {
+      "file": "lesson-images/structs-unions/02.webp",
+      "caption": "Size of Union (1/2)",
+      "source": "https://www.geeksforgeeks.org/c/union-c/"
+    },
+    {
+      "file": "lesson-images/structs-unions/03.webp",
+      "caption": "Size of Union (2/2)",
+      "source": "https://www.geeksforgeeks.org/c/union-c/"
+    }
+  ],
   "takeaways": [
     "Struct members have separate storage and a combined size that includes alignment padding; union members overlap and the size is the largest member.",
     "Use `.` on values and `->` on pointers; pass large structs by `const struct *` instead of copying them.",

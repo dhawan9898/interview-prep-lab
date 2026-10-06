@@ -77,6 +77,17 @@ class LessonAssetsTest {
     }
 
     @Test
+    fun figureFilesExist() {
+        val assets = File("src/main/assets")
+        topicList.forEach { topic ->
+            load(topic.id).figures.orEmpty().forEach {
+                assertTrue(!it.file.isNullOrBlank() && File(assets, it.file!!).isFile, "${topic.id}: missing figure ${it.file}")
+                assertTrue(!it.caption.isNullOrBlank(), "${topic.id}: figure ${it.file} needs a caption")
+            }
+        }
+    }
+
+    @Test
     fun childLessonLinksResolve() {
         val ids = topicList.map { it.id }.toSet()
         topicList.forEach { topic ->

@@ -198,6 +198,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/queue/01.webp",
+      "caption": "Queue Introduction",
+      "source": "https://www.geeksforgeeks.org/dsa/introduction-to-queue-data-structure-and-algorithm-tutorials/"
+    },
+    {
+      "file": "lesson-images/queue/02.webp",
+      "caption": "Types of Queues",
+      "source": "https://www.geeksforgeeks.org/dsa/introduction-to-queue-data-structure-and-algorithm-tutorials/"
+    },
+    {
+      "file": "lesson-images/queue/03.webp",
+      "caption": "Applications, Advantages and Disadvantages of Queue (1/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/applications-advantages-and-disadvantages-of-queue/"
+    },
+    {
+      "file": "lesson-images/queue/04.webp",
+      "caption": "Applications, Advantages and Disadvantages of Queue (2/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/applications-advantages-and-disadvantages-of-queue/"
+    },
+    {
+      "file": "lesson-images/queue/05.webp",
+      "caption": "Basic Operations for Queue Data Structure (1/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/06.webp",
+      "caption": "Basic Operations for Queue Data Structure (2/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/07.webp",
+      "caption": "enqueue() (1/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/08.webp",
+      "caption": "enqueue() (2/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/09.webp",
+      "caption": "enqueue() (3/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/10.webp",
+      "caption": "enqueue() (4/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/11.webp",
+      "caption": "enqueue() (5/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    },
+    {
+      "file": "lesson-images/queue/12.webp",
+      "caption": "enqueue() (6/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/"
+    }
+  ],
   "takeaways": [
     "A queue is FIFO: enqueue at the rear, dequeue from the front, both O(1).",
     "A linked queue needs both head and tail pointers; reset tail to NULL when the last node is removed.",

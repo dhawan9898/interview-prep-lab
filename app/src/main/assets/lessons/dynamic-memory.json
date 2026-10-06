@@ -205,6 +205,28 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/dynamic-memory/01.webp",
+      "caption": "malloc()",
+      "source": "https://www.geeksforgeeks.org/c/dynamic-memory-allocation-in-c-using-malloc-calloc-free-and-realloc/"
+    },
+    {
+      "file": "lesson-images/dynamic-memory/02.webp",
+      "caption": "calloc()",
+      "source": "https://www.geeksforgeeks.org/c/dynamic-memory-allocation-in-c-using-malloc-calloc-free-and-realloc/"
+    },
+    {
+      "file": "lesson-images/dynamic-memory/03.webp",
+      "caption": "free()",
+      "source": "https://www.geeksforgeeks.org/c/dynamic-memory-allocation-in-c-using-malloc-calloc-free-and-realloc/"
+    },
+    {
+      "file": "lesson-images/dynamic-memory/04.webp",
+      "caption": "realloc()",
+      "source": "https://www.geeksforgeeks.org/c/dynamic-memory-allocation-in-c-using-malloc-calloc-free-and-realloc/"
+    }
+  ],
   "takeaways": [
     "`malloc` returns uninitialized bytes, `calloc` returns zeroed bytes with overflow-checked sizing, `realloc` resizes, `free` releases.",
     "Always check for `NULL`, write `p = malloc(n * sizeof *p)`, and free each block exactly once.",

@@ -202,6 +202,18 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/topological-sort/01.webp",
+      "caption": "Topological Sorting",
+      "source": "https://www.geeksforgeeks.org/topological-sorting/"
+    },
+    {
+      "file": "lesson-images/topological-sort/02.webp",
+      "caption": "Topological Sorting in Directed Acyclic Graphs (DAGs)",
+      "source": "https://www.geeksforgeeks.org/topological-sorting/"
+    }
+  ],
   "takeaways": [
     "A topological order exists if and only if the directed graph has no cycle.",
     "Kahn's algorithm: repeatedly remove in-degree 0 vertices; fewer than V outputs means a cycle.",

@@ -182,6 +182,13 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/memory-layout/01.webp",
+      "caption": "Memory Layout of C Programs",
+      "source": "https://www.geeksforgeeks.org/c/memory-layout-of-c-program/"
+    }
+  ],
   "takeaways": [
     "Code lives in the read-only text segment; literals and `const` globals in read-only data; modifying them is undefined behaviour.",
     "Initialized globals and statics go to the data segment, zero or uninitialized ones to BSS, which occupies no file space.",

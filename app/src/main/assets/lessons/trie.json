@@ -212,6 +212,28 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/trie/01.webp",
+      "caption": "Trie Data Structure",
+      "source": "https://www.geeksforgeeks.org/trie-insert-and-search/"
+    },
+    {
+      "file": "lesson-images/trie/02.png",
+      "caption": "Insertion in Trie Data Structure - O(n) Time and O(n) Space",
+      "source": "https://www.geeksforgeeks.org/trie-insert-and-search/"
+    },
+    {
+      "file": "lesson-images/trie/03.png",
+      "caption": "Searching in Trie Data Structure - O(n) Time and O(1) Space",
+      "source": "https://www.geeksforgeeks.org/trie-insert-and-search/"
+    },
+    {
+      "file": "lesson-images/trie/04.jpg",
+      "caption": "Prefix Searching in Trie Data Structure - O(n) Time and O(1) Space",
+      "source": "https://www.geeksforgeeks.org/trie-insert-and-search/"
+    }
+  ],
   "takeaways": [
     "A trie stores strings character by character, so shared prefixes share nodes and each node marks whether a word ends there.",
     "Insert, search and prefix search all cost O(L) for key length L, independent of how many words are stored.",

@@ -188,6 +188,33 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/doubly-linked-list/01.webp",
+      "caption": "Doubly Linked List Tutorial",
+      "source": "https://www.geeksforgeeks.org/doubly-linked-list/"
+    },
+    {
+      "file": "lesson-images/doubly-linked-list/02.webp",
+      "caption": "Representation of Doubly Linked List in Data Structure",
+      "source": "https://www.geeksforgeeks.org/doubly-linked-list/"
+    },
+    {
+      "file": "lesson-images/doubly-linked-list/03.webp",
+      "caption": "Application of Doubly Linked List (1/3)",
+      "source": "https://www.geeksforgeeks.org/doubly-linked-list/"
+    },
+    {
+      "file": "lesson-images/doubly-linked-list/04.webp",
+      "caption": "Application of Doubly Linked List (2/3)",
+      "source": "https://www.geeksforgeeks.org/doubly-linked-list/"
+    },
+    {
+      "file": "lesson-images/doubly-linked-list/05.webp",
+      "caption": "Application of Doubly Linked List (3/3)",
+      "source": "https://www.geeksforgeeks.org/doubly-linked-list/"
+    }
+  ],
   "takeaways": [
     "A doubly linked list stores `prev` and `next`, so a node you already hold can be removed in O(1).",
     "Keep the invariant `n->next->prev == n` for every node; every insert and delete must patch the neighbors on both sides.",

@@ -204,6 +204,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/linked-list/01.webp",
+      "caption": "Singly Linked List Tutorial",
+      "source": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    },
+    {
+      "file": "lesson-images/linked-list/02.webp",
+      "caption": "Applications of Linked List (1/4)",
+      "source": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    },
+    {
+      "file": "lesson-images/linked-list/03.webp",
+      "caption": "Applications of Linked List (2/4)",
+      "source": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    },
+    {
+      "file": "lesson-images/linked-list/04.webp",
+      "caption": "Applications of Linked List (3/4)",
+      "source": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    },
+    {
+      "file": "lesson-images/linked-list/05.webp",
+      "caption": "Applications of Linked List (4/4)",
+      "source": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    },
+    {
+      "file": "lesson-images/linked-list/06.webp",
+      "caption": "Traversal of Singly Linked List (1/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/traversal-of-singly-linked-list/"
+    },
+    {
+      "file": "lesson-images/linked-list/07.webp",
+      "caption": "Traversal of Singly Linked List (2/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/traversal-of-singly-linked-list/"
+    },
+    {
+      "file": "lesson-images/linked-list/08.webp",
+      "caption": "Insert a Node at Front of a Linked List (1/5)",
+      "source": "https://www.geeksforgeeks.org/dsa/insert-a-node-at-front-beginning-of-a-linked-list/"
+    },
+    {
+      "file": "lesson-images/linked-list/09.webp",
+      "caption": "Insert a Node at Front of a Linked List (2/5)",
+      "source": "https://www.geeksforgeeks.org/dsa/insert-a-node-at-front-beginning-of-a-linked-list/"
+    },
+    {
+      "file": "lesson-images/linked-list/10.webp",
+      "caption": "Insert a Node at Front of a Linked List (3/5)",
+      "source": "https://www.geeksforgeeks.org/dsa/insert-a-node-at-front-beginning-of-a-linked-list/"
+    },
+    {
+      "file": "lesson-images/linked-list/11.webp",
+      "caption": "Insert a Node at Front of a Linked List (4/5)",
+      "source": "https://www.geeksforgeeks.org/dsa/insert-a-node-at-front-beginning-of-a-linked-list/"
+    },
+    {
+      "file": "lesson-images/linked-list/12.webp",
+      "caption": "Insert a Node at Front of a Linked List (5/5)",
+      "source": "https://www.geeksforgeeks.org/dsa/insert-a-node-at-front-beginning-of-a-linked-list/"
+    }
+  ],
   "takeaways": [
     "A singly linked list gives O(1) insert and delete at the head and after a known node, but O(n) indexing and search.",
     "Always link the new node to the rest of the list before you redirect the old pointer, or you orphan nodes.",

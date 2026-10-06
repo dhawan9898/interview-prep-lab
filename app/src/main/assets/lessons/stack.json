@@ -203,6 +203,68 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/stack/01.webp",
+      "caption": "Stack Data Structure (1/2)",
+      "source": "https://www.geeksforgeeks.org/stack-data-structure/"
+    },
+    {
+      "file": "lesson-images/stack/02.webp",
+      "caption": "Stack Data Structure (2/2)",
+      "source": "https://www.geeksforgeeks.org/stack-data-structure/"
+    },
+    {
+      "file": "lesson-images/stack/03.jpg",
+      "caption": "Introduction to Stack Data Structure",
+      "source": "https://www.geeksforgeeks.org/dsa/introduction-to-stack-data-structure-and-algorithm-tutorials/"
+    },
+    {
+      "file": "lesson-images/stack/04.webp",
+      "caption": "Applications of Stack",
+      "source": "https://www.geeksforgeeks.org/dsa/applications-advantages-and-disadvantages-of-stack/"
+    },
+    {
+      "file": "lesson-images/stack/05.webp",
+      "caption": "Push Operation: (1/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/06.webp",
+      "caption": "Push Operation: (2/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/07.webp",
+      "caption": "Push Operation: (3/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/08.webp",
+      "caption": "Push Operation: (4/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/09.webp",
+      "caption": "Push Operation: (5/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/10.webp",
+      "caption": "Push Operation: (6/6)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/11.webp",
+      "caption": "Pop Operation: (1/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "file": "lesson-images/stack/12.webp",
+      "caption": "Pop Operation: (2/2)",
+      "source": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    }
+  ],
   "takeaways": [
     "A stack is LIFO: only the top is reachable, and push, pop and peek are O(1).",
     "Always check for empty before pop or peek, and for full before push in a fixed array.",

@@ -169,6 +169,33 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/merge-sort/01.webp",
+      "caption": "Merge Sort (1/5)",
+      "source": "https://www.geeksforgeeks.org/merge-sort/"
+    },
+    {
+      "file": "lesson-images/merge-sort/02.webp",
+      "caption": "Merge Sort (2/5)",
+      "source": "https://www.geeksforgeeks.org/merge-sort/"
+    },
+    {
+      "file": "lesson-images/merge-sort/03.webp",
+      "caption": "Merge Sort (3/5)",
+      "source": "https://www.geeksforgeeks.org/merge-sort/"
+    },
+    {
+      "file": "lesson-images/merge-sort/04.webp",
+      "caption": "Merge Sort (4/5)",
+      "source": "https://www.geeksforgeeks.org/merge-sort/"
+    },
+    {
+      "file": "lesson-images/merge-sort/05.webp",
+      "caption": "Merge Sort (5/5)",
+      "source": "https://www.geeksforgeeks.org/merge-sort/"
+    }
+  ],
   "takeaways": [
     "Split in half, sort each half, merge: Theta(n log n) in every case.",
     "Merging two sorted runs takes one linear pass using two indexes.",

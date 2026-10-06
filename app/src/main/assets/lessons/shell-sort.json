@@ -163,6 +163,33 @@
       ]
     }
   ],
+  "figures": [
+    {
+      "file": "lesson-images/shell-sort/01.webp",
+      "caption": "Shell Sort (1/5)",
+      "source": "https://www.geeksforgeeks.org/shell-sort/"
+    },
+    {
+      "file": "lesson-images/shell-sort/02.webp",
+      "caption": "Shell Sort (2/5)",
+      "source": "https://www.geeksforgeeks.org/shell-sort/"
+    },
+    {
+      "file": "lesson-images/shell-sort/03.webp",
+      "caption": "Shell Sort (3/5)",
+      "source": "https://www.geeksforgeeks.org/shell-sort/"
+    },
+    {
+      "file": "lesson-images/shell-sort/04.webp",
+      "caption": "Shell Sort (4/5)",
+      "source": "https://www.geeksforgeeks.org/shell-sort/"
+    },
+    {
+      "file": "lesson-images/shell-sort/05.webp",
+      "caption": "Shell Sort (5/5)",
+      "source": "https://www.geeksforgeeks.org/shell-sort/"
+    }
+  ],
   "takeaways": [
     "Shell sort runs insertion sort over elements h apart for a decreasing gap sequence that ends in 1.",
     "An h-sorted array stays h-sorted after a smaller k-sort, so later passes never undo earlier progress.",
