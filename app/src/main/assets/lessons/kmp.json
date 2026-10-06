@@ -1,86 +1,265 @@
 {
-  "summary": "The Knuth-Morris-Pratt algorithm finds a pattern inside a text in O(n + m) time. It preprocesses the pattern into a failure table so that, after a mismatch, it never re-examines text characters that are already known to match.",
+  "summary": "The Knuth-Morris-Pratt (KMP) algorithm finds every occurrence of a pattern of length m inside a text of length n in O(n + m) time. It never moves backward in the text: a precomputed table of the pattern's longest proper prefix that is also a suffix (the LPS or failure table) tells it how far to fall back after a mismatch. It is the standard example of preprocessing the pattern to skip redundant work, and its table idea reappears in Aho-Corasick, the Z-algorithm and string-periodicity problems.",
   "sections": [
     {
-      "heading": "The problem with naive search",
-      "body": "Naive matching slides the pattern one position at a time and restarts comparison from the pattern's start, costing O(n·m) in the worst case (for example text 'aaaaaaab', pattern 'aaab')."
+      "heading": "Overview",
+      "body": "Pattern matching asks: where does the string P appear inside the string T? The obvious approach slides P along T one position at a time and compares character by character. On random text that is fast, but on adversarial input like T = aaaa...ab and P = aaab it re-reads the same characters many times and costs O(n times m).\n\nKMP, published by Knuth, Morris and Pratt in 1977 (and found independently by Morris and Pratt, and by Knuth, in the late 1960s), removes the repeated reading. When a mismatch happens after matching several characters, those matched characters are known: they equal a prefix of P. The algorithm asks how much of that prefix is still valid as the start of the next attempt, and resumes from there without re-examining the text."
     },
     {
-      "heading": "The LPS (failure) array",
-      "body": "lps[i] is the length of the longest proper prefix of pattern[0..i] that is also a suffix of it. It tells KMP how far the pattern can safely fall back after a mismatch at position i + 1. For 'aabaaac' the table is [0, 1, 0, 1, 2, 2, 0]; for 'AAAA' it is [0, 1, 2, 3].",
-      "code": "void build_lps(const char *p, int m, int lps[]) {\n  int len = 0; lps[0] = 0;\n  for (int i = 1; i < m; ) {\n    if (p[i] == p[len]) lps[i++] = ++len;\n    else if (len) len = lps[len - 1];     // fall back, do not advance i\n    else lps[i++] = 0;\n  }\n}"
-    },
-    {
-      "heading": "Matching",
-      "body": "Walk the text with i and the pattern with j. On a match advance both. On a mismatch, if j > 0 set j = lps[j - 1] (reuse the matched prefix), otherwise advance i. When j reaches m, the pattern occurs at i - m.",
-      "code": "int kmp(const char *t, const char *p) {\n  int n = strlen(t), m = strlen(p), i = 0, j = 0, pos = -1;\n  int *lps = malloc(m * sizeof *lps);\n  build_lps(p, m, lps);\n  while (i < n) {\n    if (t[i] == p[j]) { i++; j++; if (j == m) { pos = i - j; break; } }\n    else if (j) j = lps[j - 1];\n    else i++;\n  }\n  free(lps); return pos;\n}"
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Preprocessing: O(m).",
-        "Search: O(n); i never moves backward and each fallback strictly decreases j, bounded by the advances.",
-        "Total O(n + m) time, O(m) extra space."
+        "**Prefix**: a leading part of a string, such as `ab` in `abc`. A **proper prefix** is any prefix except the whole string.",
+        "**Suffix and proper suffix**: a trailing part, excluding the whole string for proper.",
+        "**Border**: a string that is both a proper prefix and a proper suffix. `abab` has the border `ab`; `abc` has none.",
+        "**LPS table (prefix function, failure function)**: `lps[i]` is the length of the longest border of `P[0..i]`.",
+        "**Mismatch fallback**: after matching j characters and failing at the next, continue as if only `lps[j-1]` characters were matched.",
+        "**Text pointer i**: advances on every match and every empty fallback; it never decreases.",
+        "**Pattern pointer j**: the length of the currently matched prefix; it may fall back via the table.",
+        "**Overlapping matches**: after a full match, KMP falls back by `lps[m-1]`, so matches that share characters are still found."
+      ]
+    },
+    {
+      "heading": "How It Works",
+      "body": "There are two phases. First build the LPS table for the pattern in O(m). Then scan the text once in O(n), using the table on mismatches.\n\n**Building the table.** Keep `len`, the length of the border of the previous prefix. For the next character, if `P[i] == P[len]`, the border grows by one. If not and `len > 0`, shorter borders of the previous prefix are borders of the border, so fall back with `len = lps[len-1]` and retry without advancing i. If `len` is 0, `lps[i] = 0`.\n\nExample, P = `aabaa`: lps[0]=0. i=1 'a' equals P[0], so lps[1]=1. i=2 'b' differs from P[1]='a', fall back to len=0, still differs from P[0], so lps[2]=0. i=3 'a' equals P[0], lps[3]=1. i=4 'a' equals P[1], lps[4]=2. Table: [0, 1, 0, 1, 2].",
+      "code": "#include <string.h>\n\n/* lps[i] = length of the longest proper prefix of p[0..i] that is also a suffix */\nvoid build_lps(const char *p, int m, int lps[]) {\n  int len = 0;                   /* length of the current matched prefix */\n  lps[0] = 0;\n  for (int i = 1; i < m; ) {\n    if (p[i] == p[len]) {\n      lps[i++] = ++len;\n    } else if (len > 0) {\n      len = lps[len - 1];            /* fall back, do not advance i */\n    } else {\n      lps[i++] = 0;\n    }\n  }\n}"
+    },
+    {
+      "body": "**Searching.** Walk i over the text. On a match advance both i and j; if j reaches m a match ends here, so report it and set `j = lps[m-1]` to continue looking for overlaps. On a mismatch, if j is positive set `j = lps[j-1]` and compare the same text character again, otherwise advance i.\n\nExample: T = `aabaabaaa`, P = `aabaa`. Characters 0 to 4 match fully, so a match at index 0; j becomes lps[4] = 2 (the 'aa' is reused). Next, T[5] = 'b' equals P[2], T[6] = 'a' equals P[3], T[7] = 'a' equals P[4]: match at index 3, and j becomes 2 again. T[8] = 'a' does not match P[2] = 'b', so j falls to lps[1] = 1; P[1] = 'a' matches T[8], j = 2, and the text ends. Matches at 0 and 3, found with 9 text comparisons plus a few fallbacks, and i never went back.",
+      "code": "/* prints every index where p occurs in t; returns the number of matches */\nint kmp_search(const char *t, const char *p) {\n  int n = strlen(t), m = strlen(p), found = 0;\n  if (m == 0) return 0;\n  int lps[m];\n  build_lps(p, m, lps);\n  for (int i = 0, j = 0; i < n; ) {        /* i never moves backward */\n    if (t[i] == p[j]) {\n      i++; j++;\n      if (j == m) {                         /* full match ends at i - 1 */\n        printf(\"match at %d\\n\", i - m);\n        found++;\n        j = lps[j - 1];                     /* allow overlapping matches */\n      }\n    } else if (j > 0) {\n      j = lps[j - 1];                       /* reuse the matched prefix */\n    } else {\n      i++;\n    }\n  }\n  return found;\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Naive search**: O(nm) worst case, O(1) space, trivially simple; fine when patterns are short and text is random.",
+        "**KMP**: O(n + m) guaranteed, O(m) extra space; scans text left to right once.",
+        "**Z-algorithm**: computes for each position the longest match with the string's prefix; concatenating P, a separator and T gives the same O(n + m) matching.",
+        "**Rabin-Karp**: rolling hash of each window; expected O(n + m), good for multiple patterns of the same length, but hash collisions need verification.",
+        "**Boyer-Moore and Horspool**: compare right to left and skip by bad-character and good-suffix rules. Often sublinear in practice on natural text and the choice behind many `grep` implementations.",
+        "**Aho-Corasick**: KMP generalized to many patterns using a trie with failure links; O(n + total pattern length + matches).",
+        "**Suffix array / suffix automaton / suffix tree**: preprocess the text for many queries.",
+        "**Two-Way and `memmem`**: the glibc `strstr` uses the Two-Way algorithm, linear time with constant extra space."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Table construction: O(m) time. The fallback `len = lps[len-1]` can look like a nested loop, but `len` increases at most m times in total and every fallback decreases it, so total fallbacks are at most m.",
+        "Search: O(n) time, by the same argument with j. The quantity `2i - j` increases by at least 1 each iteration, so the loop runs at most 2n times.",
+        "Total: O(n + m) time; at most 2n character comparisons during the scan.",
+        "Space: O(m) for the table, one int per pattern character.",
+        "Versus naive: for T = 1,000,000 'a' characters and P = 1,000 'a's followed by 'b', naive does about 10 to the 9 comparisons while KMP does under 2 million.",
+        "In practice, on random English text, naive and Boyer-Moore are often faster than KMP because of cache and branch behavior; KMP's value is the worst-case guarantee and streaming operation."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Resetting j to 0 on mismatch**: this is the naive approach disguised and loses the linear guarantee. Use `lps[j - 1]`.",
+        "**Moving i backward**: if your code ever decrements i, it is not KMP.",
+        "**Advancing i during the fallback in the table build**: on mismatch with `len > 0`, do not increment i.",
+        "**Off-by-one in indexing**: the table is indexed by prefix end, so the fallback after j matched characters is `lps[j - 1]`, not `lps[j]`.",
+        "**Forgetting `j = lps[m - 1]` after a match**, which either skips overlapping matches or reads past the pattern end.",
+        "**Empty pattern**: m = 0 would read `lps[-1]`; handle it explicitly.",
+        "**Stack arrays**: `int lps[m]` with a huge m overflows the stack; allocate on the heap.",
+        "**Unsigned and type confusion**: `strlen` returns `size_t`; mixing it with negative indices (like `j - 1`) causes wraparound bugs.",
+        "**Assuming bytes are characters**: for UTF-8, KMP on bytes finds byte-level matches, which is correct for valid UTF-8 but returns byte offsets."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Text search**: editors, `grep -F` style fixed-string search, and plagiarism checkers use KMP-like or Boyer-Moore scanning.",
+        "**Streaming and network scanning**: intrusion detection (Snort, Suricata) searches packet streams for signatures with Aho-Corasick, the multi-pattern descendant of KMP.",
+        "**Bioinformatics**: locating a motif in a DNA sequence of billions of bases.",
+        "**Compilers and lexers**: finite-automaton scanners are the same idea, with the failure table acting as a precomputed automaton.",
+        "**String structure problems**: smallest period, repeated substring detection, and shortest palindrome by appending to the front all use the prefix function.",
+        "**Protocol parsing**: finding a delimiter or boundary (like a MIME boundary string) in a stream without buffering the entire message."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What does lps[i] mean?** The length of the longest proper prefix of `P[0..i]` that is also a suffix of it.",
+        "**Why is KMP linear?** The text pointer never moves back and every fallback shrinks j, which can only have grown by one per step.",
+        "**What does KMP do on a mismatch at j?** Sets `j = lps[j-1]` and rechecks the same text character, or advances i if j is 0.",
+        "**Build the table for `abab`.** [0, 0, 1, 2].",
+        "**KMP vs Rabin-Karp?** KMP is deterministic O(n + m); Rabin-Karp is expected linear, simple, and extends to 2D or multiple patterns, but needs collision checks.",
+        "**How do you find the smallest period of a string?** `p = n - lps[n-1]`; if p divides n, the string is a repetition of its first p characters."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Walkthrough",
-      "summary": "Text ABABDABACDABABCABAB, pattern ABABCABAB.",
+      "title": "The naive algorithm and its waste",
+      "summary": "Understand what KMP is avoiding.",
       "sections": [
         {
-          "body": "LPS for the pattern: [0,0,1,2,0,1,2,3,4]. Matching reaches ABAB then mismatches at D versus C; j falls back to lps[3] = 2, keeping 'AB' matched, and continues without moving i backward, finally matching at index 10."
+          "body": "Naive matching tries each start s and compares until a mismatch. After a failed attempt it forgets everything and restarts at s + 1, even though the text characters just compared contain information. Take P = `aaab` and T = `aaaaaaaab`: each start matches three a's, then fails on the fourth character, so the same a's are read again and again.",
+          "code": "int naive_search(const char *t, const char *p) {\n  int n = strlen(t), m = strlen(p), found = 0;\n  for (int s = 0; s + m <= n; s++) {          /* every start position */\n    int k = 0;\n    while (k < m && t[s + k] == p[k]) k++;\n    if (k == m) found++;\n  }\n  return found;       /* worst case O(n * m) */\n}"
+        },
+        {
+          "body": "The worst case is about (n - m + 1) times m comparisons. KMP observes that after matching `aaa` and failing, the last two a's are already a prefix `aa` of the pattern, so it can continue by comparing P[2] to the current text character instead."
         }
       ]
     },
     {
-      "title": "Finding all occurrences",
-      "summary": "Continue after a match.",
+      "title": "What the LPS table means",
+      "summary": "The failure function as a measure of self-overlap.",
       "sections": [
         {
-          "body": "Instead of stopping at j == m, record i - m and set j = lps[m - 1] to allow overlapping matches, then keep scanning."
+          "body": "For P = `ababaca`, the table is [0, 0, 1, 2, 3, 0, 1]. Take index 4 (`ababa`): its longest border is `aba`, length 3. Index 5 (`ababac`) has none, because adding 'c' kills every border, so 0. Index 6 (`ababaca`) has the border `a`, length 1.\n\nThe table says: if you have just matched the first j + 1 pattern characters and then fail, the longest piece of that match that can still be a pattern prefix is `lps[j]` characters long. No longer piece can work, since a longer prefix that is also a suffix would have appeared as a larger border. That is the precise reason skipping is safe: no match is missed."
         }
       ]
     },
     {
-      "title": "Rabin-Karp",
-      "summary": "A rolling-hash alternative.",
+      "title": "Building the table in O(m)",
+      "summary": "Pattern matching the pattern against itself.",
       "sections": [
         {
-          "body": "Compare a hash of each text window with the pattern's hash, updating the window hash in O(1) and verifying on a match. Average O(n + m), worst O(nm), and easy to extend to multiple patterns."
+          "body": "The construction is KMP's search run with the pattern as both text and pattern: `len` plays the role of j and `i` is the text index, starting at 1 so the pattern is not matched against itself trivially. The fallback `len = lps[len - 1]` is the same move as in search: if a border of length len cannot be extended, try the longest border of that border. For example in `aabaa`, at i = 2 with len = 1 the character 'b' fails against P[1]; falling back to len = 0 yields lps[2] = 0.\n\nAmortized, len rises by one at most m times and each fallback lowers it, so the loop executes fewer than 2m iterations."
         }
       ]
     },
     {
-      "title": "Z-algorithm and Boyer-Moore",
-      "summary": "Other linear and sublinear matchers.",
+      "title": "Search with overlaps and counting",
+      "summary": "Reporting every occurrence.",
       "sections": [
         {
-          "body": "The Z-function gives similar guarantees with simpler code. Boyer-Moore compares from the pattern's end and can skip many characters, making it fastest in practice on long patterns and natural-language text."
+          "body": "After a full match, setting `j = lps[m - 1]` instead of 0 keeps the longest border as already matched. For P = `aa` and T = `aaaa`, matches are found at 0, 1 and 2 (three overlapping matches), which resetting to 0 would miss. To count only non-overlapping matches, set j = 0 after a match. To find the first match and stop, return immediately. Because KMP reads the text strictly left to right, it works on streams: you can feed it one character at a time, keeping only j and the table."
         }
       ]
     },
     {
-      "title": "Applications",
-      "summary": "Where it matters.",
+      "title": "Z-algorithm as an alternative",
+      "summary": "The same goal through a different array.",
       "sections": [
         {
-          "bullets": [
-            "Text editors and grep-style search.",
-            "Plagiarism and DNA sequence matching.",
-            "Spam and intrusion detection.",
-            "Finding periodic structure: the smallest period of a string is m - lps[m-1] when it divides m."
-          ]
+          "body": "The Z array stores, for each position i, the length of the longest substring starting at i that equals a prefix of the whole string. Build it for `P + '#' + T`; every position whose Z value equals m marks an occurrence. It is linear for the same amortization reason: a window [l, r) of known matches lets later positions copy earlier results. Many people find Z easier to derive from scratch than the LPS table; the two arrays carry equivalent information and each can be converted into the other in linear time.",
+          "code": "/* z[i] = length of the longest substring starting at i that matches a prefix of s */\nvoid z_function(const char *s, int n, int z[]) {\n  z[0] = n;\n  for (int i = 1, l = 0, r = 0; i < n; i++) {\n    z[i] = 0;\n    if (i < r) z[i] = (z[i - l] < r - i) ? z[i - l] : r - i;\n    while (i + z[i] < n && s[z[i]] == s[i + z[i]]) z[i]++;\n    if (i + z[i] > r) { l = i; r = i + z[i]; }\n  }\n}"
+        }
+      ]
+    },
+    {
+      "title": "Rabin-Karp and Boyer-Moore compared",
+      "summary": "Know the alternatives and when they win.",
+      "sections": [
+        {
+          "body": "**Rabin-Karp** hashes each window of length m with a rolling hash, updating in O(1) when the window slides: `h = (h - T[i] * B^(m-1)) * B + T[i+m]` modulo a large prime. Equal hashes trigger a character comparison, so the expected time is O(n + m) but a bad hash or adversarial text degrades to O(nm). It excels at searching many patterns of one length at once. **Boyer-Moore** compares from the right end of the pattern and, on mismatch, shifts by the larger of the bad-character and good-suffix rules. On natural text it can examine fewer than n characters, around n / m for long patterns, which is why it dominates general-purpose search despite a worse worst case in simple variants."
+        }
+      ]
+    },
+    {
+      "title": "Aho-Corasick for many patterns",
+      "summary": "KMP's failure idea on a trie.",
+      "sections": [
+        {
+          "body": "Build a trie of all k patterns. For each node, compute a failure link to the node representing the longest proper suffix of its string that is also a trie prefix: exactly the LPS idea, calculated breadth first. Scanning the text moves along trie edges and follows failure links on mismatches, reporting matches stored at output links. Time is O(n + L + z), where L is the total length of the patterns and z the number of occurrences reported. It is used in antivirus and intrusion detection signatures, spam filters, and the original `fgrep`."
+        }
+      ]
+    },
+    {
+      "title": "Periodicity and string problems built on the table",
+      "summary": "Beyond searching.",
+      "sections": [
+        {
+          "body": "The smallest period of a string of length n is n minus lps[n-1] when that value divides n; otherwise the string is not a repetition of a shorter block. This solves 'repeated substring pattern' directly: the string is built from a repeated block if `lps[n-1] > 0` and `n % (n - lps[n-1]) == 0`.",
+          "code": "/* smallest period of s: shortest p such that s repeats with period p */\nint smallest_period(const char *s, int n, int lps[]) {\n  int p = n - lps[n - 1];            /* lps built over s */\n  return (n % p == 0) ? p : n;       /* p is a true repeating block only if it divides n */\n}"
+        },
+        {
+          "body": "**Shortest palindrome by prepending characters**: build the table for `s + '#' + reverse(s)`; the last value is the length of the longest palindromic prefix, and the remainder of the string reversed goes in front. **Count of each prefix occurring as a substring** and **number of distinct substrings** also follow from the prefix function in O(n) or O(n squared) respectively. Recognizing 'border of the whole or of a prefix' in a problem statement is the cue to reach for the LPS table."
+        }
+      ]
+    },
+    {
+      "title": "Why the naive method struggles",
+      "summary": "Degenerate patterns and the matching overview.",
+      "sections": [
+        {
+          "body": "Naive search is linear only when the pattern has all distinct characters, and it cannot be improved below that when characters repeat. Bad inputs: text AAAAAAAAAAAAAAAAAB with pattern AAAAB (worst case style), and text ABABABCABABABCABABABC with pattern ABABAC (not the worst case but bad). KMP exploits the pattern's repeating sub-patterns to reach O(n + m).\n\nMatching overview: text AAAAABAAABA, pattern AAAA. The first window matches. When the window moves one position, KMP compares only the fourth A of the pattern with the fourth character of the new window, because the first three characters are already known to match. The LPS array is what tells it how many characters to skip."
+        }
+      ]
+    },
+    {
+      "title": "LPS tables worked for more patterns",
+      "summary": "Check your understanding against known answers.",
+      "sections": [
+        {
+          "body": "Pattern aabaaac: index 0 gives 0; `aa` gives 1; `aab` gives 0; `aaba` gives 1; `aabaa` gives 2 (the border `aa`); `aabaaa` gives 2 (the border `aa` again); `aabaaac` gives 0 because the final c matches no prefix. Table: [0, 1, 0, 1, 2, 2, 0].\n\nPattern abcdabca: [0, 0, 0, 0, 1, 2, 3, 1]. Nothing repeats in `abcd`; then `a`, `ab`, `abc` repeat in turn, and the final `abca` falls back to the border `a`.\n\nMore tables: AAAA gives [0, 1, 2, 3]; ABCDE gives [0, 0, 0, 0, 0]; AABAACAABAA gives [0, 1, 0, 1, 2, 0, 1, 2, 3, 4, 5]; AAACAAAAAC gives [0, 1, 2, 0, 1, 2, 3, 3, 3, 4]; AAABAAA gives [0, 1, 2, 0, 1, 2, 3]."
+        },
+        {
+          "body": "`lps[0]` is always 0 (a single character has no non-empty proper prefix). Keep `len`, the previous border length, and compare `pat[i]` with `pat[len]`. **Case 1**: they are equal, so the border extends: `len++` and `lps[i] = len`. **Case 2**: they differ and `len == 0`, so `lps[i] = 0`. **Case 3**: they differ and `len > 0`. The border of length len cannot be extended, but a shorter border may still match. Since `pat[0..len-1]` equals `pat[i-len..i-1]`, the shorter candidates are exactly the borders of that prefix, and `lps[len-1]` already records the longest, so set `len = lps[len-1]` and try again without moving i."
+        }
+      ]
+    },
+    {
+      "title": "Tracing the textbook searches",
+      "summary": "Two examples with overlapping and repeated matches.",
+      "sections": [
+        {
+          "body": "Text abcab, pattern ab: matches start at 0 and 3, so the output is [0, 3]. Text aabaacaadaabaaba, pattern aaba: matches start at 0, 9 and 12, so [0, 9, 12]. Look at 9 and 12: the matches overlap by one character, the final `a` of one match being the first `a` of the next. That is only possible because after a full match the pointer falls back to `lps[m-1]` (here lps of `aaba` is 1) instead of zero. At a mismatch with j characters matched, we know `pat[0..j-1]` equals `txt[i-j..i-1]`, and `lps[j-1]` tells us the longest part of that already equals a pattern prefix, so we resume from `lps[j-1]` rather than re-comparing it."
+        }
+      ]
+    },
+    {
+      "title": "Related problems solved with the same table",
+      "summary": "Variations that appear in practice.",
+      "sections": [
+        {
+          "body": "**Case-insensitive search**: lower-case both strings (or compare with a folding function) and run KMP. **All occurrences of a subarray in an array**: KMP works on any sequence with an equality test, not only characters. **Minimum characters to add at the front to make a palindrome**: build the table of `s + '#' + reverse(s)`; the last value is the longest palindromic prefix. **Rotations**: s2 is a rotation of s1 if and only if the lengths match and s2 occurs in s1 + s1. **Minimum repetitions of s1 so that s2 is a substring**: repeat s1 enough times to cover the length of s2 plus one extra copy, then search. **Longest prefix that is also a suffix**: that is just `lps[n-1]`."
         }
       ]
     }
   ],
   "takeaways": [
-    "KMP avoids re-comparing text by using the pattern's own prefix-suffix structure.",
-    "lps[i] = longest proper prefix of p[0..i] that is also a suffix.",
-    "O(n + m) time and O(m) space.",
-    "Compare with Rabin-Karp and Boyer-Moore for other trade-offs."
+    "KMP finds a pattern in a text in O(n + m) time with O(m) extra space.",
+    "The LPS table stores, for each pattern prefix, the length of its longest proper prefix that is also a suffix.",
+    "On a mismatch after j matched characters, set j = lps[j-1]; the text pointer never moves backward.",
+    "After a full match, set j = lps[m-1] so that overlapping occurrences are found.",
+    "Build the table by matching the pattern against itself; total work is amortized O(m).",
+    "Smallest period of a string is n minus lps[n-1] when it divides n; the table also solves shortest-palindrome style problems.",
+    "Alternatives: Rabin-Karp (hashing), Boyer-Moore (right-to-left skipping), Z-algorithm, and Aho-Corasick for many patterns."
+  ],
+  "practice": [
+    {
+      "title": "Compute the LPS table by hand for ababaca and aabaaab",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement strStr: return the first index of the needle in the haystack",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find all occurrences of a pattern including overlapping ones",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Repeated substring pattern: is the string a repeated block?",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count how many times each prefix of a string appears in the string",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Shortest palindrome: fewest characters to prepend",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Check whether one string is a rotation of another using KMP",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest happy prefix: longest prefix that is also a suffix",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Search a stream one character at a time with only O(m) memory",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Compare KMP, Rabin-Karp and Z on an adversarial input such as aaaa...ab",
+      "difficulty": "Medium"
+    }
   ],
   "references": [
     {
@@ -94,28 +273,6 @@
     {
       "label": "Knuth, Morris, Pratt: Fast Pattern Matching in Strings (1977)",
       "url": "https://epubs.siam.org/doi/10.1137/0206024"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Compute the LPS array for three patterns by hand",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement KMP search and return all matches",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Find the smallest repeating unit of a string",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Implement strStr",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Shortest palindrome by prepending characters",
-      "difficulty": "Hard"
     }
   ]
 }

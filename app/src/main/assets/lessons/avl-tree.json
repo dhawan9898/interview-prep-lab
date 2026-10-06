@@ -1,137 +1,287 @@
 {
-  "summary": "An AVL tree is a binary search tree that keeps itself balanced: for every node the heights of its left and right subtrees differ by at most one. Rotations after inserts and deletes restore the invariant, guaranteeing O(log n) search, insert, and delete.",
+  "summary": "An AVL tree is a binary search tree that keeps itself balanced: for every node, the heights of the left and right subtrees differ by at most one. After each insert or delete it walks back up the path, updates heights, and applies one of four rotations (LL, RR, LR, RL) wherever the balance factor reaches +2 or -2. That guarantees height at most about 1.44 log2(n), so search, insert and delete are O(log n) in the worst case, not just on average. It was the first self-balancing tree (Adelson-Velsky and Landis, 1962) and is a good choice for lookup-heavy ordered data and a standard topic in interviews.",
   "sections": [
     {
-      "heading": "Balance factor",
-      "body": "balance(node) = height(left) - height(right). In an AVL tree every node has balance -1, 0, or +1. Each node stores its height so balance is O(1) to compute. An AVL tree of n nodes has height at most about 1.44 log2(n).",
-      "code": "int height(Node *n) { return n ? n->h : 0; }\nint balance(Node *n) { return n ? height(n->left) - height(n->right) : 0; }\nvoid update(Node *n) { n->h = 1 + max(height(n->left), height(n->right)); }"
-    },
-    {
-      "heading": "Rotations",
-      "body": "A rotation is a local pointer rearrangement that changes heights but preserves BST order.",
-      "code": "Node *rotate_right(Node *y) {      //     y          x\n  Node *x = y->left;               //    / \\        / \\\n  y->left = x->right;              //   x   C  ->  A   y\n  x->right = y;                    //  / \\            / \\\n  update(y); update(x); return x;  // A   B          B   C\n}\nNode *rotate_left(Node *x) {\n  Node *y = x->right;\n  x->right = y->left; y->left = x;\n  update(x); update(y); return y;\n}"
-    },
-    {
-      "heading": "The four imbalance cases",
-      "body": "After inserting, walk back up. At the first node z with |balance| = 2:",
+      "heading": "Overview",
+      "body": "A plain binary search tree is only fast if it stays bushy, and sorted input turns it into a linked list. The AVL tree fixes this by enforcing a strict shape rule and repairing violations locally with rotations. A rotation rearranges a few pointers around one node, preserves the in-order order of keys, and restores the height balance in O(1). Since an insert or delete only disturbs nodes on a single root-to-leaf path, repairing the path costs O(log n) in total.",
       "bullets": [
-        "Left-Left (balance > 1, new key in left child's left): rotate right at z.",
-        "Right-Right (balance < -1, key in right child's right): rotate left at z.",
-        "Left-Right (balance > 1, key in left child's right): rotate left at the left child, then right at z.",
-        "Right-Left (balance < -1, key in right child's left): rotate right at the right child, then left at z."
+        "**Problem it solves**: guaranteeing logarithmic height for a BST no matter the order of insertions.",
+        "**Trade-off**: stricter balance gives shallower trees and faster lookups, but updates do more rebalancing work than in looser schemes such as red-black trees.",
+        "**Where it sits**: between the plain BST (no guarantee) and the red-black tree (looser guarantee, fewer rotations)."
       ]
     },
     {
-      "heading": "Insertion",
-      "body": "Insert as in a normal BST, then recompute heights on the way back up and rebalance.",
-      "code": "Node *insert(Node *n, int k) {\n  if (!n) return new_node(k);\n  if (k < n->key) n->left = insert(n->left, k);\n  else if (k > n->key) n->right = insert(n->right, k);\n  else return n;\n  update(n);\n  int b = balance(n);\n  if (b > 1 && k < n->left->key)  return rotate_right(n);\n  if (b < -1 && k > n->right->key) return rotate_left(n);\n  if (b > 1 && k > n->left->key)  { n->left = rotate_left(n->left); return rotate_right(n); }\n  if (b < -1 && k < n->right->key) { n->right = rotate_right(n->right); return rotate_left(n); }\n  return n;\n}"
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Height of a node**: edges on the longest path down to a leaf. A leaf has height 0 and a missing child counts as height -1. Many implementations store height as 1 for a leaf and 0 for NULL; just stay consistent.",
+        "**Balance factor**: height(left) minus height(right). A node is balanced if its balance factor is -1, 0 or +1.",
+        "**AVL invariant**: every node in the tree has balance factor in {-1, 0, +1}.",
+        "**Imbalance cases**: after an update a node may reach +2 (left heavy) or -2 (right heavy). Look at the heavy child to choose the case.",
+        "**LL case**: node is +2 and its left child is +1 or 0. Fix with one right rotation.",
+        "**RR case**: node is -2 and its right child is -1 or 0. Fix with one left rotation.",
+        "**LR case**: node is +2 and its left child is -1. Rotate the left child left, then rotate the node right.",
+        "**RL case**: node is -2 and its right child is +1. Rotate the right child right, then rotate the node left.",
+        "**Rotation**: a local pointer swap that lifts one child above its parent while keeping the BST ordering of all keys and subtrees.",
+        "**Pivot**: the child that moves up during a rotation."
+      ]
     },
     {
-      "heading": "Complexity",
+      "heading": "How It Works",
+      "body": "Insert like an ordinary BST, then retrace your steps upward. At each ancestor, recompute the height from its children and look at the balance factor. If it is still within one, keep going. If it hits +2 or -2, apply the matching rotation and the subtree regains its pre-insert height. The recursive formulation does this naturally: each call rebalances on the way back out.\n\nThe rebalance step looks at the balance factor of the node and of its heavy child, then picks one of the four cases. Note the update order inside each rotation: the lower node gets its height recomputed first, then the new root.\n\n**Worked example**: insert 10, 20, 30. After 10 and 20 the tree is a right chain with balance factors -1 and 0, still legal. Inserting 30 makes node 10 have balance -2, and its right child 20 has -1, so this is the RR case. A left rotation on 10 makes 20 the root with children 10 and 30, all balance factors 0. Now insert 25: it goes right of 20, left of 30, so 30 becomes +1 and 20 becomes -1, still fine. Insert 22: it goes left of 25, making 25 +1, 30 +2. Node 30 is left heavy and its left child 25 is +1, so this is LL: a right rotation on 30 lifts 25 above 30, giving 20 as root, right child 25, whose children are 22 and 30.\n\n**Delete** also starts as an ordinary BST delete (leaf, one child, or copy the in-order successor and delete it), then rebalances every ancestor on the way back. The difference from insert: after a rotation the subtree height may shrink, so the imbalance can propagate and more than one rotation can be needed along the path. When the heavy child has balance factor 0, a single rotation is correct (this case cannot occur on insert), so the double rotation is chosen only when the heavy child leans strictly the other way, exactly as the `rebalance` function above does. Reusing it for delete is correct.",
+      "code": "#include <stdlib.h>\n\nstruct N { int key, h; struct N *l, *r; };\n\nstatic int ht(const struct N *n) { return n ? n->h : 0; }\nstatic int mx(int a, int b) { return a > b ? a : b; }\nstatic void upd(struct N *n) { n->h = 1 + mx(ht(n->l), ht(n->r)); }\nstatic int bal(const struct N *n) { return n ? ht(n->l) - ht(n->r) : 0; }\n\nstatic struct N *rot_right(struct N *y) {   /* y is the heavy node */\n    struct N *x = y->l;\n    y->l = x->r;\n    x->r = y;\n    upd(y); upd(x);\n    return x;                               /* new subtree root */\n}\n\nstatic struct N *rot_left(struct N *x) {\n    struct N *y = x->r;\n    x->r = y->l;\n    y->l = x;\n    upd(x); upd(y);\n    return y;\n}\n\nstatic struct N *rebalance(struct N *n) {\n    upd(n);\n    int b = bal(n);\n    if (b > 1) {                            /* left heavy */\n        if (bal(n->l) < 0) n->l = rot_left(n->l);   /* LR */\n        return rot_right(n);                         /* LL */\n    }\n    if (b < -1) {                           /* right heavy */\n        if (bal(n->r) > 0) n->r = rot_right(n->r);  /* RL */\n        return rot_left(n);                          /* RR */\n    }\n    return n;\n}\n\nstruct N *avl_insert(struct N *n, int k) {\n    if (!n) {\n        struct N *t = calloc(1, sizeof *t);\n        if (!t) abort();\n        t->key = k; t->h = 1;\n        return t;\n    }\n    if (k < n->key)      n->l = avl_insert(n->l, k);\n    else if (k > n->key) n->r = avl_insert(n->r, k);\n    else return n;                          /* ignore duplicates */\n    return rebalance(n);\n}\n\nstruct N *avl_delete(struct N *n, int k) {\n    if (!n) return NULL;\n    if (k < n->key)      n->l = avl_delete(n->l, k);\n    else if (k > n->key) n->r = avl_delete(n->r, k);\n    else {\n        if (!n->l || !n->r) {\n            struct N *c = n->l ? n->l : n->r;\n            free(n);\n            return c;                       /* may be NULL */\n        }\n        struct N *s = n->r;\n        while (s->l) s = s->l;\n        n->key = s->key;\n        n->r = avl_delete(n->r, s->key);\n    }\n    return rebalance(n);\n}",
       "bullets": [
-        "Search, insert, delete: O(log n) worst case.",
-        "An insertion needs at most one single or double rotation.",
-        "A deletion may need O(log n) rotations along the path.",
-        "Space: O(n), plus a height field per node."
+        "For an LR case such as inserting 30, 10, 20: node 30 is +2 and its left child 10 is -1. Rotate 10 left (20 becomes the left child), then rotate 30 right. The result is 20 with children 10 and 30.",
+        "For RL, the mirror image: inserting 10, 30, 20 gives 10 at -2 with right child 30 at +1. Rotate 30 right, then 10 left."
+      ]
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Height-stored AVL**: each node keeps its height (as above). Simple and the usual choice.",
+        "**Balance-factor-stored AVL**: each node keeps only 2 bits for -1, 0, +1, saving memory, with slightly fiddlier update code.",
+        "**Red-black tree**: allows the longest path to be twice the shortest, so height is up to 2 log2(n+1). Inserts use at most 2 rotations and deletes at most 3, so it wins on write-heavy workloads.",
+        "**Weight-balanced trees**: balance by subtree size instead of height; used in functional-language libraries (for example Haskell's `Data.Map`).",
+        "**Scapegoat tree and treap**: other ways to bound height, with different bookkeeping (rebuild a subtree, or random priorities).",
+        "**Relaxed or lazy AVL**: update rebalancing in a batch or deferral for concurrent settings.",
+        "**Choosing**: use AVL when lookups dominate (read-heavy indexes, lookup tables); use red-black when updates are frequent, which is why most standard libraries chose it."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Search, insert, delete**: O(log n) worst case. Search is the same as BST search; update adds an O(1) rebalance per level on the way back.",
+        "**Height bound**: h < 1.4405 log2(n + 2) - 0.328. The worst case has about 44 percent more levels than a perfect tree.",
+        "**Minimum nodes for height h**: N(h) = N(h-1) + N(h-2) + 1 with N(1) = 1 and N(2) = 2 (height counted in levels), a Fibonacci-like recurrence. This is why n grows exponentially with h, and why h is logarithmic in n.",
+        "**Rotations per insert**: at most 1 (a single or double rotation); after it the subtree returns to its old height so no ancestor changes.",
+        "**Rotations per delete**: up to O(log n), one per level in the worst case.",
+        "**Extra space**: one int (or 2 bits) per node for height or balance, plus the O(log n) recursion stack.",
+        "**Rotation cost**: O(1), a handful of pointer assignments, no key copying.",
+        "**Practical size**: 1 million keys give a height of about 20 in a perfect tree and at most about 29 in an AVL tree, so at most about 29 comparisons per lookup."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Stale heights**: forgetting to recompute a node's height after a child changes, or updating the new root before the demoted node in a rotation. Always update the lower node first.",
+        "**Wrong case selection**: LL versus LR is decided by the child's balance factor, not just the node's. Zig-zag shapes need the double rotation.",
+        "**Delete with balanced child**: when the heavy child has factor 0, a single rotation is right; a double rotation here is a bug.",
+        "**Not returning the new root**: a rotation changes the subtree root; the caller must store the returned pointer or the tree loses nodes.",
+        "**Off-by-one height conventions**: leaf height 0 versus 1 changes the formula for balance only if you treat NULL inconsistently.",
+        "**Duplicates**: the rotations assume distinct keys or a consistent tie policy; storing equal keys on both sides can break the ordering.",
+        "**Assuming one rotation suffices on delete**: it does not; keep rebalancing all the way to the root.",
+        "**Recursion**: depth is only O(log n) so overflow is not a concern, unlike a plain BST."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**In-memory ordered indexes**: lookup-heavy maps where predictable worst-case latency matters.",
+        "**Databases and caches**: in-memory index structures and ordered sets that are read far more than written.",
+        "**Language runtimes**: some ordered-container implementations and teaching libraries use AVL; the major C++ and Java libraries use red-black trees instead because updates are cheaper.",
+        "**Kernels and file systems**: Linux uses red-black trees (and in newer kernels maple trees) rather than AVL for virtual memory areas and schedulers; AVL-style trees appear in some embedded and real-time code where lookup bounds dominate.",
+        "**Competitive programming and interviews**: AVL is the canonical way to practice rotations and invariants."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Define an AVL tree.** A BST in which every node's subtree heights differ by at most 1.",
+        "**What is the balance factor?** height(left) minus height(right); it must be -1, 0 or +1.",
+        "**Name the four rotations.** LL (right rotate), RR (left rotate), LR (left then right), RL (right then left).",
+        "**How many rotations for an insert?** At most one rotation event (single or double).",
+        "**And for a delete?** Possibly one per level, so up to O(log n).",
+        "**AVL versus red-black?** AVL is more strictly balanced, faster to search, slower to update; red-black has fewer rotations and is what standard libraries use.",
+        "**What is the maximum height?** About 1.44 log2(n).",
+        "**Why is the minimum-node recurrence Fibonacci-like?** The sparsest tree of height h has a sparsest subtree of height h-1 and one of height h-2."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Deletion",
-      "summary": "Same cases, possibly many times.",
+      "title": "Balance factor and the AVL invariant",
+      "summary": "The one rule that defines the tree.",
       "sections": [
         {
-          "body": "Delete like a BST (replace a two-child node by its in-order successor), then rebalance every ancestor on the way up. Unlike insertion, one fix may not be enough because the subtree height can shrink and propagate upward."
-        }
-      ]
-    },
-    {
-      "title": "AVL versus red-black trees",
-      "summary": "Which is better?",
-      "sections": [
-        {
+          "body": "The invariant says every node has |height(left) - height(right)| at most 1. Notice it applies to every node, not only the root, and heights are measured in the longest path, not in node counts. A tree can have a perfect-looking root and still violate AVL deep inside a subtree. Because only nodes on the update path can change height, only those ancestors can break the rule.",
           "bullets": [
-            "AVL is more strictly balanced: faster lookups, slower inserts/deletes (more rotations).",
-            "Red-black trees allow a looser height (up to 2 log n) with fewer rotations; used in std::map, TreeMap, and the Linux scheduler.",
-            "Choose AVL for read-heavy workloads, red-black for write-heavy ones."
+            "A node with balance 0 has equal-height children.",
+            "+1 means the left subtree is exactly one level taller; -1 means the right subtree is.",
+            "After an insert, a violated node is always exactly +2 or -2, never worse, because before the insert it was within one."
           ]
         }
       ]
     },
     {
-      "title": "Building from sorted input",
-      "summary": "The motivation.",
+      "title": "Single rotations: LL and RR",
+      "summary": "The straight-line cases.",
       "sections": [
         {
-          "body": "A plain BST fed 1, 2, 3, ... becomes a linked list with O(n) operations. An AVL tree rotates at each step and stays near log n height, so sorted input is safe."
+          "body": "In the LL case, the new node was inserted into the left subtree of the left child, so the three nodes form a left-leaning line. A right rotation on the top node lifts the middle node into its place: the old left child becomes the root, the old root becomes its right child, and the old left child's right subtree is re-attached as the old root's left subtree. The keys keep their order because that moved subtree lies between the two nodes. RR is the exact mirror image with a left rotation.",
+          "code": "/* before (LL case)          after right rotation on z\n        z                          y\n       / \\                       /   \\\n      y   D        ->           x     z\n     / \\                      / \\   / \\\n    x   C                    A   B C   D\n   / \\\n  A   B                                              */"
+        },
+        {
+          "body": "After the rotation, the heights of the affected subtree are restored to what they were before the insert, so no ancestor needs any further work."
         }
       ]
     },
     {
-      "title": "Verifying an AVL tree",
-      "summary": "Tests worth writing.",
+      "title": "Double rotations: LR and RL",
+      "summary": "The zig-zag cases.",
       "sections": [
         {
-          "body": "Check three invariants after each operation: BST ordering via inorder traversal, stored heights equal the recomputed heights, and every balance factor lies in [-1, 1]."
+          "body": "When the new key sits in the right subtree of the left child (LR), a single right rotation would only flip the imbalance to the other side. Instead you first rotate the left child to the left, turning the zig-zag into a straight line, then rotate the top node right. The new node's parent ends up as the subtree root with the other two as its children. RL is symmetric.",
+          "bullets": [
+            "LR example: insert 30, 10, 20. Left-rotate 10 (20 becomes left child of 30), then right-rotate 30. Root is 20.",
+            "RL example: insert 10, 30, 20. Right-rotate 30, then left-rotate 10. Root is 20.",
+            "In code this is just a conditional extra rotation on the child before the main rotation, as in `rebalance` above."
+          ]
         }
       ]
     },
     {
-      "title": "Applications",
-      "summary": "Where balance matters.",
+      "title": "Insertion trace",
+      "summary": "Watching rotations happen on a growing tree.",
+      "sections": [
+        {
+          "body": "Insert 1 through 7 in order. After 1, 2: right chain, fine. Insert 3: node 1 is -2 with right child -1, an RR case, left rotate: root 2 with children 1 and 3. Insert 4: goes right of 3, balance fine. Insert 5: node 3 is -2, RR: left rotate on 3 makes 4 the parent of 3 and 5, so the tree is 2 with children 1 and 4 (4 has 3 and 5). Insert 6: it goes right of 5, and the root 2 now has a left subtree of height 1 against a right subtree of height 3, so it is -2 with a right child (4) leaning right: RR, left rotate on 2. Root 4 now has left child 2 (with 1 and 3) and right child 5 (with right child 6). Insert 7: node 5 becomes -2, RR: left rotate gives 6 with children 5 and 7. Final tree: root 4, left 2 (1, 3), right 6 (5, 7), a perfect tree. A plain BST fed the same sequence would be a chain of height 6; this one has height 2."
+        }
+      ]
+    },
+    {
+      "title": "Deletion and cascading rebalance",
+      "summary": "Why deletes can rotate many times.",
+      "sections": [
+        {
+          "body": "Removing a node can shorten a subtree by one. If that makes the parent unbalanced, a rotation fixes the parent, but the rotated subtree can end up one shorter than before, which then unbalances the grandparent, and so on up to the root. Each level needs at most one rotation, so the total is O(log n) rotations, still O(log n) time overall.",
+          "bullets": [
+            "Delete the node as in a BST (successor swap for two children).",
+            "Walk back up, recompute heights, and rotate at any node reaching +2 or -2.",
+            "Pick single or double rotation by the heavy child's balance; a heavy child at 0 uses a single rotation.",
+            "Stop early only if a subtree's height did not change; the simple recursive code just keeps going."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Height bound and the Fibonacci argument",
+      "summary": "Why AVL trees are guaranteed shallow.",
+      "sections": [
+        {
+          "body": "Let N(h) be the fewest nodes in an AVL tree of height h. The root has a child subtree of height h-1 and, to stay as sparse as possible, a sibling of height h-2. So N(h) = N(h-1) + N(h-2) + 1. This grows like the Fibonacci numbers, about phi^h with phi roughly 1.618. Solving gives n at least about phi^h, so h is at most log base phi of n, which equals about 1.44 log2(n). For comparison, a perfect tree has h = log2(n). The conclusion: even the worst AVL tree is only 44 percent taller than the best one, so every operation is O(log n)."
+        }
+      ]
+    },
+    {
+      "title": "AVL versus red-black tree",
+      "summary": "The practical choice between two balanced trees.",
       "sections": [
         {
           "bullets": [
-            "In-memory ordered indexes and dictionaries.",
-            "Real-time systems needing predictable lookup time.",
-            "Order statistics when augmented with subtree sizes.",
-            "Interval and range queries when augmented."
+            "**Height**: AVL at most 1.44 log2(n); red-black at most 2 log2(n+1). AVL lookups visit fewer nodes.",
+            "**Updates**: red-black needs at most 2 rotations on insert and 3 on delete, plus color flips; AVL may rotate along the whole path on delete.",
+            "**Metadata**: AVL needs a height or 2 bits; red-black needs 1 color bit.",
+            "**Rule of thumb**: read-mostly, use AVL; mixed or write-heavy, use red-black.",
+            "**Libraries**: C++ `std::map`, Java `TreeMap` and the Linux kernel use red-black trees."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Augmenting an AVL tree",
+      "summary": "Adding subtree size or other aggregates.",
+      "sections": [
+        {
+          "body": "Because rotations are local, you can maintain extra per-node data by recomputing it inside the same `upd` function that recomputes height. Storing subtree size gives O(log n) rank and k-th element queries (an order-statistic tree). Storing the maximum endpoint of an interval gives an interval tree. The rule is that the stored value must be computable from a node's key and its children's values, and `upd` must be called on the lower node first in every rotation. This is the main reason AVL-like trees underpin so many interview designs such as a sorted list with fast index access."
+        }
+      ]
+    },
+    {
+      "title": "Testing an implementation",
+      "summary": "How to be sure your AVL code is right.",
+      "sections": [
+        {
+          "body": "Write a checker that recursively verifies three things: the BST ordering (keys within bounds), that every stored height equals 1 plus the maximum of the children's heights, and that every balance factor is in [-1, 1]. Run it after every insert and delete in a randomized test that mixes operations against a reference sorted array. Also test sorted, reverse-sorted and zig-zag inputs, since those exercise every rotation case, and delete tests that remove the root, leaves, and nodes with one or two children.",
+          "code": "/* returns height, or -1000 if invalid */\nstatic int check(const struct N *n, long lo, long hi) {\n    if (!n) return 0;\n    if (n->key <= lo || n->key >= hi) return -1000;\n    int a = check(n->l, lo, n->key), b = check(n->r, n->key, hi);\n    if (a < 0 || b < 0 || a - b > 1 || b - a > 1) return -1000;\n    if (n->h != 1 + (a > b ? a : b)) return -1000;\n    return n->h;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Strengths and weaknesses",
+      "summary": "What to weigh when choosing an AVL tree.",
+      "sections": [
+        {
+          "bullets": [
+            "**Strengths**: guaranteed O(log n) search, insert and delete; sorted traversal, floor, ceiling, min and max come along for free; strict balance means the shallowest tree of any balanced BST scheme, so lookups are fastest; it is easier to reason about than red-black trees, which is why it is the first self-balancing tree taught.",
+            "**Weaknesses**: harder to implement than a plain BST; updates trigger more rotations than red-black trees, so it is used less in language libraries; every node carries height or balance metadata.",
+            "**Good fits**: read-heavy workloads with occasional updates, and real-time settings that need predictable, consistent lookup time."
           ]
         }
       ]
     }
   ],
   "takeaways": [
-    "Balance factor must stay in {-1, 0, +1} at every node.",
-    "Fix imbalance with single (LL, RR) or double (LR, RL) rotations.",
-    "Guarantees O(log n) search, insert, delete.",
-    "More strictly balanced than red-black trees: faster reads, costlier updates."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
-      "url": "https://algs4.cs.princeton.edu/home/"
-    },
-    {
-      "label": "Reference: AVL tree (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
-    }
+    "An AVL tree is a BST where every node's left and right subtree heights differ by at most 1.",
+    "Balance factor is height(left) minus height(right); +2 or -2 triggers a rotation.",
+    "Four cases: LL (right rotate), RR (left rotate), LR (left then right), RL (right then left).",
+    "An insert needs at most one rotation event; a delete can need O(log n) rotations.",
+    "Height is at most about 1.44 log2(n), so search, insert and delete are all O(log n) worst case.",
+    "Recompute the lower node's height before the new root's height inside every rotation, and return the new subtree root.",
+    "AVL searches faster than red-black; red-black updates cheaper, which is why standard libraries use it."
   ],
   "practice": [
     {
-      "title": "Insert keys 10 20 30 40 50 25 and draw the tree after each step",
+      "title": "Compute the height and balance factor of every node in a binary tree",
       "difficulty": "Easy"
-    },
-    {
-      "title": "Implement LL and RR rotations",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Implement full AVL insertion with all four cases",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Implement AVL deletion",
-      "difficulty": "Hard"
     },
     {
       "title": "Check whether a binary tree is height-balanced",
       "difficulty": "Easy"
+    },
+    {
+      "title": "Perform a single left or right rotation on a given node",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Insert 10, 20, 30, 40, 50, 25 into an AVL tree and draw the result",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement AVL insert with all four rotation cases",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement AVL delete and verify the invariant after each step",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Find the minimum number of nodes in an AVL tree of height h",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Convert a sorted array to a height-balanced BST",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Count the nodes smaller than x using an AVL tree with subtree sizes",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain when AVL beats red-black and when it does not",
+      "difficulty": "Medium"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Introduction to AVL tree (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-avl-tree/"
+    },
+    {
+      "label": "Adelson-Velsky and Landis, An algorithm for the organization of information (1962)",
+      "url": "https://en.wikipedia.org/wiki/AVL_tree"
+    },
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
     }
   ]
 }

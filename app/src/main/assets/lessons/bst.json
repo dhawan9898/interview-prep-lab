@@ -1,104 +1,304 @@
 {
-  "summary": "A binary search tree keeps values ordered: every key in a node's left subtree is smaller and every key in its right subtree is larger. That ordering makes search, insert, and delete take time proportional to the tree's height.",
+  "summary": "A binary search tree (BST) stores keys so that everything in a node's left subtree is smaller and everything in its right subtree is larger. That single rule lets search, insert, delete, min, max, floor, ceiling and successor run in time proportional to the tree's height h, and an in-order walk yields the keys in sorted order. It matters because it is the foundation of ordered maps and sets, and because almost every tree interview question is a BST question in disguise. Unbalanced it can degrade to O(n), so production code uses self-balancing variants such as AVL and red-black trees.",
   "sections": [
     {
-      "heading": "The BST property",
+      "heading": "Overview",
+      "body": "A binary search tree is a binary tree with an ordering invariant. Each node holds a key (and usually a value), a left pointer and a right pointer. The invariant is: every key in the left subtree is less than the node's key, and every key in the right subtree is greater, and this holds for every node, not just the root. Think of it as binary search made dynamic: a sorted array gives O(log n) search but O(n) insert, while a BST gives search and insert that both follow a single root-to-leaf path.",
       "bullets": [
-        "left subtree keys < node key < right subtree keys, recursively.",
-        "In-order traversal (left, node, right) visits keys in sorted order.",
-        "Duplicates need a policy: reject, count, or place consistently on one side."
+        "**Problem it solves**: keep a changing set of keys in sorted order with fast lookup, insertion, deletion and range or neighbour queries.",
+        "**Compared with a sorted array**: inserts and deletes do not shift elements, so they cost O(h) instead of O(n).",
+        "**Compared with a hash table**: lookups are O(h) rather than O(1) average, but you also get ordered iteration, floor, ceiling, range scans and k-th smallest.",
+        "**Where it sits**: plain BSTs teach the idea; AVL and red-black trees add balancing; B-trees generalize the idea to wide nodes for disks."
       ]
     },
     {
-      "heading": "Search",
-      "body": "Compare with the node: go left if smaller, right if larger, stop when equal or NULL. O(h).",
-      "code": "struct T *find(struct T *t, int k) {\n  while (t && t->key != k) t = (k < t->key) ? t->left : t->right;\n  return t;\n}"
-    },
-    {
-      "heading": "Insert",
-      "body": "Search for the key's position; attach a new leaf where the search ends. O(h).",
-      "code": "struct T *insert(struct T *t, int k) {\n  if (!t) return new_node(k);\n  if (k < t->key) t->left = insert(t->left, k);\n  else if (k > t->key) t->right = insert(t->right, k);\n  return t;\n}"
-    },
-    {
-      "heading": "Delete: three cases",
+      "heading": "Core Concepts",
       "bullets": [
-        "Leaf: remove it.",
-        "One child: replace the node with its child.",
-        "Two children: copy the in-order successor (minimum of the right subtree) into the node, then delete that successor."
+        "**Node**: key, left child, right child; optionally a parent pointer, a subtree size, or a duplicate count.",
+        "**Root, leaf, internal node**: the topmost node, a node with no children, and any node with at least one child.",
+        "**Height**: the number of edges on the longest root-to-leaf path. An empty tree has height -1 (or 0 if you count nodes), a single node has height 0 (or 1). Be consistent.",
+        "**Depth of a node**: edges from the root to that node. Level-order visits nodes by increasing depth.",
+        "**BST property**: for every node x, all keys in x.left are less than x.key and all keys in x.right are greater. Checking only a node against its two children is not enough.",
+        "**In-order traversal**: left, node, right. On a valid BST it outputs keys in strictly increasing order, which is the most useful fact in the whole topic.",
+        "**In-order successor and predecessor**: the next larger and next smaller key in sorted order.",
+        "**Floor and ceiling of x**: the largest key at most x and the smallest key at least x.",
+        "**Degenerate tree**: every node has one child, so the tree is a linked list with h = n - 1.",
+        "**Balanced tree**: height is O(log n), for example a perfect tree with n = 2^(h+1) - 1 nodes."
       ]
     },
     {
-      "heading": "Complexity and shape",
-      "body": "Height h is between log2(n) (balanced) and n (degenerate). Inserting sorted keys 1, 2, 3, ... builds a linked list and makes every operation O(n). Self-balancing trees keep h = O(log n)."
+      "heading": "How It Works",
+      "body": "Every operation walks one path from the root, deciding at each node whether to go left or right by comparing keys. The examples use this node type.\n\n**Search**: compare the target with the current node. Equal means found, smaller means go left, larger means go right, and running off the tree (NULL) means absent. The iterative form needs no stack.\n\n**Insert**: search for the key; when the search falls off the tree, attach a new leaf at that spot. The recursive version returns the (possibly new) subtree root so the parent can re-link it. Equal keys are ignored here, which gives set semantics.\n\n**Worked example**: insert 50, 30, 70, 20, 40, 60, 80 in that order. 50 becomes the root. 30 is smaller, so it goes left. 70 goes right. 20 goes left of 30, 40 goes right of 30, 60 goes left of 70, 80 goes right of 70. The result is a perfect tree of height 2, and an in-order walk prints 20 30 40 50 60 70 80. Now insert the same keys as 20, 30, 40, 50, 60, 70, 80 and every node has only a right child: height 6, and a search for 80 touches all seven nodes.\n\n**Delete** has three cases, decided by how many children the victim has. A leaf is simply removed. A node with one child is replaced by that child. A node with two children cannot be removed directly, so you overwrite its key with its in-order successor (the minimum of its right subtree) and then delete that successor from the right subtree, which by construction has at most one child. Using the predecessor (maximum of the left subtree) is equally valid. The replacement then falls into the leaf or one-child case, which is why the tree stays valid.\n\n**Traversals**: in-order gives sorted output, pre-order (node, left, right) is used to copy or serialize a tree because rebuilding by re-inserting in pre-order reproduces the same shape, post-order (left, right, node) frees or evaluates children before parents, and level-order uses a queue to visit by depth.",
+      "code": "#include <stdlib.h>\n\nstruct T { int key; struct T *left, *right; };\n\nstruct T *new_node(int k) {\n    struct T *t = malloc(sizeof *t);\n    if (!t) abort();\n    t->key = k;\n    t->left = t->right = NULL;\n    return t;\n}\n\nstruct T *find(struct T *t, int k) {\n    while (t && t->key != k)\n        t = (k < t->key) ? t->left : t->right;\n    return t;\n}\n\nstruct T *insert(struct T *t, int k) {\n    if (!t) return new_node(k);\n    if (k < t->key)      t->left  = insert(t->left, k);\n    else if (k > t->key) t->right = insert(t->right, k);\n    return t;\n}\n\nstruct T *min_node(struct T *t) {\n    while (t->left) t = t->left;\n    return t;\n}\n\nstruct T *delete(struct T *t, int k) {\n    if (!t) return NULL;\n    if (k < t->key)      t->left  = delete(t->left, k);\n    else if (k > t->key) t->right = delete(t->right, k);\n    else {\n        if (!t->left)  { struct T *r = t->right; free(t); return r; }\n        if (!t->right) { struct T *l = t->left;  free(t); return l; }\n        struct T *s = min_node(t->right);\n        t->key = s->key;\n        t->right = delete(t->right, s->key);\n    }\n    return t;\n}\n\nvoid inorder(const struct T *t, void (*visit)(int)) {\n    if (!t) return;\n    inorder(t->left, visit);\n    visit(t->key);\n    inorder(t->right, visit);\n}\n\nvoid free_tree(struct T *t) {      /* post-order */\n    if (!t) return;\n    free_tree(t->left);\n    free_tree(t->right);\n    free(t);\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Plain BST**: simplest, no rebalancing. Fine when keys arrive in random order, dangerous for sorted or adversarial input.",
+        "**AVL tree**: keeps the height difference of every node's subtrees at most 1 using rotations. Strictest balance, fastest lookups, more rotations on update.",
+        "**Red-black tree**: colors nodes and enforces rules that keep the longest path at most twice the shortest. Looser than AVL, at most 2 rotations per insert and 3 per delete. Used by `std::map`, `std::set`, Java `TreeMap` and the Linux kernel.",
+        "**Splay tree**: moves each accessed node to the root, giving amortized O(log n) and fast repeated access to hot keys with no balance metadata.",
+        "**Treap**: each node gets a random priority and the tree is also a heap on priorities; random priorities give expected O(log n) height with very short code.",
+        "**Order-statistic tree**: every node stores its subtree size so the k-th smallest and the rank of a key take O(h).",
+        "**B-tree and B+ tree**: multi-key nodes sized to a disk page, used in databases and file systems; the same ordering idea with fan-out in the hundreds.",
+        "**Threaded BST**: spare NULL pointers point to in-order neighbours so traversal needs no stack or recursion."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Search, insert, delete, min, max, floor, ceiling, successor**: O(h) time, where h is the height.",
+        "**Best and average height**: about log2(n) for a perfect tree; about 1.39 log2(n) expected for n random insertions.",
+        "**Worst height**: n - 1 when keys are inserted in sorted or reverse-sorted order, so every operation becomes O(n).",
+        "**In-order traversal**: O(n) time; O(h) stack space for the recursive version, O(1) with Morris traversal or threads.",
+        "**Space**: O(n) nodes. On a 64-bit machine a node with an int key and two pointers is typically 24 bytes because of padding, so pointer overhead dominates for small keys.",
+        "**Building from n keys**: O(n log n) average by repeated insert; O(n) if you start from a sorted array and pick midpoints.",
+        "**Cache behaviour**: nodes are scattered in memory, so each step can be a cache miss; sorted arrays and B-trees are far friendlier to the CPU cache."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Validating only parent and child**: a node in the left subtree must be less than every ancestor it sits left of, not just its parent. Pass down (min, max) bounds or check that in-order output is strictly increasing.",
+        "**Integer bounds**: using INT_MIN and INT_MAX as the initial bounds fails when a key equals one of them. Use `long`, or pass pointers to the last visited node.",
+        "**Duplicates**: the invariant above is strict. Decide a policy up front (reject, count, or always send equals right) and keep every operation consistent with it, otherwise search and delete disagree.",
+        "**Forgetting to re-link**: in recursive insert and delete, you must assign the returned pointer back (`t->left = insert(t->left, k)`), or the change is lost, especially when the root changes.",
+        "**Delete with two children**: deleting the successor from the right subtree, not from the whole tree, avoids picking up the wrong node when keys repeat.",
+        "**Recursion depth**: a degenerate tree of 100,000 nodes can overflow the call stack. Prefer iterative code or a balanced tree.",
+        "**Memory leaks**: freeing only the root loses the rest. Free in post-order.",
+        "**Comparing with `-`**: `a - b` as a comparator overflows for large ints. Compare with `<` and `>`."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Ordered maps and sets**: C++ `std::map`/`std::set`, Java `TreeMap`/`TreeSet` and Python's `sortedcontainers` equivalents expose BST behaviour through balanced variants.",
+        "**Live sorted data**: keeping prices, scores or timestamps sorted while counting how many are below a threshold (with size-augmented nodes).",
+        "**Double-ended priority queue**: min and max in O(log n) from one structure, which a binary heap cannot do.",
+        "**Schedulers and interval structures**: the Linux Completely Fair Scheduler keeps runnable tasks in a red-black tree keyed by virtual runtime, and interval trees extend a BST for overlap queries.",
+        "**Databases and file systems**: B-tree indexes are the multi-way cousin of the BST.",
+        "**Sorting**: insert everything, then walk in order. O(n log n) average, but heap sort or merge sort are usually the better choice."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is the BST property?** Left subtree keys are smaller, right subtree keys are larger, for every node recursively.",
+        "**Time complexity?** O(h): O(log n) when balanced, O(n) when degenerate.",
+        "**How do you validate a BST?** Recurse with (lo, hi) bounds, or check that in-order is strictly increasing.",
+        "**How do you find the k-th smallest?** In-order walk counting to k, O(h + k); or store subtree sizes for O(h).",
+        "**How do you find the lowest common ancestor?** Starting at the root, go left if both keys are smaller, right if both are larger, otherwise the current node is the LCA. O(h).",
+        "**How do you build a balanced BST from a sorted array?** Pick the middle as root and recurse on each half, O(n).",
+        "**Why not just use a hash table?** Hashing has no order, so no range queries, floor, ceiling or sorted iteration.",
+        "**How do you delete a node with two children?** Copy in the in-order successor's key, then delete the successor."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Traversals",
-      "summary": "Inorder, preorder, postorder, level-order.",
+      "title": "Search and insert in depth",
+      "summary": "One comparison per level decides the whole path.",
       "sections": [
         {
+          "body": "Search and insert share the same descent, so their cost is identical: the number of nodes on the path, at most h + 1. Insert always adds a leaf, which means existing nodes never move and no rebalancing is needed in a plain BST. Because new keys always become leaves, the shape depends entirely on insertion order. Random order tends to produce a bushy tree; sorted order produces a chain.",
           "bullets": [
-            "Inorder: sorted output; also used to validate a BST.",
-            "Preorder: root first; used to copy or serialize a tree.",
-            "Postorder: children first; used to delete or evaluate.",
-            "Level-order: BFS with a queue."
+            "Iterative insert keeps a trailing parent pointer, then links the new node as the parent's left or right child.",
+            "An insert of an existing key can be an update of the stored value, which is how a map differs from a set."
+          ],
+          "code": "struct T *insert_iter(struct T *root, int k) {\n    struct T *n = new_node(k), *p = NULL, *c = root;\n    while (c) {\n        p = c;\n        if (k == c->key) { free(n); return root; }\n        c = (k < c->key) ? c->left : c->right;\n    }\n    if (!p) return n;\n    if (k < p->key) p->left = n; else p->right = n;\n    return root;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Deletion cases",
+      "summary": "Leaf, one child, two children.",
+      "sections": [
+        {
+          "body": "Deletion is the trickiest operation because removing a node must keep the ordering invariant for everything below it.",
+          "bullets": [
+            "**Leaf**: set the parent's pointer to NULL and free the node.",
+            "**One child**: bypass the node by pointing the parent at its only child. The child's whole subtree already lies in the correct range.",
+            "**Two children**: replace the node's key with its in-order successor (leftmost node of the right subtree), then remove that successor, which has no left child so it falls into the leaf or one-child case.",
+            "Example: delete 50 from the tree 50, 30, 70, 20, 40, 60, 80. The successor is 60. Copy 60 into the root, then remove the old 60 leaf. The tree is still valid and has the same height."
           ]
         }
       ]
     },
     {
-      "title": "Min, max, floor, ceiling, successor",
-      "summary": "Order queries.",
+      "title": "Traversals",
+      "summary": "Four ways to visit every node.",
       "sections": [
         {
-          "body": "Min is the leftmost node, max the rightmost. Successor is the minimum of the right subtree, or else the nearest ancestor reached from a left child. Floor and ceiling find the closest key at or below or above x."
+          "bullets": [
+            "**In-order**: left, node, right. Sorted output; the basis of validation and k-th smallest.",
+            "**Pre-order**: node, left, right. Copying a tree or serializing it so it can be rebuilt with the same shape.",
+            "**Post-order**: left, right, node. Deleting a tree or computing a value (like subtree size) from children first.",
+            "**Level-order**: queue-based BFS, visiting depth 0, then depth 1 and so on. Useful for printing the tree by level or finding the minimum depth.",
+            "**Iterative in-order**: push left spine onto an explicit stack, pop, visit, move to the right child. O(h) extra space.",
+            "**Morris traversal**: temporarily threads the in-order predecessor's right pointer back to the current node, giving O(1) extra space and restoring the tree afterwards."
+          ]
         }
       ]
     },
     {
-      "title": "Self-balancing trees",
-      "summary": "AVL and red-black.",
+      "title": "Order queries: min, max, successor, floor, ceiling",
+      "summary": "Neighbours in sorted order without scanning.",
       "sections": [
         {
-          "body": "AVL trees keep subtree heights within 1 using rotations; red-black trees use color rules for looser balance with fewer rotations. Both guarantee O(log n). Standard maps (`std::map`, `TreeMap`) use red-black trees."
+          "body": "Minimum is the leftmost node and maximum is the rightmost. The in-order successor of a node is the minimum of its right subtree if that exists; otherwise it is the nearest ancestor for which the node lies in the left subtree. Floor and ceiling use a descent that remembers the best candidate so far.",
+          "code": "/* largest key <= x, or -1 if none (keys assumed non-negative) */\nint floor_key(const struct T *t, int x) {\n    int best = -1;\n    while (t) {\n        if (t->key == x) return x;\n        if (t->key < x) { best = t->key; t = t->right; }\n        else t = t->left;\n    }\n    return best;\n}"
+        },
+        {
+          "body": "Ceiling is the mirror image: when t->key is greater than x, remember it and go left. Both run in O(h). A range query for keys in [lo, hi] prunes whole subtrees and costs O(h + k) for k reported keys."
         }
       ]
     },
     {
       "title": "Validating a BST",
-      "summary": "A common interview trap.",
+      "summary": "The classic trap: checking only immediate children.",
       "sections": [
         {
-          "body": "Checking only each node against its immediate children is wrong. Pass down allowed (min, max) bounds, or verify that an in-order traversal is strictly increasing.",
-          "code": "bool ok(T *t, long lo, long hi) {\n  return !t || (t->key > lo && t->key < hi && ok(t->left, lo, t->key) && ok(t->right, t->key, hi));\n}"
+          "body": "A tree where each node is merely between its own children can still be invalid, for example a 6 placed in the left subtree of a root 5 beneath a 3. The correct check carries bounds down. An alternative is to run an in-order traversal and confirm each key is greater than the previous one, tracking the previously visited node. A Morris in-order traversal does the same in O(1) extra space by temporarily threading and then restoring the tree. All three methods are O(n) time.",
+          "code": "#include <stdbool.h>\n#include <limits.h>\n\nstatic bool ok(const struct T *t, long lo, long hi) {\n    if (!t) return true;\n    if (t->key <= lo || t->key >= hi) return false;\n    return ok(t->left, lo, t->key) && ok(t->right, t->key, hi);\n}\n\nbool is_bst(const struct T *t) { return ok(t, LONG_MIN, LONG_MAX); }"
         }
       ]
     },
     {
-      "title": "BST vs hash table",
-      "summary": "When ordering matters.",
+      "title": "Duplicates",
+      "summary": "A BST by definition has distinct keys, so pick a policy.",
       "sections": [
         {
-          "body": "Hash tables give O(1) average lookup but no ordering. BSTs give O(log n) with range queries, sorted iteration, and nearest-key lookup."
+          "body": "Real data repeats, so you need a rule. Whatever you pick, apply it in insert, search and delete.",
+          "bullets": [
+            "**Send equals to one side**: always insert equal keys into the right subtree. Simple, but long runs of equal keys build a chain and make the height grow.",
+            "**Count field**: each node stores a `count`. Insert of an existing key increments it, delete decrements it and removes the node only at zero. Height stays tied to the number of distinct keys.",
+            "**Tie-break key**: compare (key, id) pairs so every entry is unique. This is how multimaps are often implemented.",
+            "Remember that with the right-side policy a search finds only the first match; finding all equal keys means continuing down the right subtree.",
+            "The count approach also suits self-balancing trees: a rotation can move equal keys to either side of their twin, which breaks the right-side rule, but a single node with a count has no twin. When deleting a node with two children, copy the successor's key and its count, then delete the successor node. Example: inserting 12, 10, 20, 9, 11, 10, 12, 12 gives only 5 nodes, with counts 3 for 12 and 2 for 10."
+          ]
         }
       ]
     },
     {
-      "title": "Handling duplicates",
-      "summary": "Choose a policy.",
+      "title": "Lowest common ancestor and k-th smallest",
+      "summary": "Two interview staples that use the ordering.",
       "sections": [
         {
-          "body": "A strict BST rejects duplicates. Practical options: store a count in each node, always send equal keys to the right (or left) subtree consistently, or keep a list of values per key. Whatever you choose, make search, insert, and delete agree on it."
+          "body": "**LCA**: the lowest common ancestor of keys a and b is the first node on the path from the root whose key lies between them (inclusive). Walk down: if both keys are smaller go left, if both are larger go right, otherwise stop. O(h) time and O(1) space iteratively.",
+          "code": "const struct T *lca(const struct T *t, int a, int b) {\n    while (t) {\n        if (a < t->key && b < t->key)      t = t->left;\n        else if (a > t->key && b > t->key) t = t->right;\n        else return t;\n    }\n    return NULL;\n}"
+        },
+        {
+          "body": "**K-th smallest**: do an in-order traversal and stop at the k-th visited node, O(h + k). If every node also stores the size of its left subtree, compare k with that size to decide whether to go left, return the node, or go right with a reduced k, giving O(h)."
+        }
+      ]
+    },
+    {
+      "title": "Sorted array to balanced BST",
+      "summary": "Choose the middle so both halves stay equal.",
+      "sections": [
+        {
+          "body": "Given a sorted array, take the middle element as the root, build the left subtree from the left half and the right subtree from the right half. Every level is as full as it can be, so the height is floor(log2 n). This runs in O(n) time because each element is placed once (a queue-based version builds the same shape level by level, carrying each node's [start, end] range),  and it is the standard way to bulk-load a tree without paying for repeated insert or ever creating a chain.",
+          "code": "struct T *build(const int *a, int lo, int hi) {   /* [lo, hi) */\n    if (lo >= hi) return NULL;\n    int mid = lo + (hi - lo) / 2;\n    struct T *t = new_node(a[mid]);\n    t->left  = build(a, lo, mid);\n    t->right = build(a, mid + 1, hi);\n    return t;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Self-balancing trees",
+      "summary": "Guaranteeing O(log n) regardless of input order.",
+      "sections": [
+        {
+          "body": "Balanced variants add a small amount of bookkeeping so the height never exceeds O(log n). The AVL tree keeps subtree heights within 1 and fixes violations with rotations, which reorder nodes locally while keeping the in-order sequence intact. The red-black tree stores one color bit per node and enforces coloring rules that bound the longest path to twice the shortest. AVL is shallower and so a little faster to search; red-black does less work per update. Both give O(log n) search, insert and delete in the worst case, and standard libraries use red-black trees for their ordered maps."
+        }
+      ]
+    },
+    {
+      "title": "BST versus hash table versus sorted array",
+      "summary": "Pick by the operations you need.",
+      "sections": [
+        {
+          "bullets": [
+            "**Hash table**: O(1) average lookup, no ordering, worst case O(n) with bad hashing. Choose when you only need get, put and delete.",
+            "**Balanced BST**: O(log n) everything, plus sorted iteration, range scans, floor, ceiling, rank and k-th. Choose when order matters.",
+            "**Sorted array**: O(log n) search by binary search, O(n) insert and delete, excellent cache locality. Choose for read-mostly data.",
+            "**Plain BST**: only when input is random or the tree is small and short-lived; otherwise the worst case is a real risk."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Inorder successor and predecessor",
+      "summary": "The next and previous key in sorted order.",
+      "sections": [
+        {
+          "body": "The naive way is a reverse in-order walk that remembers the last node seen, O(n). The BST way is O(h) with O(1) space: search for the target while remembering the last node where you went left, because that node is greater than the target and is the closest such ancestor. If the target has a right child, the successor is instead the leftmost node of that right subtree. If you fall off the tree without finding any candidate, the target is the maximum and has no successor. The predecessor is the mirror image: the rightmost node of the left subtree, or the last ancestor where you went right."
+        }
+      ]
+    },
+    {
+      "title": "Red-black tree essentials",
+      "summary": "The balancing scheme behind the standard library maps.",
+      "sections": [
+        {
+          "body": "A red-black tree is a BST in which each node is red or black and five rules hold: every node has a color, the root is black, a red node has no red child, every path from a node down to its NIL leaves has the same number of black nodes (the black height), and NIL leaves count as black. Together these force the longest root-to-leaf path to be at most twice the shortest, so the height is at most 2 log2(n + 1) and the black height is at least h / 2. A chain of three nodes cannot be colored legally, which is the intuition for why it stays bushy.",
+          "bullets": [
+            "**Insert**: do a normal BST insert and color the new node red. If the parent is black nothing breaks. If the parent is red and the uncle is red, recolor parent and uncle black and the grandparent red, then continue upward. If the uncle is black, rotate (a left rotation on the parent first if the node is an inner child, then a right rotation on the grandparent) and recolor.",
+            "**Delete**: do a normal BST delete. Removing a black node creates a double-black deficit that is fixed by looking at the sibling: a red sibling is rotated and recolored; a black sibling with two black children is recolored and the problem moves up; a black sibling with a red child is fixed with one or two rotations.",
+            "**Cost**: search O(log n), insert and delete O(log n) with a small constant number of rotations. It is simpler to keep valid than AVL on updates but its rules are more intricate to code. Uses: C++ `map` and `set`, Java `TreeMap`, the Linux scheduler and virtual memory areas, and file system extent tracking."
+          ]
         }
       ]
     }
   ],
   "takeaways": [
-    "Left < node < right, at every node.",
-    "Search/insert/delete are O(h): O(log n) balanced, O(n) skewed.",
-    "Inorder traversal yields sorted order.",
-    "Use AVL/red-black trees to guarantee balance."
+    "The BST invariant holds for whole subtrees, not just parent and child, so validate with bounds or by checking in-order is strictly increasing.",
+    "Search, insert and delete all cost O(h); h is log n when balanced and n when keys arrive sorted.",
+    "Delete has three cases: leaf, one child, and two children (copy the in-order successor, then delete it).",
+    "In-order traversal of a BST yields sorted keys, which powers k-th smallest, range queries and validation.",
+    "Pick a duplicate policy first: reject, store a count, or send equals to one fixed side.",
+    "Build from a sorted array by recursing on the middle element to get a balanced tree in O(n).",
+    "Use a self-balancing tree (AVL or red-black) when worst-case O(log n) matters; a hash table when order does not."
+  ],
+  "practice": [
+    {
+      "title": "Validate a binary search tree",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Convert a sorted array to a height-balanced BST",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Search in a BST and return the subtree rooted at the key",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the lowest common ancestor of two nodes in a BST",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the k-th smallest element in a BST",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Delete a node from a BST and return the new root",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the in-order successor of a node",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Floor and ceiling of a key in a BST",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Recover a BST in which two nodes were swapped by mistake",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Count smaller elements to the right using a size-augmented BST",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -108,36 +308,18 @@
     {
       "label": "Reference: Binary search tree (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/binary-search-tree-data-structure/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Validate a binary search tree",
-      "difficulty": "Easy"
     },
     {
-      "title": "Convert a sorted array to a balanced BST",
-      "difficulty": "Easy"
+      "label": "Reference: Search and insertion in a BST (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/binary-search-tree-set-1-search-and-insertion/"
     },
     {
-      "title": "k-th smallest element in a BST",
-      "difficulty": "Medium"
+      "label": "Reference: Deletion in a BST (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/deletion-in-binary-search-tree/"
     },
     {
-      "title": "Lowest common ancestor of two nodes",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Delete a node (all three cases)",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Recover a BST with two swapped nodes",
-      "difficulty": "Hard"
-    },
-    {
-      "title": "Merge two BSTs",
-      "difficulty": "Hard"
+      "label": "Reference: Handling duplicates in a BST (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/how-to-handle-duplicates-in-binary-search-tree/"
     }
   ]
 }

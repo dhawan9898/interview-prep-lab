@@ -1,120 +1,298 @@
 {
-  "summary": "A binary heap is a complete binary tree stored in an array that satisfies the heap property: in a min-heap every parent is less than or equal to its children, so the minimum is always at the root. It is the standard implementation of a priority queue.",
+  "summary": "A binary heap is a complete binary tree stored in a flat array in which every parent is ordered against its children: in a min-heap each parent is no larger than its children, so the smallest element is always at index 0. Insert and extract-min cost O(log n), peeking at the minimum costs O(1), and a whole array can be turned into a heap in O(n). That makes it the standard engine behind priority queues, heap sort, Dijkstra and Prim, top-k selection, median tracking and Huffman coding. Do not confuse it with the memory heap used by malloc; it is just the same word.",
   "sections": [
     {
-      "heading": "Structure",
+      "heading": "Overview",
+      "body": "Many problems repeat one move: from a changing collection, take the most urgent item (the smallest deadline, the lowest distance, the highest score). A sorted array makes insert O(n), and an unsorted one makes the extraction O(n). A binary heap gives up full sorting and keeps only enough order to find the minimum instantly, which lets both insert and extract run in O(log n). Because the tree is complete (every level full except possibly the last, which fills left to right), it needs no pointers: node positions are computed from array indexes.",
       "bullets": [
-        "Complete binary tree: every level is full except possibly the last, filled left to right.",
-        "Stored in an array with no pointers.",
-        "Min-heap: parent <= children. Max-heap: parent >= children.",
-        "Not fully sorted: siblings have no ordering."
+        "**Min-heap**: parent is less than or equal to each child. The root holds the minimum.",
+        "**Max-heap**: parent is greater than or equal to each child. The root holds the maximum.",
+        "**Priority queue**: the abstract interface (insert, peek, extract) that a heap implements. The heap is the data structure; the priority queue is the idea.",
+        "**Not sorted**: siblings are unordered and only the parent-child relation is guaranteed, so a heap is not a BST."
       ]
     },
     {
-      "heading": "Array index formulas",
-      "body": "For 0-based index i:",
-      "code": "parent(i) = (i - 1) / 2\nleft(i)   = 2*i + 1\nright(i)  = 2*i + 2"
-    },
-    {
-      "heading": "Insert (sift up)",
-      "body": "Append at the end, then swap with the parent while the new value is smaller. O(log n).",
-      "code": "void push(int h[], int *n, int v) {\n  int i = (*n)++; h[i] = v;\n  while (i > 0 && h[(i-1)/2] > h[i]) { swap(&h[i], &h[(i-1)/2]); i = (i-1)/2; }\n}"
-    },
-    {
-      "heading": "Extract-min (sift down)",
-      "body": "Take the root, move the last element to the root, then swap it with the smaller child until the property holds. O(log n)."
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "peek min: O(1).",
-        "insert: O(log n).",
-        "extract-min: O(log n).",
-        "build-heap from n items: O(n) by sifting down from the last parent.",
-        "Heap sort: O(n log n), in place, not stable."
+        "**Complete binary tree**: all levels are full except possibly the last, which is filled from the left. This shape is what makes array storage dense, with no holes.",
+        "**Heap property**: for every node other than the root, key(parent) <= key(node) in a min-heap (>= in a max-heap).",
+        "**Index mapping (0-based)**: parent of i is (i - 1) / 2, left child is 2i + 1, right child is 2i + 2. With 1-based indexing: parent i / 2, children 2i and 2i + 1.",
+        "**Height**: floor(log2 n) edges for n nodes, so every root-to-leaf path is short.",
+        "**Leaves**: the nodes at indexes floor(n/2) through n - 1 (0-based); roughly half of all nodes are leaves.",
+        "**Sift-up (bubble-up, percolate-up)**: swap a node with its parent while it violates the heap property.",
+        "**Sift-down (heapify, percolate-down)**: swap a node with its smaller child (min-heap) while it violates the heap property.",
+        "**Build-heap (heapify)**: turn an arbitrary array into a heap by sifting down every internal node from the last parent to the root.",
+        "**Decrease-key**: lower a key in place and sift up; needs to know the element's index.",
+        "**Stable?** No. Equal keys can come out in any order; add a sequence number as a tie-break if you need FIFO among equals."
+      ]
+    },
+    {
+      "heading": "How It Works",
+      "body": "The two primitives are sift-up and sift-down. Everything else is built from them. All code below is a min-heap of ints in an array with a size counter.\n\n**Insert** appends the new key at the end (the next free leaf position, which keeps the tree complete) and sifts it up. At most one swap per level, so O(log n). **Extract-min** saves the root, moves the last element to the root, shrinks the size by one, and sifts the new root down. The last element is used so the shape stays complete. **Peek** just reads index 0.\n\n**Worked example**: push 5, 3, 8, 1 into an empty min-heap. After 5: [5]. After 3: append, 3 < 5, swap: [3, 5]. After 8: append at index 2, parent 3 is smaller, stay: [3, 5, 8]. After 1: append at index 3, parent index 1 holds 5, swap: [3, 1, 8, 5]; parent index 0 holds 3, swap: [1, 3, 8, 5]. Now pop: take 1, move the last element 5 to the root: [5, 3, 8], sift down: smaller child is 3 (index 1), swap: [3, 5, 8]. The returned values over successive pops are 1, 3, 5, 8, which is why repeated extraction sorts.\n\n**Build-heap** (Floyd's method) starts at the last internal node, index n/2 - 1, and sifts each node down, moving toward index 0. Leaves are already one-element heaps. This costs O(n), not O(n log n), because most nodes are near the bottom and sift only a level or two.",
+      "code": "#include <stdlib.h>\n\nstruct Heap { int *a; int n, cap; };\n\nstatic void swap(int *x, int *y) { int t = *x; *x = *y; *y = t; }\n\nstatic void sift_up(struct Heap *h, int i) {\n    while (i > 0) {\n        int p = (i - 1) / 2;\n        if (h->a[p] <= h->a[i]) break;\n        swap(&h->a[p], &h->a[i]);\n        i = p;\n    }\n}\n\nstatic void sift_down(struct Heap *h, int i) {\n    for (;;) {\n        int l = 2 * i + 1, r = l + 1, m = i;\n        if (l < h->n && h->a[l] < h->a[m]) m = l;\n        if (r < h->n && h->a[r] < h->a[m]) m = r;\n        if (m == i) return;\n        swap(&h->a[i], &h->a[m]);\n        i = m;\n    }\n}\n\nint heap_push(struct Heap *h, int x) {\n    if (h->n == h->cap) {\n        int nc = h->cap ? 2 * h->cap : 8;\n        int *na = realloc(h->a, nc * sizeof *na);\n        if (!na) return -1;\n        h->a = na; h->cap = nc;\n    }\n    h->a[h->n++] = x;\n    sift_up(h, h->n - 1);\n    return 0;\n}\n\nint heap_pop(struct Heap *h) {            /* caller checks h->n > 0 */\n    int top = h->a[0];\n    h->a[0] = h->a[--h->n];\n    if (h->n) sift_down(h, 0);\n    return top;\n}\n\nvoid heap_build(struct Heap *h, int *arr, int n) {\n    h->a = arr; h->n = n; h->cap = n;\n    for (int i = n / 2 - 1; i >= 0; i--)\n        sift_down(h, i);\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Min-heap versus max-heap**: flip the comparison. Many libraries only provide one (C++ `std::priority_queue` is a max-heap, Python `heapq` and Java `PriorityQueue` are min-heaps); simulate the other by negating keys or reversing the comparator.",
+        "**d-ary heap**: each node has d children, giving height log_d(n). Sift-up gets cheaper, sift-down compares d children each level. d = 4 is often faster in practice because of cache behaviour.",
+        "**Indexed (addressable) heap**: keeps a map from item id to array index so decrease-key and arbitrary delete run in O(log n); needed for Dijkstra with decrease-key.",
+        "**Binomial heap**: a forest of binomial trees, merge in O(log n).",
+        "**Fibonacci heap**: amortized O(1) insert, merge and decrease-key, O(log n) extract-min. Excellent in theory (Dijkstra in O(E + V log V)), rarely faster in practice because of large constants.",
+        "**Pairing heap**: simple, fast in practice, similar amortized behaviour.",
+        "**Min-max heap and double-ended structures**: support both min and max extraction; alternatively use a balanced BST.",
+        "**Leftist and skew heaps**: mergeable heaps with simple recursive merge."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Peek min or max**: O(1).",
+        "**Insert**: O(log n) worst case; O(1) average for random input since a new key usually stays near the bottom.",
+        "**Extract-min**: O(log n), about 2 log2 n comparisons (two per level).",
+        "**Build-heap**: O(n), at most about 2n comparisons. Repeated insertion costs O(n log n).",
+        "**Search for an arbitrary key**: O(n); a heap does not support fast lookup.",
+        "**Delete an arbitrary element**: O(log n) if you know its index (swap with last, then sift up or down), O(n) to find it otherwise.",
+        "**Decrease-key**: O(log n) with the index.",
+        "**Merge two binary heaps**: O(n) by concatenating and rebuilding; mergeable heaps do it in O(log n).",
+        "**Space**: n elements in n array slots, O(1) extra with an in-place implementation. No pointers, so overhead is near zero.",
+        "**Why build-heap is O(n)**: nodes at height k number about n / 2^(k+1) and each sifts at most k levels, so the total is the sum of k * n / 2^(k+1), which is bounded by n."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Treating a heap as sorted**: the array is not in order. Only index 0 is guaranteed; printing the array does not give sorted output.",
+        "**Off-by-one in indexes**: mixing 0-based and 1-based formulas puts children at the wrong places. Pick one and write the formulas once.",
+        "**Unsigned underflow**: with `size_t i`, `(i - 1) / 2` at i = 0 wraps to a huge number. Test `i > 0` first.",
+        "**Using the wrong first leaf**: build-heap must start at n/2 - 1, not n - 1 or n/2.",
+        "**Sifting down the wrong child**: in a min-heap swap with the smaller child, in a max-heap with the larger. Swapping with the first-found violating child can break the other side.",
+        "**Forgetting to shrink on pop**: decrement the size before sifting down or you will sift into stale data.",
+        "**Comparator overflow**: comparing by `a - b` overflows for big or mixed-sign ints.",
+        "**Mutating keys in place**: changing an item's priority without sifting corrupts the heap. Remove and reinsert, or use decrease-key.",
+        "**Expecting stability or FIFO**: equal-priority tasks are not served in arrival order unless you add a counter.",
+        "**Confusing it with the memory heap**: they share a name only."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Priority queues**: OS and task schedulers, event-driven simulators, rate limiters, timers (the next timer to fire sits at the root).",
+        "**Graph algorithms**: Dijkstra's shortest paths and Prim's minimum spanning tree repeatedly extract the closest frontier vertex.",
+        "**Heap sort**: build a max-heap, then repeatedly swap the root with the last element and sift down; O(n log n) time, O(1) extra space, not stable.",
+        "**Top-k selection**: keep a min-heap of size k over a stream; each new element beats the root or is discarded, giving O(n log k).",
+        "**Streaming median**: a max-heap for the lower half and a min-heap for the upper half, rebalanced to differ in size by at most one.",
+        "**Merging k sorted lists or files**: keep one head element per list in a min-heap; this is the core of external merge sort.",
+        "**Huffman coding**: repeatedly merge the two lowest-frequency nodes, which a min-heap supplies in O(log n) each.",
+        "**A-star and best-first search**: the open set is a priority queue ordered by estimated cost."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Is a heap a BST?** No. A heap orders parent against child only; there is no left-right ordering.",
+        "**Why is it stored in an array?** It is a complete tree, so index arithmetic replaces pointers and there is no wasted space.",
+        "**Insert and extract complexity?** Both O(log n); peek is O(1).",
+        "**Why is build-heap O(n)?** Most nodes are near the leaves and sift only a few levels; the sum converges to O(n).",
+        "**Heap sort complexity?** O(n log n) in all cases, O(1) auxiliary space, not stable.",
+        "**How do you find the k-th largest element?** Min-heap of size k, O(n log k); or quickselect for O(n) average.",
+        "**How do you get a max-heap from a min-heap library?** Negate the keys or supply a reversed comparator.",
+        "**How do you find the median of a stream?** Two heaps: max-heap for the lower half, min-heap for the upper half.",
+        "**Where is the smallest element of a max-heap?** Somewhere among the leaves; finding it takes O(n)."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Why build-heap is O(n)",
-      "summary": "Most nodes are near the bottom.",
+      "title": "Array representation",
+      "summary": "Index arithmetic replaces pointers.",
       "sections": [
         {
-          "body": "Half the nodes are leaves needing no work, a quarter move at most one level, and so on. The sum n/2·0 + n/4·1 + n/8·2 + ... converges to O(n), better than n inserts at O(n log n)."
-        }
-      ]
-    },
-    {
-      "title": "Heap sort",
-      "summary": "Selection sort with a heap.",
-      "sections": [
-        {
-          "body": "Build a max-heap, then repeatedly swap the root with the last element and sift down on a shrinking heap. O(n log n) worst case and O(1) space, but poor cache behaviour makes it slower than quick sort in practice."
-        }
-      ]
-    },
-    {
-      "title": "Priority queue applications",
-      "summary": "Where heaps are used.",
-      "sections": [
-        {
+          "body": "Storing the tree level by level in an array works because the tree is complete: there are never gaps. The root is at index 0, its children at 1 and 2, theirs at 3 to 6, and so on. Given a node at index i, the formulas for relatives are constant-time shifts and adds, and compilers turn the divide by two into a bit shift.",
           "bullets": [
-            "Dijkstra's and Prim's algorithms.",
-            "Task and event scheduling.",
-            "K largest/smallest elements with a size-k heap.",
-            "Median of a stream with a max-heap and a min-heap.",
-            "Huffman coding."
+            "Parent: (i - 1) / 2. Left child: 2i + 1. Right child: 2i + 2.",
+            "A node i has children only if 2i + 1 < n.",
+            "The last internal node is at index n / 2 - 1 (integer division).",
+            "The array [1, 3, 8, 5] represents root 1, children 3 and 8, and 3's left child 5."
           ]
         }
       ]
     },
     {
-      "title": "Heap memory vs heap data structure",
-      "summary": "Unrelated meanings of heap.",
+      "title": "Insert and sift-up",
+      "summary": "Add at the end, then float upward.",
       "sections": [
         {
-          "body": "The process heap used by malloc has nothing to do with this tree-shaped structure beyond the shared name."
+          "body": "Appending at index n keeps the shape complete. The new key may be smaller than its parent, which would break the property along one path only, so you compare with the parent and swap until the property holds or the root is reached. Each swap moves up a level, so the cost is at most the height, floor(log2 n). For random data the expected number of swaps is constant, because most keys belong near the bottom."
+        }
+      ]
+    },
+    {
+      "title": "Extract and sift-down",
+      "summary": "Replace the root with the last element and sink it.",
+      "sections": [
+        {
+          "body": "Removing the root leaves a hole. Filling it with the last array element preserves completeness but probably violates order at the top. Sift-down fixes this by repeatedly swapping with the smaller child (min-heap) until the node is no larger than both children or becomes a leaf. Picking the smaller child matters: it guarantees the child promoted to the parent position is less than its sibling, so the property still holds on the other branch. Cost is O(log n) with up to two comparisons per level."
+        }
+      ]
+    },
+    {
+      "title": "Build-heap in O(n)",
+      "summary": "Why bottom-up beats repeated insertion.",
+      "sections": [
+        {
+          "body": "Inserting n keys one at a time costs O(n log n) in the worst case. Floyd's bottom-up method sifts down each internal node from index n/2 - 1 to 0. A node at height k can sink at most k levels, and there are at most ceil(n / 2^(k+1)) such nodes. The total work is the sum over k of k * n / 2^(k+1), a series that converges to at most n. So an arbitrary array becomes a heap in linear time, which is also the first phase of heap sort and the reason top-k by building a heap of all n elements is still O(n + k log n)."
+        }
+      ]
+    },
+    {
+      "title": "Heap sort",
+      "summary": "Sorting with a heap, in place.",
+      "sections": [
+        {
+          "body": "Build a max-heap over the array. Then repeat: swap the root (the maximum) with the last element of the heap region, shrink the region by one, and sift the new root down. After n - 1 rounds the array is ascending. Total O(n log n) time in every case and O(1) extra space, but it is not stable and its access pattern jumps across the array, so quicksort usually wins on real hardware.",
+          "code": "static void down(int *a, int n, int i) {      /* max-heap sift-down */\n    for (;;) {\n        int l = 2 * i + 1, r = l + 1, m = i;\n        if (l < n && a[l] > a[m]) m = l;\n        if (r < n && a[r] > a[m]) m = r;\n        if (m == i) return;\n        int t = a[i]; a[i] = a[m]; a[m] = t;\n        i = m;\n    }\n}\n\nvoid heap_sort(int *a, int n) {\n    for (int i = n / 2 - 1; i >= 0; i--) down(a, n, i);   /* max-heap */\n    for (int end = n - 1; end > 0; end--) {\n        int t = a[0]; a[0] = a[end]; a[end] = t;\n        down(a, end, 0);\n    }\n}"
+        }
+      ]
+    },
+    {
+      "title": "Median of a stream",
+      "summary": "Two heaps balance the lower and upper halves.",
+      "sections": [
+        {
+          "body": "Keep a max-heap `lo` for the smaller half and a min-heap `hi` for the larger half, with sizes differing by at most one. For each new number, push it into `lo` if it is at most the top of `lo`, otherwise into `hi`, then move one element across if the sizes differ by two. The median is the top of the larger heap, or the average of both tops when the sizes are equal. Each update is O(log n) and each median query is O(1), versus O(n) per update for a sorted array. Example: the stream 5, 15, 1, 3, 2, 8 produces medians 5, 10, 5, 4, 3, 4; after 5 and 15 the average of both tops is 10, after adding 1 the larger heap's top is 5."
+        }
+      ]
+    },
+    {
+      "title": "Huffman coding",
+      "summary": "Greedy merging with a min-heap.",
+      "sections": [
+        {
+          "body": "Put each symbol with its frequency into a min-heap. Repeatedly pop the two lowest-frequency nodes, create a parent whose frequency is their sum, and push it back. When one node remains it is the root of the code tree; the path from the root to a leaf (left 0, right 1) is that symbol's prefix-free code. With n symbols the loop runs n - 1 times, each costing O(log n), so building the tree is O(n log n). Frequent symbols get short codes. The codes must be prefix-free: with a = 00, b = 01, c = 0, d = 1 the stream 0001 could decode as cccd, ccb, acd or ab. Worked example with frequencies a 5, b 9, c 12, d 13, e 16, f 45: merge 5 + 9 = 14, then 12 + 13 = 25, then 14 + 16 = 30, then 25 + 30 = 55, then 45 + 55 = 100. With 0 for left and 1 for right the codes are f = 0, c = 100, d = 101, a = 1100, b = 1101, e = 111. Frequent symbols get short codes, which is the basis of compression in formats such as DEFLATE (used by gzip and PNG)."
+        }
+      ]
+    },
+    {
+      "title": "Checking and repairing a heap",
+      "summary": "Verifying the property.",
+      "sections": [
+        {
+          "body": "To check an array is a min-heap, test every internal node i against its children: a[i] <= a[2i + 1] and a[i] <= a[2i + 2] when those indexes are in range. It is enough to check each parent against its children and not every pair, because the property is transitive down the tree. This runs in O(n). If a single element was changed, sift it up or down to repair in O(log n); if many were changed, run build-heap again in O(n).",
+          "code": "int is_min_heap(const int *a, int n) {\n    for (int i = 0; i <= n / 2 - 1; i++) {\n        int l = 2 * i + 1, r = l + 1;\n        if (a[l] < a[i]) return 0;\n        if (r < n && a[r] < a[i]) return 0;\n    }\n    return 1;\n}"
+        }
+      ]
+    },
+    {
+      "title": "K-th largest element",
+      "summary": "Four ways, from sorting to quickselect.",
+      "sections": [
+        {
+          "bullets": [
+            "**Sort**: sort descending and index k - 1. O(n log n), simplest.",
+            "**Min-heap of size k**: scan once, pushing each element and popping the minimum whenever the size exceeds k. The root is then the k-th largest. O(n log k) time, O(k) space. K-th largest counts duplicates, it is not the k-th distinct value. For [1, 23, 12, 9, 30, 2, 50] with k = 3 the answer is 23.",
+            "**Quickselect**: partition around a random pivot into greater, equal and smaller groups and recurse into only the group containing rank k. O(n) average, O(n^2) worst case, and it works best in practice.",
+            "**Counting sort**: if the values lie in a small known range R, count occurrences and walk the counts from the top. O(n + R) time and space, useless for wide ranges.",
+            "Related patterns: k most frequent elements, k closest points, and sorting a nearly sorted array all reuse a size-k heap."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Merging sorted arrays and descending heap sort",
+      "summary": "Two more heap routines.",
+      "sections": [
+        {
+          "body": "**Merge k sorted arrays**: flatten and sort costs O(N log N) for N total elements; divide-and-conquer merging (merge sort style) costs O(N log k) and suits equal-sized inputs; a min-heap seeded with the first element of each array, repeatedly popping the minimum and pushing the next element of the same array, also costs O(N log k) and suits arrays of different lengths. **Descending heap sort with a min-heap**: build a min-heap, then repeatedly swap the root with the last element, shrink the heap, and sift down. Because the smallest value is parked at the end each time, the array ends in descending order, while a max-heap gives ascending order. Both are O(n log n) overall (O(n) build plus O(log n) per extraction); the recursive sift-down uses O(log n) stack, the iterative one O(1)."
+        }
+      ]
+    },
+    {
+      "title": "Library priority queues",
+      "summary": "What you use in practice.",
+      "sections": [
+        {
+          "bullets": [
+            "**C++**: `std::priority_queue` is a max-heap by default; pass `std::greater` for a min-heap. `std::make_heap`, `push_heap` and `pop_heap` work on a plain array.",
+            "**Java**: `PriorityQueue` is a min-heap with a comparator option. **Python**: `heapq` is a min-heap over a list; negate keys for a max-heap. **C#**: `PriorityQueue`.",
+            "**C**: no standard heap; write one as above.",
+            "**Other uses**: load balancing (serve the least-loaded server first), resource allocation, job scheduling by deadline, and patient triage by urgency."
+          ]
         }
       ]
     }
   ],
   "takeaways": [
-    "Complete binary tree in an array; root is the min (or max).",
-    "Insert and extract are O(log n); peek is O(1); build-heap is O(n).",
-    "Index math: parent (i-1)/2, children 2i+1 and 2i+2.",
-    "Basis of priority queues and heap sort."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Heap data structure (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/heap-data-structure/"
-    }
+    "A binary heap is a complete binary tree in an array: parent is (i-1)/2, children are 2i+1 and 2i+2 (0-based).",
+    "Min-heap root is the minimum; peek is O(1), insert and extract are O(log n) via sift-up and sift-down.",
+    "Extract-min moves the last element to the root and sifts it down, always swapping with the smaller child.",
+    "Build-heap from an array is O(n) by sifting down from index n/2 - 1 to 0; repeated insert is O(n log n).",
+    "A heap is not sorted and cannot search quickly; arbitrary lookup is O(n) and siblings are unordered.",
+    "Heap sort is O(n log n) time, O(1) space and unstable; top-k with a size-k heap is O(n log k).",
+    "Dijkstra, Prim, k-way merge, Huffman coding and streaming median are all heap applications."
   ],
   "practice": [
     {
-      "title": "Check whether an array is a min-heap",
+      "title": "Implement a min-heap with push, pop and peek on an array",
       "difficulty": "Easy"
     },
     {
-      "title": "Implement heap sort in place",
+      "title": "Check whether an array represents a min-heap",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Convert an array into a max-heap in place",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the k-th largest element of an array",
       "difficulty": "Medium"
     },
     {
-      "title": "Find the k largest elements",
+      "title": "Merge k sorted linked lists",
       "difficulty": "Medium"
     },
     {
-      "title": "Merge k sorted lists",
+      "title": "Sort an array using heap sort",
       "difficulty": "Medium"
     },
     {
-      "title": "Median of a data stream",
+      "title": "Find the median of a data stream with two heaps",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Build a Huffman tree and print each symbol's code",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sliding window median",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Implement an indexed priority queue with decrease-key",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Binary heap (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/binary-heap/"
+    },
+    {
+      "label": "Reference: Applications of heap (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/applications-of-heap-data-structure/"
+    },
+    {
+      "label": "Reference: Median of a stream of integers (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/median-of-stream-of-integers-running-integers/"
+    },
+    {
+      "label": "Reference: Huffman coding (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/huffman-coding-greedy-algo-3/"
+    },
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
     }
   ]
 }

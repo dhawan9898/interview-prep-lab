@@ -1,131 +1,232 @@
 {
-  "summary": "A hash table stores key-value pairs and finds them in O(1) average time. A hash function maps each key to a bucket index; collisions, where two keys land in the same bucket, are resolved by chaining or probing, and the table is resized to keep the load factor low.",
+  "summary": "A hash table maps keys to values by running each key through a hash function that turns it into an array index, giving O(1) average time for insert, lookup and delete. Collisions, where two keys land in the same slot, are resolved by chaining or open addressing, and the table is resized as the load factor rises to keep operations fast. Hash tables power dictionaries, sets, caches, symbol tables, database indexes and de-duplication, and they are the most frequently used data structure in interviews.",
   "sections": [
     {
-      "heading": "Hash functions",
-      "body": "A hash function turns a key into an integer, then `index = hash % table_size`. A good one is fast, deterministic, and spreads keys uniformly. For strings, a polynomial hash such as djb2 is a common simple choice.",
-      "code": "unsigned long djb2(const char *s) {\n  unsigned long h = 5381; int c;\n  while ((c = *s++)) h = h * 33 + c;\n  return h;\n}\nsize_t idx = djb2(key) % cap;"
+      "heading": "Overview",
+      "body": "Searching an unsorted array costs O(n) and a balanced tree costs O(log n). A hash table aims for O(1) by skipping the search: it computes where the key should be and looks there. The mapping from key to position is the **hash function**, and the array of slots is the table.\n\nThe catch is that there are far more possible keys than slots, so different keys inevitably hash to the same index. That is a collision. A hash table is therefore three ideas working together: a good hash function that spreads keys evenly, a collision resolution strategy, and a policy that grows the table before it gets crowded. When all three are right the expected cost per operation is constant; when they are wrong (poor hash, adversarial keys, no resizing) it degrades to O(n)."
     },
     {
-      "heading": "Separate chaining",
-      "body": "Each bucket holds a linked list of the entries that hash there. Insert at the head, search by walking the list. It degrades gracefully as the load factor rises.",
-      "code": "typedef struct Entry { char *key; int val; struct Entry *next; } Entry;\nEntry *table[CAP];\nvoid put(const char *k, int v) {\n  size_t i = djb2(k) % CAP;\n  for (Entry *e = table[i]; e; e = e->next) if (!strcmp(e->key, k)) { e->val = v; return; }\n  Entry *n = malloc(sizeof *n); n->key = strdup(k); n->val = v; n->next = table[i]; table[i] = n;\n}"
-    },
-    {
-      "heading": "Open addressing",
-      "body": "All entries live in the array itself. On a collision, probe for another slot.",
+      "heading": "Core Concepts",
       "bullets": [
-        "Linear probing: try i+1, i+2, ... Simple and cache friendly but forms clusters.",
-        "Quadratic probing: i + 1², i + 2², ... Reduces clustering.",
-        "Double hashing: step size from a second hash. Best distribution."
+        "**Key and value**: the key is hashed to find the slot; the value is the data stored with it. A set stores keys only.",
+        "**Hash function** `h(key)`: maps a key to an integer. Must be deterministic (same key, same hash) and should spread keys uniformly.",
+        "**Index**: `h(key) mod m` (or `h(key) & (m - 1)` for power-of-two m), where m is the number of buckets.",
+        "**Collision**: two different keys with the same index. Unavoidable by the pigeonhole principle once keys outnumber slots.",
+        "**Load factor** alpha: `n / m`, the number of stored entries divided by the number of buckets. It drives both speed and when to resize.",
+        "**Separate chaining**: each bucket holds a list of the entries that hashed there.",
+        "**Open addressing**: all entries live in the table itself; a collision is resolved by probing other slots in a fixed sequence.",
+        "**Rehashing**: allocating a bigger table and reinserting every entry, because the index depends on m.",
+        "**Tombstone**: a marker left in an open-addressed slot after deletion so probe chains are not broken."
       ]
     },
     {
-      "heading": "Load factor and resizing",
-      "body": "Load factor α = entries / buckets. Chaining works up to α around 1; open addressing needs α below roughly 0.7 to stay fast. When α passes a threshold, allocate a larger table (often 2x) and rehash every key; amortized cost per insert stays O(1)."
+      "heading": "How It Works",
+      "body": "Insert: compute the index, then place the entry. With chaining, prepend or append to that bucket's list after checking whether the key is already there (in which case you update the value). Lookup: compute the same index, scan that bucket's list comparing keys. Delete: find the entry in the bucket and unlink it. Because the hash is deterministic, lookup always goes to the bucket the insert used.\n\nWorked example with m = 5 buckets and `h(k) = k mod 5`. Insert 12 (index 2), 7 (index 2, collides), 20 (index 0) and 3 (index 3). Bucket 2 now holds the chain 7 then 12 (new entries are prepended). Looking up 12 goes to bucket 2, compares 7 (no), then 12 (yes) and costs two comparisons. Load factor is 4/5 = 0.8. With n = 4 entries in 5 buckets the average chain is short, so most lookups touch 1 or 2 entries.\n\nThe C code below is a complete chained table for string keys. It uses the FNV-1a hash, grows when the load factor passes 0.75, and rehashes by relinking existing nodes without reallocating them.",
+      "code": "#include <stdlib.h>\n#include <string.h>\n#include <stdint.h>\n\ntypedef struct Entry {\n    char *key; int val;\n    struct Entry *next;\n} Entry;\n\ntypedef struct { Entry **b; size_t m, n; } Table;\n\nstatic uint32_t fnv1a(const char *s) {\n    uint32_t h = 2166136261u;\n    for (; *s; s++) { h ^= (unsigned char)*s; h *= 16777619u; }\n    return h;\n}\n\nint t_init(Table *t, size_t m) {\n    t->b = calloc(m, sizeof *t->b);\n    t->m = m; t->n = 0;\n    return t->b ? 0 : -1;\n}\n\nstatic int grow(Table *t) {\n    size_t nm = t->m * 2;\n    Entry **nb = calloc(nm, sizeof *nb);\n    if (!nb) return -1;\n    for (size_t i = 0; i < t->m; i++)\n        for (Entry *e = t->b[i], *nx; e; e = nx) {\n            nx = e->next;                    /* relink, do not copy */\n            size_t j = fnv1a(e->key) % nm;\n            e->next = nb[j]; nb[j] = e;\n        }\n    free(t->b); t->b = nb; t->m = nm;\n    return 0;\n}\n\nint t_put(Table *t, const char *k, int v) {\n    size_t i = fnv1a(k) % t->m;\n    for (Entry *e = t->b[i]; e; e = e->next)\n        if (!strcmp(e->key, k)) { e->val = v; return 0; }\n    if (t->n + 1 > t->m * 3 / 4) { if (grow(t)) return -1; i = fnv1a(k) % t->m; }\n    Entry *e = malloc(sizeof *e);\n    if (!e) return -1;\n    e->key = strdup(k); e->val = v;\n    e->next = t->b[i]; t->b[i] = e; t->n++;\n    return 0;\n}\n\nint t_get(const Table *t, const char *k, int *out) {\n    for (Entry *e = t->b[fnv1a(k) % t->m]; e; e = e->next)\n        if (!strcmp(e->key, k)) { *out = e->val; return 1; }\n    return 0;\n}"
     },
     {
-      "heading": "Complexity",
+      "heading": "Variants & Types",
       "bullets": [
-        "Average insert, search, delete: O(1).",
-        "Worst case: O(n) when many keys collide (bad hash or adversarial input).",
-        "Space: O(n) plus unused buckets.",
-        "No ordered traversal."
+        "**Separate chaining**: simple, tolerates load factor above 1, deletion is trivial; costs a pointer per entry and poorer locality. Used by Java `HashMap` and C++ `std::unordered_map`.",
+        "**Linear probing**: on collision try the next slot, then the next. Best cache behavior but suffers primary clustering, where runs of occupied slots grow and merge.",
+        "**Quadratic probing**: try offsets 1, 4, 9, ... from the home slot. Reduces primary clustering; may not visit every slot unless m is chosen carefully (a prime or a power of two with triangular offsets).",
+        "**Double hashing**: the step comes from a second hash, `h1(k) + i * h2(k)`. Avoids clustering best; `h2` must be non-zero and coprime with m.",
+        "**Robin Hood hashing**: while probing, an entry that has traveled farther steals the slot from one that is closer to home, which evens out probe lengths.",
+        "**Cuckoo hashing**: each key has two possible slots (two hash functions); lookup checks at most two places, so worst-case lookup is O(1). Insert may kick entries back and forth and trigger a rehash.",
+        "**Swiss tables and SIMD probing**: group 16 control bytes and compare them with one SIMD instruction. Used by Google Abseil `flat_hash_map` and Rust's `hashbrown`.",
+        "**Perfect hashing**: for a fixed key set, a collision-free function gives guaranteed O(1) lookup (compilers use it for keyword tables, e.g. gperf).",
+        "**Ordered variants**: `LinkedHashMap` keeps insertion order with an extra linked list; Python 3.7+ dicts preserve insertion order by design."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Average insert, lookup and delete**: O(1), assuming a good hash and a bounded load factor.",
+        "**Worst case**: O(n) if all keys hit one bucket (bad hash or an attack). Java 8 mitigates this by converting a bucket with 8 or more entries into a balanced tree, giving O(log n).",
+        "**Expected chain length** with simple uniform hashing: alpha. An unsuccessful search examines about alpha entries; a successful one about 1 + alpha / 2.",
+        "**Linear probing**: expected probes about 1/2 (1 + 1/(1 - alpha)) for a hit and 1/2 (1 + 1/(1 - alpha)^2) for a miss. At alpha = 0.5 a miss costs 2.5 probes; at 0.9 it costs 50.5, which is why open addressing resizes at 0.5 to 0.8.",
+        "**Resize**: O(n) for the rehash, but doubling makes inserts amortized O(1).",
+        "**Space**: O(n + m). Chaining adds a pointer (8 bytes) plus allocator overhead per entry; open addressing wastes the empty slots, 1 - alpha of the table.",
+        "**Typical thresholds**: Java `HashMap` default capacity 16 and load factor 0.75; CPython dict resizes when about two thirds full.",
+        "**Iteration**: O(n + m), since empty buckets must be skipped."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Poor hash function**: `key mod m` with m a power of two and keys that are multiples of m sends everything to one bucket. Mix the bits or use a prime or a good multiplicative hash.",
+        "**Inconsistent equality and hash**: two keys that compare equal must have equal hashes. Overriding `equals` without `hashCode` in Java breaks lookups.",
+        "**Mutating a key** after insertion changes its hash, so the entry is lost in the wrong bucket.",
+        "**Deleting in open addressing** by emptying the slot breaks the probe chain; later lookups stop early and miss entries. Use tombstones or backward-shift deletion.",
+        "**Never resizing**: a fixed table with growing n turns O(1) into O(n).",
+        "**Hash flooding**: an attacker who knows the hash function crafts many colliding keys (for example many strings with the same hash) and degrades a server to O(n squared). Defenses: randomized seeds and keyed hashes such as SipHash, or tree bins.",
+        "**Iteration order is unspecified** in most hash tables; do not depend on it, and do not modify the table while iterating.",
+        "**Floating-point and NaN keys**, and negative hash values: in C, `%` of a negative number is negative, so cast to unsigned before taking the modulo.",
+        "**Assuming O(1) is exact**: hashing a long string costs O(length), and rehashing causes occasional latency spikes."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Language dictionaries and sets**: Python `dict` and `set`, Java `HashMap` and `HashSet`, C++ `unordered_map`, Go `map`, JavaScript `Map` and objects.",
+        "**Caches**: memoization tables, web caches, and LRU caches (hash map plus a linked list).",
+        "**Compilers**: symbol tables map identifiers to declarations; keyword tables use perfect hashing.",
+        "**Databases**: hash indexes and hash joins build a table on the smaller relation and probe it with the other.",
+        "**Operating systems and networking**: page-cache and dentry lookups, connection tracking tables (conntrack), flow tables in routers and load balancers.",
+        "**De-duplication and counting**: word frequencies, unique visitors, detecting duplicates in a stream.",
+        "**Distributed systems**: consistent hashing assigns keys to servers (Dynamo, Cassandra, memcached clients) so adding a node moves only about 1/N of the keys.",
+        "**Security**: password storage (salted slow hashes, which are a different use of the word), file integrity checks and Bloom filters."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why O(1) on average?** Direct indexing from a hash plus short buckets under a bounded load factor.",
+        "**Chaining versus open addressing?** Chaining: simple, handles load above 1, easy deletion. Open addressing: no pointers, better cache locality, but needs low load and tombstones.",
+        "**What is the load factor and what do you do when it is high?** n/m; double the table and rehash all entries.",
+        "**Properties of a good hash?** Deterministic, uniform, fast, and avalanche (small input change flips about half the output bits).",
+        "**Why prime table sizes?** To avoid patterns in keys interacting with the modulus; power-of-two tables avoid division but need a good bit-mixing hash.",
+        "**Two-sum in O(n)?** Store each seen number in a hash map; for each x check whether target minus x is present.",
+        "**How would you handle a hash flooding attack?** Seed the hash randomly per table, use SipHash, or use tree buckets.",
+        "**Hash table versus balanced tree?** Hash: O(1) average, unordered. Tree: O(log n), sorted, supports range queries and predecessor and successor."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Deletion in open addressing",
-      "summary": "Tombstones.",
+      "title": "Hash functions",
+      "summary": "Turning keys into well-spread integers.",
       "sections": [
         {
-          "body": "Removing an entry by emptying its slot would break probe chains for keys inserted after it. Mark the slot as deleted (a tombstone) so searches continue past it, and clean up during resize."
+          "body": "For integers, the division method `k mod m` is simple and works well when m is a prime not near a power of two. The multiplicative method takes the high bits of `k * A` for a constant A near 2^w times the golden ratio fraction (0.618...), and works with any m. For strings, a polynomial hash such as `h = h * 31 + c` (Java's `String.hashCode`) or FNV-1a (xor then multiply by 16777619 for 32-bit) mixes every character. Good functions have the avalanche property: flipping one input bit flips about half of the output bits. Never use the memory address or the string length as the only input. Textbooks usually start from the integer universe assumption: keys are integers in a known range, so division hashing (`k mod m`, best with a prime m and evenly spread keys) and multiplication hashing (multiply the key by a constant A between 0 and 1, keep the fractional part, multiply by m and take the floor) apply directly; other key types are first turned into integers. Criteria for choosing a function: uniform spread so any two keys collide with about equal probability, cheap to compute, and adaptable when key size or format changes. A hard-to-invert function (a cryptographic hash) is a separate goal; ordinary table hashes do not need it, though keyed hashes resist attackers."
+        }
+      ]
+    },
+    {
+      "title": "Separate chaining",
+      "summary": "A list per bucket.",
+      "sections": [
+        {
+          "body": "Each bucket stores the head of a linked list (or a small dynamic array). Insert after checking for an existing key; lookup scans the chain; delete unlinks the node. Because chains may exceed one element, the table keeps working at load factors above 1, only slowing gradually: the average chain length is alpha. Keep chains short by resizing near 0.75. Replacing long chains with balanced trees (Java 8 does this when a bucket reaches 8 entries and the table has at least 64 buckets) bounds the worst case at O(log n). Insertion may append at the end of the bucket's list, as many textbooks do, or prepend at the head, which is O(1) without walking the chain; either is correct, but you must still scan the chain first to detect an existing key. Deletion computes the index, walks that bucket's list and unlinks the matching node."
+        }
+      ]
+    },
+    {
+      "title": "Open addressing and probing",
+      "summary": "Store everything in the array itself.",
+      "sections": [
+        {
+          "body": "To insert, compute the home slot and probe `h(k, i)` for i = 0, 1, 2, ... until an empty slot appears. Lookup follows the same sequence and stops at an empty slot (miss) or at a matching key (hit). Linear probing uses `(h + i) mod m`; quadratic uses `(h + c1*i + c2*i*i) mod m`; double hashing uses `(h1 + i*h2) mod m`. Open addressing requires n at most m, so load factor stays below 1, and performance collapses as alpha approaches 1, so resize around 0.5 to 0.8.",
+          "code": "/* linear probing lookup; slot states: EMPTY, FULL, TOMB */\nint find(const Slot *t, size_t m, int key) {\n    size_t i = (size_t)key % m;\n    for (size_t step = 0; step < m; step++) {\n        const Slot *s = &t[i];\n        if (s->state == EMPTY) return -1;       /* chain ends */\n        if (s->state == FULL && s->key == key) return (int)i;\n        i = (i + 1) % m;                         /* skip TOMB */\n    }\n    return -1;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Deletion in open addressing",
+      "summary": "Why you cannot just empty the slot.",
+      "sections": [
+        {
+          "body": "Suppose A and B collide and B was placed one slot after A. If you clear A's slot, a lookup for B probes A's slot, sees EMPTY and wrongly concludes B is absent. The standard fix is a tombstone: mark the slot DELETED so lookups continue past it and inserts may reuse it. Tombstones accumulate and lengthen probes, so tables count them toward the resize threshold and rebuild when too many appear. With linear probing there is a tombstone-free alternative, backward-shift deletion, which moves later entries in the cluster back to fill the hole."
+        }
+      ]
+    },
+    {
+      "title": "Load factor and resizing",
+      "summary": "Keeping operations fast as the table fills.",
+      "sections": [
+        {
+          "body": "When n / m exceeds the threshold, allocate a table of about twice the size and reinsert every entry, recomputing each index because it depends on m. One rehash is O(n), but doubling means the total rehash work over n inserts is under 2n, so insertion is amortized O(1). The latency spike of a single big rehash can matter in real-time or low-latency servers; incremental rehashing (Redis keeps two tables and migrates a few buckets per operation) spreads the cost. Shrinking at low load (for example below 0.25) reclaims memory. Resizing works in both directions: the table expands when the load factor is high and can contract when many entries have been removed, keeping the load factor near its ideal and lookups quick."
         }
       ]
     },
     {
       "title": "Choosing the table size",
-      "summary": "Primes and powers of two.",
+      "summary": "Prime or power of two.",
       "sections": [
         {
-          "body": "A prime size spreads poor hash functions better under modulo; a power of two lets you replace `%` with a bit mask but requires a hash with good low bits. Many implementations mix the hash bits before masking."
+          "body": "With the division method, a prime m not close to a power of two spreads patterned keys best. Power-of-two sizes let you replace the modulo with `h & (m - 1)`, which is faster, but then only the low bits of the hash matter, so the hash function must mix well (Java's `HashMap` XORs the high 16 bits into the low 16 bits for exactly this reason). Doubling a power-of-two table also makes rehashing cheap: each entry either stays at index i or moves to i + old m, decided by one bit."
+        }
+      ]
+    },
+    {
+      "title": "Cuckoo and Robin Hood hashing",
+      "summary": "Two modern open-addressing ideas.",
+      "sections": [
+        {
+          "body": "Cuckoo hashing gives each key two candidate slots from two hash functions. Lookup checks at most two slots, so worst-case lookup is O(1). Insert places the key in one slot, evicting any resident, which is then moved to its alternate slot, possibly evicting another, and so on; a long chain or loop triggers a rehash with new functions. Robin Hood hashing keeps probe-distance variance low: when inserting, if the incoming key has probed farther from home than the resident, they swap and the displaced entry continues. Lookups can stop early once the probe distance exceeds the resident's."
         }
       ]
     },
     {
       "title": "Hash flooding attacks",
-      "summary": "Security.",
+      "summary": "Adversarial keys turn O(1) into O(n).",
       "sections": [
         {
-          "body": "If an attacker can choose keys that collide, lookups degrade to O(n) and can deny service. Languages defend with randomized per-process seeds and keyed hashes such as SipHash."
+          "body": "If a server builds a hash table from user-controlled keys (HTTP headers, JSON object keys, form fields) and the hash is predictable, an attacker can send thousands of keys that collide, making each insert scan a long chain. n keys cost O(n squared) in total, enough to stall a service with a small request. Defenses are a per-process random seed, a keyed hash such as SipHash (several modern language runtimes use it for string keys), limits on key counts, and tree bins for long chains."
         }
       ]
     },
     {
       "title": "Hash table versus tree map",
-      "summary": "Choosing a dictionary.",
+      "summary": "Choosing between unordered and ordered maps.",
       "sections": [
         {
-          "bullets": [
-            "Hash table: faster average lookups, unordered.",
-            "Balanced tree map (red-black, AVL): O(log n) with ordered iteration, range queries, predecessor/successor.",
-            "Use a hash table for pure lookup; a tree when order matters."
-          ]
+          "body": "A hash table is faster on average (O(1) against O(log n)) and simpler for exact-match lookup, but it stores no order, cannot answer range queries or find the next larger key, and has occasional rehash pauses. A balanced tree (red-black in C++ `std::map` and Java `TreeMap`) offers sorted iteration, floor and ceiling, and a guaranteed O(log n) worst case. Pick the hash table for counting, caching and membership; pick the tree when you need ordering. For on-disk data, B-trees are used where ordering and block-friendly access matter."
         }
       ]
     },
     {
-      "title": "Applications",
-      "summary": "Everywhere.",
+      "title": "Applications and patterns",
+      "summary": "Problems that a hash table solves.",
       "sections": [
         {
-          "bullets": [
-            "Symbol tables in compilers and interpreters.",
-            "Caches and memoization.",
-            "Counting frequencies and detecting duplicates.",
-            "Database indexes and sets.",
-            "Python dict, Java HashMap, C++ unordered_map."
-          ]
+          "body": "Frequency counting (word counts, anagram groups keyed by sorted letters), two-sum (store complement), longest substring without repeating characters (map last-seen index), prefix-sum counting (map prefix to count to count subarrays with a given sum), duplicate detection, first non-repeating character, and graph or tree visited sets. The general trick is trading O(n) extra space for turning a nested loop into a single pass: anything of the form 'have I seen X before?' is a hash lookup. Remember that equality must be defined for the key type, and use a tuple or string encoding for composite keys."
+        }
+      ]
+    },
+    {
+      "title": "Typical applications",
+      "summary": "Where hash tables are used in practice.",
+      "sections": [
+        {
+          "body": "Indexing and searching large data (a search engine can keep indexed pages in a hash table); in-memory caches that give rapid access to frequently used data; database indexes that locate rows by key value; and, with hash functions in the wider sense, digital signatures, data validation and integrity checks in cryptography. Hash tables are built into the standard libraries of Python, Java, C++ and Ruby and are also written by hand as a custom structure."
         }
       ]
     }
   ],
   "takeaways": [
-    "Hash maps keys to buckets: O(1) average, O(n) worst.",
-    "Resolve collisions by chaining or open addressing (probing).",
-    "Keep the load factor low and rehash when it grows.",
-    "Use a good, ideally seeded, hash function."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
-      "url": "https://algs4.cs.princeton.edu/home/"
-    },
-    {
-      "label": "Reference: Hash table data structure (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/hash-table-data-structure/"
-    }
+    "A hash table finds a key by computing its index, giving O(1) average insert, lookup and delete.",
+    "Collisions are unavoidable; resolve them by chaining or by probing in open addressing.",
+    "Load factor n/m controls speed: resize (usually by doubling) near 0.75 for chaining and 0.5 to 0.8 for open addressing.",
+    "Doubling gives amortized O(1) insertion even though a single rehash is O(n).",
+    "Equal keys must hash equally; never mutate a key while it is in the table.",
+    "Open-addressed deletion needs tombstones or backward shift, or probe chains break.",
+    "Predictable hashes enable flooding attacks; use randomized seeds or SipHash for untrusted keys.",
+    "Use a hash table for exact lookup; use a balanced tree when you need order or range queries."
   ],
   "practice": [
     {
-      "title": "Two Sum using a hash map",
+      "title": "Two sum using a hash map",
       "difficulty": "Easy"
     },
     {
-      "title": "Count word frequencies in a text",
+      "title": "Contains duplicate",
       "difficulty": "Easy"
     },
     {
-      "title": "Implement a hash table with chaining",
+      "title": "Count word frequencies",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a hash table with chaining in C",
       "difficulty": "Medium"
     },
     {
-      "title": "Implement open addressing with linear probing and tombstones",
+      "title": "Group anagrams",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Subarray sum equals k",
       "difficulty": "Medium"
     },
     {
@@ -133,8 +234,30 @@
       "difficulty": "Medium"
     },
     {
+      "title": "Implement open addressing with tombstones",
+      "difficulty": "Medium"
+    },
+    {
       "title": "Design an LRU cache",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Longest consecutive sequence in O(n)",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Hash table data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/hash-table-data-structure/"
+    },
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed., chapter 11",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Aumasson and Bernstein: SipHash",
+      "url": "https://www.aumasson.jp/siphash/siphash.pdf"
     }
   ]
 }

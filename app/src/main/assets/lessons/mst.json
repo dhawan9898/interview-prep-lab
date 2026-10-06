@@ -1,93 +1,247 @@
 {
-  "summary": "A minimum spanning tree (MST) of a connected, weighted, undirected graph is a set of V - 1 edges that connects all vertices with the smallest possible total weight and no cycles. Kruskal's and Prim's greedy algorithms both build one.",
+  "summary": "A minimum spanning tree (MST) of a connected, weighted, undirected graph is a subset of edges that connects every vertex with no cycle and has the smallest possible total weight. Kruskal's algorithm grows it by adding the cheapest safe edge anywhere, and Prim's algorithm grows a single tree outward from a start vertex. MSTs appear in network and circuit design, clustering, approximation algorithms, and as a frequent interview topic.",
   "sections": [
     {
-      "heading": "Why MSTs matter",
+      "heading": "Overview",
+      "body": "Suppose you must wire up n offices with cable. Each possible link has a cost, and you want every office reachable from every other at the lowest total cost. Extra links only add cost, so the best answer has no cycle. A connected graph with no cycle is a tree, and a tree on V vertices has exactly V - 1 edges. The cheapest such tree is the **minimum spanning tree**.\n\nTwo greedy algorithms solve it, both justified by the same pair of properties (cut and cycle). Kruskal works edge by edge over a global sort and needs a union-find. Prim works vertex by vertex with a heap and looks a lot like Dijkstra. The graph must be connected; for a disconnected graph the same algorithms produce a minimum spanning forest, one tree per component."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Laying cable, pipes, or roads with minimum total cost.",
-        "Network design and clustering.",
-        "Approximation algorithms (such as for the traveling salesman problem)."
+        "**Spanning tree**: a subgraph that includes every vertex, is connected, and has no cycle (exactly V - 1 edges).",
+        "**Minimum spanning tree**: a spanning tree of least total edge weight. It may not be unique.",
+        "**Cut**: a split of the vertices into two non-empty sets S and V minus S. A **crossing edge** has one endpoint in each.",
+        "**Cut property**: for any cut, a lightest crossing edge belongs to some MST (and to every MST if it is the unique lightest).",
+        "**Cycle property**: the heaviest edge on any cycle, if it is strictly heavier than all other edges of that cycle, belongs to no MST.",
+        "**Safe edge**: an edge that can be added to the current partial MST without ruling out an optimum.",
+        "**Uniqueness**: if all edge weights are distinct, the MST is unique.",
+        "**Minimum spanning forest**: the union of MSTs of each connected component."
       ]
     },
     {
-      "heading": "Kruskal's algorithm",
-      "body": "Sort all edges by weight. Scan them in increasing order and keep an edge if it connects two different components (checked with union-find); otherwise it would form a cycle. Stop after V - 1 edges.",
-      "code": "typedef struct { int u, v, w; } Edge;\nint cmp(const void *a, const void *b) { return ((Edge *)a)->w - ((Edge *)b)->w; }\n\nint kruskal(Edge e[], int E, int V) {\n  qsort(e, E, sizeof *e, cmp);\n  make_sets(V);\n  int total = 0, used = 0;\n  for (int i = 0; i < E && used < V - 1; i++)\n    if (find(e[i].u) != find(e[i].v)) {\n      unite(e[i].u, e[i].v); total += e[i].w; used++;\n    }\n  return total;\n}"
+      "heading": "How It Works",
+      "body": "**Kruskal**: sort all edges by weight ascending. Walk the list; for each edge, if its endpoints lie in different components, keep the edge and merge the components; otherwise skip it because it would close a cycle. Stop at V - 1 chosen edges. The union-find structure answers the 'different components?' question in nearly constant time.\n\nExample: vertices 0..3, edges 0-1:10, 0-2:6, 0-3:5, 1-3:15, 2-3:4. Sorted: 2-3:4, 0-3:5, 0-2:6, 0-1:10, 1-3:15. Take 2-3 (components {2,3}). Take 0-3 ({0,2,3}). Skip 0-2 (both already joined, it would close a cycle). Take 0-1 (all four joined; that is V - 1 = 3 edges, so stop). Total: 4 + 5 + 10 = 19.",
+      "code": "#include <stdlib.h>\n\ntypedef struct { int u, v, w; } E;\n\nstatic int cmp(const void *a, const void *b) {\n  return ((const E *)a)->w - ((const E *)b)->w;   /* assumes no overflow */\n}\n\nstatic int find(int p[], int x) {\n  while (p[x] != x) { p[x] = p[p[x]]; x = p[x]; }\n  return x;\n}\n\n/* returns total weight; picked[] receives the chosen edges, count in *k */\nlong kruskal(int V, E edges[], int m, E picked[], int *k) {\n  int p[V], sz[V]; long total = 0; *k = 0;\n  for (int i = 0; i < V; i++) { p[i] = i; sz[i] = 1; }\n  qsort(edges, m, sizeof(E), cmp);\n  for (int i = 0; i < m && *k < V - 1; i++) {\n    int a = find(p, edges[i].u), b = find(p, edges[i].v);\n    if (a == b) continue;                 /* would close a cycle */\n    if (sz[a] < sz[b]) { int t = a; a = b; b = t; }\n    p[b] = a; sz[a] += sz[b];\n    picked[(*k)++] = edges[i];\n    total += edges[i].w;\n  }\n  return total;                           /* *k < V - 1 means disconnected */\n}"
     },
     {
-      "heading": "Prim's algorithm",
-      "body": "Grow a single tree from any start vertex. Repeatedly add the cheapest edge that connects the tree to a vertex outside it. With a min-heap of candidate edges it runs in O(E log V); with an adjacency matrix and arrays, O(V²)."
+      "body": "**Prim**: grow one tree from any start vertex. Keep `key[v]`, the cheapest edge connecting v to the tree. Repeatedly add the vertex with the smallest key, then update the keys of its neighbours. The array version below is O(V squared), good for dense graphs; a binary heap gives O(E log V).\n\nOn the same example starting at 0: keys become 1:10, 2:6, 3:5. Add 3 (5); update 1: 15 is worse than 10, 2: 4 beats 6. Add 2 (4). Add 1 (10). Total 19, the same tree.",
+      "code": "#include <limits.h>\n\n/* g[u][v] == 0 means no edge; returns total MST weight, parent[] holds the tree */\nlong prim(int V, int g[V][V], int parent[]) {\n  int key[V], in[V]; long total = 0;\n  for (int i = 0; i < V; i++) { key[i] = INT_MAX; in[i] = 0; parent[i] = -1; }\n  key[0] = 0;\n  for (int round = 0; round < V; round++) {\n    int u = -1;\n    for (int v = 0; v < V; v++)\n      if (!in[v] && (u == -1 || key[v] < key[u])) u = v;\n    if (key[u] == INT_MAX) break;         /* graph is disconnected */\n    in[u] = 1;\n    total += key[u];\n    for (int v = 0; v < V; v++)\n      if (g[u][v] && !in[v] && g[u][v] < key[v]) {\n        key[v] = g[u][v];                 /* cheapest edge into the tree */\n        parent[v] = u;\n      }\n  }\n  return total;\n}"
     },
     {
-      "heading": "Complexity and choosing",
+      "heading": "Variants & Types",
       "bullets": [
-        "Kruskal: O(E log E) from sorting; good for sparse graphs.",
-        "Prim with heap: O(E log V); Prim with arrays: O(V²), good for dense graphs.",
-        "Both produce a tree of the same total weight; with distinct weights the MST is unique."
+        "**Kruskal**: edge-centric, O(E log E) from sorting. Best on sparse graphs and when edges arrive as a list.",
+        "**Prim with array**: O(V squared). Best on dense graphs stored as matrices.",
+        "**Prim with binary heap**: O(E log V). Best on sparse graphs stored as adjacency lists.",
+        "**Boruvka**: every component simultaneously picks its cheapest outgoing edge, halving the component count each round. O(E log V), and naturally parallel.",
+        "**Reverse-delete**: start with the whole graph and delete the heaviest edges that do not disconnect it. Rarely used, mainly of theoretical interest.",
+        "**Maximum spanning tree**: negate the weights or sort descending.",
+        "**Minimum spanning forest**: run Kruskal on a disconnected graph and keep every component's tree.",
+        "**Steiner tree**: connect only a subset of vertices, allowing extra vertices. NP-hard, unlike MST.",
+        "**Faster theory**: Chazelle's algorithm runs in O(E alpha(E, V)); a randomized Karger-Klein-Tarjan algorithm runs in expected O(E) time."
       ]
     },
     {
-      "heading": "Correctness: cut and cycle properties",
-      "body": "Cut property: for any partition of the vertices, the lightest edge crossing the cut belongs to some MST. Cycle property: the heaviest edge on any cycle is not in an MST (if its weight is strictly largest). Both greedy algorithms apply these rules repeatedly."
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Kruskal: O(E log E) for the sort, which equals O(E log V) since E is at most V squared. The union-find work is O(E alpha(V)).",
+        "Prim with array: O(V squared) time, O(V) extra space.",
+        "Prim with binary heap: O(E log V). With a Fibonacci heap: O(E + V log V).",
+        "Boruvka: O(E log V), with at most log2(V) rounds.",
+        "Edge count of the result: exactly V - 1 for a connected graph.",
+        "Dense graph at V = 5,000: E up to 12.5 million, so Prim array does 25 million steps while Kruskal sorts 12.5 million edges."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Directed graphs**: MST is defined for undirected graphs. The directed analogue (minimum arborescence) needs the Chu-Liu/Edmonds algorithm.",
+        "**Disconnected input**: Kruskal finishes with fewer than V - 1 edges. Check the count if the problem guarantees nothing.",
+        "**Confusing MST with shortest paths**: the MST does not minimize the distance between any two vertices, only the total weight.",
+        "**Assuming uniqueness**: ties between equal weights allow several MSTs, so verify the total weight and the edge count, not the exact set.",
+        "**Comparator overflow**: `a.w - b.w` can overflow for extreme values; use `(a > b) - (a < b)`.",
+        "**Self loops and parallel edges**: Kruskal skips loops automatically (same component), and parallel edges are resolved by order of weight.",
+        "**Negative weights**: both algorithms still work, since they compare edges only; do not confuse that with Dijkstra's restriction.",
+        "**Forgetting both directions** when building an undirected adjacency list for Prim."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Network design**: laying cable, fiber, pipelines or roads at minimum cost.",
+        "**Layer 2 loop avoidance**: Spanning Tree Protocol builds a tree of bridges, though it uses root-path cost rather than a true MST.",
+        "**Clustering**: single-linkage clustering stops Kruskal early, at k components; the discarded long edges separate the clusters.",
+        "**Approximation**: the MST doubled gives a 2-approximation for metric traveling salesman; Christofides improves it to 1.5.",
+        "**Image segmentation**: Felzenszwalb's graph-based method merges pixels using MST ideas.",
+        "**Circuit and VLSI wiring, and multicast routing trees** use MST heuristics."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How many edges are in an MST?** V - 1.",
+        "**Kruskal vs Prim?** Kruskal sorts edges and uses union-find; Prim grows from one vertex with a heap. Kruskal suits sparse graphs, Prim with an array suits dense ones.",
+        "**Is an MST unique?** Only when all edge weights are distinct.",
+        "**Does the MST give shortest paths?** No. Use Dijkstra for that.",
+        "**What does the cycle property say?** The unique heaviest edge of any cycle is not in any MST.",
+        "**How do you find the second-best MST?** Add each non-tree edge, remove the heaviest edge on the tree path it closes, and take the best resulting total."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Worked example",
-      "summary": "Kruskal on a small graph.",
+      "title": "Cut and cycle properties",
+      "summary": "The two facts that justify every MST algorithm.",
       "sections": [
         {
-          "body": "Edges: (A-B,1), (B-C,2), (A-C,3), (C-D,4), (B-D,5). Sorted: 1, 2, 3, 4, 5. Take A-B (1), B-C (2); A-C (3) would form a cycle, skip; take C-D (4). V - 1 = 3 edges, total weight 7."
+          "body": "**Cut property**: take any partition of the vertices. The cheapest edge crossing it can be added to a partial MST safely. Proof sketch: if an MST T lacks that edge e, adding e to T creates a cycle that must cross the cut again at another edge f. Since e is the cheapest crossing edge, swapping f for e gives a spanning tree no heavier than T.\n\n**Cycle property**: on any cycle, an edge strictly heavier than all others on it can be dropped. Kruskal rests on the cut property (when it adds an edge, the edge is the cheapest crossing the cut between the two components) and on the cycle property (skipped edges are the heaviest in the cycle they would form)."
         }
       ]
     },
     {
-      "title": "Union-find in Kruskal",
-      "summary": "Why it is fast.",
+      "title": "Kruskal's algorithm with union-find",
+      "summary": "Sort, then add every edge that joins two components.",
       "sections": [
         {
-          "body": "Cycle detection is the bottleneck. Union-find with path compression and union by rank makes each check nearly O(1), so sorting dominates the running time."
+          "body": "The sort dominates at O(E log E). The loop does at most 2E finds and V - 1 unions, each about O(alpha(V)). The early stop at V - 1 chosen edges saves time when the MST is completed long before the list ends. Because Kruskal only compares weights and never needs adjacency, it works directly on an edge list, which is how most input arrives in contests and interviews."
+        },
+        {
+          "body": "A helpful variant stops when exactly k components remain, which produces a k-cluster partition that maximizes the minimum spacing between clusters. The spacing equals the weight of the next edge Kruskal would have added."
         }
       ]
     },
     {
-      "title": "Disconnected graphs",
-      "summary": "Minimum spanning forest.",
+      "title": "Prim's algorithm",
+      "summary": "Grow a single tree one vertex at a time.",
       "sections": [
         {
-          "body": "If the graph is not connected, Kruskal naturally yields a spanning forest, one MST per component. Prim must be restarted from an unvisited vertex."
+          "body": "Prim keeps a frontier: for each vertex outside the tree, the lightest edge that touches the tree. Selecting the minimum key is always safe, by the cut property applied to the cut between tree and non-tree vertices. With adjacency lists and a binary heap using lazy deletion, push (weight, vertex) for each edge leaving a newly added vertex and skip entries whose vertex is already in the tree. This is Dijkstra's loop with `key[v] = w(u,v)` instead of `dist[u] + w(u,v)`."
         }
       ]
     },
     {
-      "title": "Variants",
-      "summary": "Related problems.",
+      "title": "Boruvka's algorithm",
+      "summary": "Every component picks its cheapest outgoing edge at the same time.",
       "sections": [
         {
-          "bullets": [
-            "Maximum spanning tree: sort descending.",
-            "Second-best MST: swap one non-tree edge.",
-            "Bottleneck path: the MST path minimizes the largest edge.",
-            "Clustering: stop Kruskal at k components (single-linkage clustering)."
-          ]
+          "body": "In each round, for every component find the lightest edge leaving it, then add all of those edges (with ties broken consistently by index to avoid cycles) and merge components. Each round at least halves the component count, so there are at most log2(V) rounds, each O(E). It is the basis of parallel and distributed MST algorithms, and it is also used as the first phase of faster algorithms that need to shrink the graph before applying something heavier."
         }
       ]
     },
     {
-      "title": "MST versus shortest path tree",
-      "summary": "Not the same thing.",
+      "title": "Uniqueness and tie-breaking",
+      "summary": "When can two different trees both be optimal?",
       "sections": [
         {
-          "body": "An MST minimizes total edge weight across the whole tree; a Dijkstra shortest-path tree minimizes the distance from one root to each vertex. They can differ."
+          "body": "With distinct weights, the MST is unique. With ties, several MSTs of the same total weight can exist, for example a triangle with three equal edges has three MSTs. To make results deterministic, break ties by edge index. A useful fact: all MSTs of a graph contain the same multiset of edge weights, so the sorted weight list is the same. To check whether a given MST is unique, see whether any non-tree edge has the same weight as the heaviest tree edge on the cycle it closes."
+        }
+      ]
+    },
+    {
+      "title": "Bottleneck paths and second-best MST",
+      "summary": "The MST answers more questions than total cost.",
+      "sections": [
+        {
+          "body": "The path between two vertices inside an MST minimizes the heaviest edge on the path among all paths in the graph (the minimax or bottleneck path). So queries like 'what is the smallest possible maximum edge needed to connect u and v' are answered with the MST path maximum, using binary lifting or a Kruskal reconstruction tree.\n\nFor the second-best MST, for each non-tree edge (u, v, w) compute the heaviest edge on the tree path from u to v, call it m. Swapping them changes the total by w - m. The smallest positive (or non-negative, if you allow ties) change gives the second-best total."
+        }
+      ]
+    },
+    {
+      "title": "MST versus shortest-path tree",
+      "summary": "Both are trees, but they answer different questions.",
+      "sections": [
+        {
+          "body": "The shortest-path tree from a source minimizes each vertex's distance from that source; the MST minimizes the sum of all edge weights. On a triangle with edges A-B 3, A-C 4, B-C 2, Dijkstra from A uses A-B and A-C (weight 7), while the MST uses A-B and B-C (weight 5). Prim and Dijkstra look nearly identical in code and differ only in the key: edge weight versus cumulative distance. Mixing them up is one of the most common interview errors."
+        }
+      ]
+    },
+    {
+      "title": "Interview problem patterns",
+      "summary": "Recognize MST under the disguise.",
+      "sections": [
+        {
+          "body": "**Connecting cities / min cost to connect all points**: the edge weight is the Manhattan or Euclidean distance; V is up to 1,000, so Prim array O(V squared) is simpler than materializing a million edges. **Critical and pseudo-critical edges**: for each edge, recompute the MST without it (critical if the weight rises) and with it forced (pseudo-critical if the weight stays equal). **Optimize water distribution**: add a virtual vertex 0 connected to each house by the well cost, then run MST. **Cheapest cable with k clusters**: stop Kruskal at k components. Always ask whether the graph is guaranteed connected and whether weights can be large enough to overflow 32 bits."
+        }
+      ]
+    },
+    {
+      "title": "Kruskal as a greedy algorithm, step by step",
+      "summary": "The three steps and the shape of a bigger run.",
+      "sections": [
+        {
+          "body": "The steps are: sort all edges in non-decreasing order of weight; take the smallest remaining edge and keep it only if it does not form a cycle with the tree so far (the disjoint-set test); repeat until V - 1 edges are chosen. The algorithm picks the lightest edge first and the heaviest last, making a locally optimal choice every time, which is why it is called greedy.\n\nOn the standard textbook graph with 9 vertices and 14 edges, the tree must have 9 - 1 = 8 edges. So the loop keeps eight edges and rejects the other six, each rejection being an edge whose endpoints are already in the same component when it comes up. Counting kept edges is also the stopping rule: once you have eight, you can ignore everything left in the sorted list."
+        }
+      ]
+    },
+    {
+      "title": "Kruskal complexity breakdown",
+      "summary": "Where each term comes from.",
+      "sections": [
+        {
+          "body": "Sorting the edges costs O(E log E). After the sort, each edge triggers a find-union, which costs at most O(log V) with the basic balanced version, giving O(E log V) for the loop. The total is O(E log E + E log V). Since E is at most about V squared, log E is at most 2 log V, so the two logarithms are equal up to a constant and the bound is written as O(E log E) or O(E log V). With rank and path compression the union-find part shrinks toward O(E alpha(V)), and the sort dominates. The auxiliary space is O(E + V): the edge list plus the union-find arrays."
+        }
+      ]
+    },
+    {
+      "title": "Edge-in-MST questions and redundant connections",
+      "summary": "Two classic questions that reuse Kruskal.",
+      "sections": [
+        {
+          "body": "**Is edge (u, v, w) in some MST?** It is in at least one MST if and only if there is no path from u to v using only edges strictly lighter than w. Run Kruskal while processing groups of equal weight together: before adding the weight-w group, test whether u and v are already connected. If they are, the edge is useless; if not, it can be chosen. **Minimize the count of connections** (for example, how many cables in a network can be removed or how many extra are needed): count components with union-find; you need components minus 1 extra links, and the number of spare cables in the original network is its edge count minus (V minus components), the edges that closed cycles."
         }
       ]
     }
   ],
   "takeaways": [
-    "An MST connects all V vertices with V - 1 edges at minimum total weight.",
-    "Kruskal: sort edges, add if no cycle (union-find). Prim: grow one tree by the cheapest crossing edge.",
-    "O(E log E) for Kruskal, O(E log V) for heap-based Prim.",
-    "Cut and cycle properties justify the greedy choice."
+    "An MST connects all V vertices with V - 1 edges, no cycle, and minimum total weight.",
+    "Cut property: the cheapest edge across any cut is safe; cycle property: the unique heaviest edge on a cycle is never needed.",
+    "Kruskal: sort edges, keep each edge whose endpoints are in different union-find sets; O(E log E).",
+    "Prim: grow from one vertex taking the cheapest edge into the tree; O(V squared) with an array, O(E log V) with a heap.",
+    "Distinct edge weights guarantee a unique MST; ties allow several trees of equal total weight.",
+    "The MST does not give shortest paths between vertices; use Dijkstra for that.",
+    "A disconnected graph yields a minimum spanning forest with V minus components edges."
+  ],
+  "practice": [
+    {
+      "title": "Run Kruskal and Prim by hand on a 6-vertex graph and compare the results",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement Kruskal with union-find and return the total weight",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement Prim with an adjacency matrix and print the tree edges",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Min cost to connect all points on a plane (Manhattan distance)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Optimize water distribution: add a virtual source and run MST",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Cluster n points into k groups with maximum spacing by stopping Kruskal early",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find all critical and pseudo-critical edges of an MST",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Compute the second-best minimum spanning tree weight",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Minimum bottleneck path queries using the MST and binary lifting",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Check whether a given edge is part of any minimum spanning tree",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -101,28 +255,6 @@
     {
       "label": "Reference: Kruskal's MST (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/kruskals-minimum-spanning-tree-algorithm-greedy-algo-2/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Find the MST of a 5-vertex graph by hand with both algorithms",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement Kruskal with union-find",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Implement Prim with a priority queue",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Minimum cost to connect all points",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Find a critical and pseudo-critical edge in an MST",
-      "difficulty": "Hard"
     }
   ]
 }

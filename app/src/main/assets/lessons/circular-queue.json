@@ -1,115 +1,241 @@
 {
-  "summary": "A circular queue stores its elements in a fixed array and wraps indices around with modulo arithmetic, so freed slots at the front are reused. Both enqueue and dequeue are O(1) with no wasted space.",
+  "summary": "A circular queue (ring buffer) is a fixed-size FIFO queue stored in an array whose indices wrap around from the last slot back to the first. It fixes the main flaw of the plain array queue, where freed front slots can never be reused, and keeps enqueue and dequeue at O(1) with no shifting and no allocation. Ring buffers are everywhere in systems code: device drivers, network card descriptor rings, audio and video buffers, keyboard input, logging and the Linux kfifo.",
   "sections": [
     {
-      "heading": "Why circular",
-      "body": "A linear array queue marches rightward and abandons the left part. Treating the array as a ring means that after the last index you continue at index 0, so capacity is always fully usable."
+      "heading": "Overview",
+      "body": "A normal array queue moves `front` and `rear` forward only. After several enqueue and dequeue cycles `rear` reaches the end of the array while the first slots sit empty, so the queue claims to be full when it is not. Shifting everything left on each dequeue fixes this but costs O(n).\n\nThe circular queue ties the end of the array back to the beginning. When an index would step past the last slot it wraps to slot 0, using `(i + 1) % capacity`. Free slots at the front get reused as the head advances, so a buffer of capacity N can carry an endless stream as long as no more than N items are waiting at once. Because the memory is allocated once and never moves, the structure is predictable, which is why it is the default choice for bounded buffers in kernels, embedded firmware and real-time code."
     },
     {
-      "heading": "Core formulas",
-      "body": "Track `front`, `size`, and `capacity`.",
-      "code": "rear        = (front + size - 1) % capacity   // last element\nnext_free   = (front + size) % capacity       // where enqueue writes\nafter dequeue: front = (front + 1) % capacity"
-    },
-    {
-      "heading": "Operations",
+      "heading": "Core Concepts",
       "bullets": [
-        "enqueue: if size == capacity, report full; else write at next_free, size++.",
-        "dequeue: if size == 0, report empty; else read a[front], front = (front+1) % capacity, size--.",
-        "Both O(1)."
-      ],
-      "code": "int enqueue(Q *q, int x) {\n  if (q->size == q->cap) return -1;\n  q->a[(q->front + q->size) % q->cap] = x; q->size++; return 0;\n}\nint dequeue(Q *q, int *out) {\n  if (q->size == 0) return -1;\n  *out = q->a[q->front]; q->front = (q->front + 1) % q->cap; q->size--; return 0;\n}"
+        "**Capacity N**: the fixed number of slots in the backing array.",
+        "**front (head)**: index of the oldest element, the next one to be dequeued.",
+        "**rear (tail)**: depending on convention, the index of the newest element, or the index where the next element will be written. Pick one convention and keep it.",
+        "**Wrap-around**: advancing an index is `i = (i + 1) % N`, so it moves from N-1 to 0.",
+        "**Empty and full ambiguity**: with only two indices, the positions are equal both when the queue is empty and when it is full. You need extra information to tell them apart.",
+        "**Count**: an explicit element counter is the simplest fix. Empty means count is 0; full means count equals N.",
+        "**One slot wasted**: an alternative that keeps only two indices and treats the queue as full when advancing rear would land on front, so at most N minus 1 items are stored.",
+        "**Overwrite mode**: some ring buffers drop the oldest item when full instead of rejecting the new one (logs, telemetry)."
+      ]
     },
     {
-      "heading": "Full versus empty",
-      "body": "If you track only `front` and `rear`, a full queue and an empty one look identical (front == rear). Three standard fixes: keep a `size` counter (above), leave one slot permanently unused, or keep a separate full/empty flag."
+      "heading": "How It Works",
+      "body": "This version keeps `front`, `count` and derives the write position as `(front + count) % N`. That removes the empty versus full ambiguity without wasting a slot, and makes every operation a single line.\n\nWorked example with N = 4. Start empty: front = 0, count = 0. Enqueue A, B, C, D: they land at slots 0, 1, 2, 3 and count becomes 4, so the queue is full and another enqueue must fail. Dequeue returns A and front becomes 1, count 3. Enqueue E: the write slot is (1 + 3) % 4 = 0, so E reuses the freed slot 0 and the array now reads E B C D with front = 1. Dequeue returns B, C, D, E in that order, which proves FIFO is kept despite the physical wrap. Slot 0 was free because A left; that is exactly the space the linear array could not reclaim.",
+      "code": "#include <stdbool.h>\n\n#define N 4\n\ntypedef struct {\n    int data[N];\n    int front;   /* index of oldest element */\n    int count;   /* number of stored elements */\n} CQueue;\n\nvoid cq_init(CQueue *q) { q->front = 0; q->count = 0; }\nbool cq_empty(const CQueue *q) { return q->count == 0; }\nbool cq_full(const CQueue *q)  { return q->count == N; }\n\nbool cq_enqueue(CQueue *q, int x) {\n    if (cq_full(q)) return false;\n    int rear = (q->front + q->count) % N;   /* next free slot */\n    q->data[rear] = x;\n    q->count++;\n    return true;\n}\n\nbool cq_dequeue(CQueue *q, int *out) {\n    if (cq_empty(q)) return false;\n    *out = q->data[q->front];\n    q->front = (q->front + 1) % N;\n    q->count--;\n    return true;\n}\n\nbool cq_peek(const CQueue *q, int *out) {\n    if (cq_empty(q)) return false;\n    *out = q->data[q->front];\n    return true;\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Count-based**: store `front` and `count`. Uses all N slots; simple; the count field must be updated by both operations, which complicates lock-free use.",
+        "**Wasted-slot**: keep `head` and `tail` only; empty is `head == tail`, full is `(tail + 1) % N == head`. Capacity is N minus 1 but producer and consumer each write only their own index, which suits single-producer single-consumer without locks.",
+        "**Flag-based**: keep a boolean that records whether the last operation was an enqueue, to break the tie when the indices are equal.",
+        "**Free-running indices**: let head and tail count up without wrapping (unsigned wraps naturally at 2^32) and use `idx % N` or `idx & (N - 1)` when touching the array. With a power-of-two N, size is `tail - head` and full is `tail - head == N`. This is the Linux `kfifo` style.",
+        "**Circular linked list queue**: keep only a `tail` pointer to a node whose `next` is the head. Enqueue and dequeue are O(1) with one pointer, and the size is unbounded.",
+        "**Overwriting ring buffer**: on full, advance head too so the newest data replaces the oldest. Used for logs, flight recorders and oscilloscope-style capture.",
+        "**Double-ended circular queue**: a circular array deque that supports push and pop at both ends; the front index also decrements with `(i - 1 + N) % N`."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**enqueue, dequeue, peek, isEmpty, isFull**: O(1) each, with no element shifting.",
+        "**Space**: exactly N slots allocated once. No per-element pointers, so an `int` ring of 1,024 entries is 4 KiB on typical platforms.",
+        "**Modulo cost**: `%` is a division and can cost tens of cycles on a CPU without a fast divider. With N a power of two, `& (N - 1)` is a single AND, which is why drivers insist on power-of-two sizes.",
+        "**Cache behavior**: sequential, contiguous access gives excellent locality, better than a linked queue.",
+        "**Fixed capacity**: growing needs a new array and a copy that unrolls the wrap (copy from front to the end, then from 0 to rear), which is O(n)."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Empty equals full**: with two indices and no count, `front == rear` is ambiguous. Choose count, a spare slot or a flag deliberately.",
+        "**Negative modulo**: moving backwards with `(i - 1) % N` is -1 in C when i is 0. Use `(i + N - 1) % N`.",
+        "**Off by one on capacity**: with the wasted-slot design the usable size is N minus 1. Allocate N + 1 if you need N.",
+        "**Mixing conventions**: deciding that `rear` points at the last element in one function and at the next free slot in another is the most common bug.",
+        "**Non power-of-two with free-running indices**: when unsigned indices overflow, `idx % N` stops being contiguous unless N divides 2^32, so use a power of two (or reduce explicitly).",
+        "**Lock-free misuse**: the two-index design is only safe for exactly one producer and one consumer and needs correct memory ordering (release on the index update, acquire on the read). Multiple producers need a lock or a different algorithm.",
+        "**Stale data**: dequeue does not clear the slot. If elements own resources (pointers), you must release them yourself."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Device drivers and NICs**: receive and transmit descriptor rings are ring buffers shared between hardware and the driver.",
+        "**Linux kernel**: `kfifo`, the printk log buffer (`dmesg`), pipe buffers (16 pages by default) and io_uring submission and completion rings.",
+        "**Audio and video**: playback buffers feed the sound card at a constant rate while a producer fills them.",
+        "**Serial ports and keyboards**: UART interrupt handlers push bytes into a ring that the main loop drains.",
+        "**Logging and tracing**: fixed memory flight recorders keep only the most recent events.",
+        "**CPU scheduling**: round robin cycles through a circular list of ready tasks.",
+        "**Streaming and moving averages**: a ring holding the last N samples, from which a running sum is maintained."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why a circular queue?** To reuse freed slots and avoid O(n) shifts while keeping a fixed array.",
+        "**How do you wrap?** `(i + 1) % N`, or `(i + 1) & (N - 1)` when N is a power of two.",
+        "**How do you tell full from empty?** Keep a count, sacrifice one slot, or use a flag.",
+        "**Capacity with the wasted-slot design?** N minus 1 usable slots out of N.",
+        "**Is it thread safe?** The wasted-slot design is wait-free for one producer and one consumer with proper atomics; any other mix needs locking.",
+        "**How would you resize it?** Allocate a bigger array, copy elements in logical order starting at front, reset front to 0.",
+        "**Where does it beat a linked queue?** No allocation per element, better cache use, deterministic timing.",
+        "**Design a moving average over the last k values?** A ring of size k plus a running sum: subtract the overwritten value, add the new one."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Power-of-two capacity",
-      "summary": "Replace modulo with a bit mask.",
+      "title": "Why the linear queue fails",
+      "summary": "Wasted front slots motivate the circular design.",
       "sections": [
         {
-          "body": "If capacity is 2^k, `i % cap` equals `i & (cap - 1)`, which is faster and lets head and tail run as free-running unsigned counters. This is the layout of the Linux kernel's `kfifo`.",
-          "code": "idx = counter & (cap - 1);"
+          "body": "In a linear queue of capacity 5, enqueue 5 items and dequeue 3: `front` is 3, `rear` is 4, and slots 0 to 2 are free. Because `rear` already sits at the last index, the next enqueue reports overflow. Shifting the two live items to the start works but costs O(n) per dequeue or per rebalance. Wrapping the indices with modulo removes both problems in O(1). The circular queue is therefore not a different data type from the queue; it is a better storage layout for the same FIFO behavior."
         }
       ]
     },
     {
-      "title": "Ring buffers in practice",
-      "summary": "Where this appears.",
+      "title": "Telling full from empty",
+      "summary": "Three standard ways to break the tie.",
       "sections": [
         {
-          "bullets": [
-            "Network card receive/transmit descriptor rings.",
-            "Audio and video streaming buffers.",
-            "UART and serial driver FIFOs.",
-            "Logging buffers that overwrite the oldest entry."
-          ]
+          "body": "Suppose N = 4 and both indices are 2. Did the queue just fill up, or just empty out? Both histories produce the same pair of numbers. Option one, a count: unambiguous, uses all slots, costs one extra variable. Option two, a wasted slot: full is declared one step early, so equality always means empty; no extra variable, which keeps producer and consumer writing disjoint variables. Option three, a flag set by enqueue and cleared by dequeue: works but is easy to forget in one code path. Whatever you choose, test the boundaries: empty, one element, full, full then dequeue then enqueue."
         }
       ]
     },
     {
-      "title": "Overwrite mode",
-      "summary": "Keep the latest N items.",
+      "title": "Wasted-slot implementation",
+      "summary": "Head and tail only, capacity N minus 1.",
       "sections": [
         {
-          "body": "When full, advance `front` as you write so the oldest item is dropped. Useful for telemetry windows and crash logs."
+          "body": "Here `tail` is the next write position. Empty is `head == tail`. Full is `(tail + 1) % N == head`. Enqueue checks full, writes `data[tail]` and then advances tail. Dequeue checks empty, reads `data[head]` and then advances head. Because the producer only modifies `tail` and the consumer only modifies `head`, a single-producer single-consumer pair needs no lock, only the right memory barriers.",
+          "code": "typedef struct { int d[N]; int head, tail; } Ring;\n\nbool ring_put(Ring *r, int x) {\n    int next = (r->tail + 1) % N;\n    if (next == r->head) return false;   /* full: N-1 items */\n    r->d[r->tail] = x;\n    r->tail = next;\n    return true;\n}\nbool ring_get(Ring *r, int *out) {\n    if (r->head == r->tail) return false;  /* empty */\n    *out = r->d[r->head];\n    r->head = (r->head + 1) % N;\n    return true;\n}"
         }
       ]
     },
     {
-      "title": "Single-producer single-consumer lock-free",
-      "summary": "Concurrency.",
+      "title": "Power-of-two ring with free-running indices",
+      "summary": "The fast trick used in kernels.",
       "sections": [
         {
-          "body": "With one writer and one reader, the writer only updates `tail` and the reader only `head`, so a ring buffer needs no locks, just correct memory ordering."
+          "body": "Let `head` and `tail` be unsigned counters that only ever increase and wrap naturally at the width of the type. The element position is `idx & (N - 1)` with N a power of two. Size is `tail - head` (unsigned subtraction stays correct across overflow), empty is `size == 0` and full is `size == N`, so all N slots are usable with no extra count field and no wasted slot. There is no modulo division at all. This is the design behind Linux `kfifo` and many lock-free queues.",
+          "code": "typedef struct {\n    int d[8];                 /* N = 8, a power of two */\n    unsigned head, tail;      /* free-running counters */\n} Fifo;\n\n#define MASK 7u\nbool f_put(Fifo *f, int x) {\n    if (f->tail - f->head == 8) return false;\n    f->d[f->tail++ & MASK] = x;\n    return true;\n}\nbool f_get(Fifo *f, int *out) {\n    if (f->tail == f->head) return false;\n    *out = f->d[f->head++ & MASK];\n    return true;\n}"
         }
       ]
     },
     {
-      "title": "getFront and getRear",
-      "summary": "Peeking without removing.",
+      "title": "Circular linked list queue",
+      "summary": "Unbounded, with a single tail pointer.",
       "sections": [
         {
-          "body": "With front, size, and capacity: the front element is `a[front]`; the rear element is `a[(front + size - 1) % capacity]`. Return a sentinel or error when size is 0.",
-          "code": "int get_front(const Q *q) { return q->size ? q->a[q->front] : -1; }\nint get_rear(const Q *q)  { return q->size ? q->a[(q->front + q->size - 1) % q->cap] : -1; }"
+          "body": "Hold only `tail`, where `tail->next` is the head. Enqueue to an empty queue makes a one-node loop (`n->next = n`). Otherwise `n->next = tail->next; tail->next = n; tail = n`. Dequeue removes `tail->next`; if the head is the only node the queue becomes empty, otherwise `tail->next = head->next`. Both are O(1) with one pointer instead of two, and there is no capacity limit, at the cost of a malloc per element. Circular lists also model round-robin rotation naturally: advance `tail = tail->next` to move to the next participant."
+        }
+      ]
+    },
+    {
+      "title": "Overwriting ring buffers",
+      "summary": "Keep the newest N items when data never stops.",
+      "sections": [
+        {
+          "body": "For logs and telemetry you usually prefer losing old data to blocking the producer. When the buffer is full, enqueue writes at the tail and advances the head as well, dropping the oldest element. The consumer must then be prepared to see gaps, so many designs also keep a monotonically increasing sequence number so a reader can detect that it was lapped. The same structure with a running sum gives an O(1) moving average of the last N samples."
+        }
+      ]
+    },
+    {
+      "title": "Resizing and iteration",
+      "summary": "Walking the logical order across the wrap.",
+      "sections": [
+        {
+          "body": "To iterate you visit `k` from 0 to count minus 1 at position `(front + k) % N`. To grow, allocate a new array of size 2N, copy elements in logical order so the new array starts at index 0, then set front to 0 and keep count. A plain `memcpy` of the whole old array is wrong when the data wraps, because the oldest element would not land first. If the wrapped region is a performance problem (for example with DMA), allocate the ring twice and map it back to back (virtual memory mirroring) so any window of N bytes is contiguous."
+        }
+      ]
+    },
+    {
+      "title": "Josephus problem with a circular structure",
+      "summary": "Elimination order via rotation.",
+      "sections": [
+        {
+          "body": "n people stand in a circle and every k-th is removed until one remains. A circular queue models it directly: dequeue and re-enqueue k minus 1 people, then dequeue the k-th permanently. This takes O(nk) time. A closed form recurrence `J(n) = (J(n-1) + k) mod n` with `J(1) = 0` solves the survivor position in O(n). It is a favorite example of replacing a simulation with arithmetic that follows the same wrap-around idea."
+        }
+      ]
+    },
+    {
+      "title": "The four operations step by step",
+      "summary": "enqueue, dequeue, getFront and getRear with the front plus size design.",
+      "sections": [
+        {
+          "body": "State: `arr[]`, `capacity`, `front` (index of the front element) and `size`. enqueue(x): if `size == capacity` the queue is full, so report or return; otherwise compute `rear = (front + size) % capacity`, store `arr[rear] = x`, and increment size. dequeue(): if `size == 0` it is empty and you return a sentinel or error; otherwise save `res = arr[front]`, set `front = (front + 1) % capacity`, decrement size and return res. getFront(): if empty return an error value, otherwise `arr[front]`. getRear(): if empty return an error value, otherwise read `arr[(front + size - 1) % capacity]`. Every operation is O(1) time and O(1) extra space, and the array itself is the only O(capacity) cost. Returning -1 as an error sentinel only works if -1 cannot be a real element; a status code plus an output parameter, as in the C code above, is safer."
+        }
+      ]
+    },
+    {
+      "title": "Circular versus linear array queue",
+      "summary": "What exactly the circular layout buys.",
+      "sections": [
+        {
+          "body": "A linear array queue with insertion at the end and removal at the beginning has O(1) enqueue and O(n) dequeue because of the shifting, and the reverse choice moves the cost to enqueue. If you avoid shifting by only moving indices forward, you waste the slots behind `front`. A circular array keeps both enqueue and dequeue at O(1) by moving `front` and `rear` with modular arithmetic, so the live elements occupy one contiguous chunk of the array that may wrap past the end. The trade-off is fixed capacity and slightly trickier boundary logic; when unbounded growth is needed use a linked queue or grow-and-copy the ring."
         }
       ]
     }
   ],
   "takeaways": [
-    "Indices wrap with `% capacity`, reusing freed slots.",
-    "enqueue and dequeue are O(1); no shifting.",
-    "Distinguish full from empty with a size counter or a spare slot.",
-    "Power-of-two capacities allow a fast mask instead of modulo."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Circular queue (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
-    }
+    "A circular queue reuses slots by wrapping indices with `(i + 1) % N`, so FIFO operations stay O(1) with a fixed array.",
+    "Full and empty look identical when only two indices are used; fix it with a count, a wasted slot or a flag.",
+    "The wasted-slot design stores N minus 1 items but lets one producer and one consumer work without locks.",
+    "A power-of-two size lets you replace modulo with a bit mask, which is why kernels use it.",
+    "Moving backwards needs `(i + N - 1) % N` because C's `%` of a negative number is negative.",
+    "Ring buffers allocate once, have deterministic timing and good cache behavior, so they dominate drivers and audio.",
+    "Resizing must copy in logical order from front, not a raw memcpy of the array."
   ],
   "practice": [
     {
-      "title": "Implement with a size counter",
+      "title": "Implement a circular queue with front and count",
       "difficulty": "Easy"
+    },
+    {
+      "title": "Detect full versus empty in a ring buffer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Design a circular queue (LeetCode 622)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a circular deque",
+      "difficulty": "Medium"
     },
     {
       "title": "Moving average from a data stream",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement without a size counter using one spare slot",
       "difficulty": "Medium"
     },
     {
-      "title": "Design a circular deque",
+      "title": "Josephus problem: last person standing",
       "difficulty": "Medium"
+    },
+    {
+      "title": "Circular linked list queue with one tail pointer",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Lock-free single-producer single-consumer ring",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Resize a circular queue preserving order",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Introduction to circular queue (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/introduction-to-circular-queue/"
+    },
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed., chapter 10",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Queue data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/queue-data-structure/"
     }
   ]
 }

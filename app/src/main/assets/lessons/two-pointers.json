@@ -1,87 +1,271 @@
 {
-  "summary": "The two-pointers technique walks two indices through an array or list, either from opposite ends or in the same direction, to replace nested loops with a single O(n) pass. A sliding window is the same idea applied to a contiguous range.",
+  "summary": "The two-pointers technique walks two indices through an array, string or linked list, moving them according to a rule so that each element is visited a constant number of times. It turns many O(n squared) pair and subarray searches into O(n) scans with O(1) extra space. The three main shapes are opposite ends moving inward, fast and slow pointers moving in the same direction, and a sliding window with a left and a right edge.",
   "sections": [
     {
-      "heading": "Opposite ends: pair sum on a sorted array",
-      "body": "Put one pointer at each end. If the sum is too small, the left value is too small to pair with anything remaining, so advance left; if too large, retreat right. Each step discards a candidate, so the whole scan is O(n) with O(1) space instead of O(n²).",
-      "code": "int pair_sum(const int a[], int n, int target, int *i, int *j) {\n  int l = 0, r = n - 1;\n  while (l < r) {\n    int s = a[l] + a[r];\n    if (s == target) { *i = l; *j = r; return 1; }\n    if (s < target) l++; else r--;\n  }\n  return 0;\n}"
+      "heading": "Overview",
+      "body": "A brute-force pair search tries every (i, j) with two nested loops, which is O(n squared). Often the structure of the problem tells you that most of those pairs cannot be answers. If the array is sorted, a sum that is too small can only be fixed by a larger left value, so every pair involving a smaller left value is already ruled out. Two pointers exploit exactly this: each step discards at least one whole candidate, so after at most n steps you are done.\n\nThe technique is not one algorithm but a family of patterns that share a loop invariant. You maintain two positions, you know what moving each one means, and you prove that no answer is skipped. It works on arrays, strings and linked lists, and it is the basis of sliding windows, merging sorted sequences, partitioning and cycle detection."
     },
     {
-      "heading": "Same direction: fast and slow",
-      "body": "A slow pointer marks where the result so far ends and a fast pointer scans ahead. Remove duplicates from a sorted array in place:",
-      "code": "int dedupe(int a[], int n) {\n  if (!n) return 0;\n  int w = 1;\n  for (int r = 1; r < n; r++)\n    if (a[r] != a[w - 1]) a[w++] = a[r];\n  return w;\n}"
-    },
-    {
-      "heading": "Sliding window",
-      "body": "Keep a window [l, r] and move r forward each step, adjusting l to restore a condition. Fixed size: add the new element, drop the old one. Variable size: shrink while the window is invalid.",
-      "code": "/* longest substring without repeating characters */\nint seen[256] = {0}, best = 0;\nfor (int l = 0, r = 0; s[r]; r++) {\n  seen[(unsigned char)s[r]]++;\n  while (seen[(unsigned char)s[r]] > 1) seen[(unsigned char)s[l++]]--;\n  if (r - l + 1 > best) best = r - l + 1;\n}"
-    },
-    {
-      "heading": "Complexity and requirements",
+      "heading": "Core Concepts",
       "bullets": [
-        "Typically O(n) time, O(1) extra space.",
-        "Opposite-end version usually needs sorted input (or a monotonic property).",
-        "Each pointer only moves forward (or only inward), so total moves are O(n)."
+        "**Pointer**: here, any index (or node reference) that scans a sequence; not necessarily a C pointer.",
+        "**Opposite-direction pointers**: one at each end, moving toward each other until they meet. Common on sorted data and palindromes.",
+        "**Same-direction pointers**: both move left to right at different speeds or roles, such as a reader and a writer.",
+        "**Fast and slow pointers**: one advances two steps while the other advances one; used on linked lists for the middle and for cycles (Floyd's tortoise and hare).",
+        "**Sliding window**: two same-direction pointers `left` and `right` delimiting a contiguous subarray that grows on the right and shrinks on the left.",
+        "**Invariant**: a statement that stays true at every step, for example 'no valid pair exists with an index below `lo` or above `hi`'.",
+        "**Monotonic property**: a quantity that moves predictably as a pointer moves (a sum grows when `lo` increases in a sorted array). The technique needs one.",
+        "**Anchor**: a fixed element (like `a[i]` in 3Sum) while two pointers scan the rest."
+      ]
+    },
+    {
+      "heading": "How It Works",
+      "body": "**Opposite ends, sorted array.** To find two numbers summing to a target, place `lo` at the start and `hi` at the end. If the sum is too small, no pair with the current `lo` can work (the largest partner is already `hi`), so advance `lo`. If too large, no pair with the current `hi` can work, so retreat `hi`. Each step removes one index from consideration.\n\nExample: arr = [-8, 1, 4, 6, 10, 45], target 16. lo=0, hi=5: -8 + 45 = 37, too big, hi=4. -8 + 10 = 2, too small, lo=1. 1 + 10 = 11, too small, lo=2. 4 + 10 = 14, lo=3. 6 + 10 = 16, found. Six values, five steps, no nested loop.",
+      "code": "#include <stdbool.h>\n\n/* arr must be sorted ascending */\nbool pair_sum(const int arr[], int n, int target) {\n  int lo = 0, hi = n - 1;\n  while (lo < hi) {\n    long s = (long)arr[lo] + arr[hi];\n    if (s == target) return true;\n    if (s < target) lo++;          /* need a bigger sum */\n    else hi--;                     /* need a smaller sum */\n  }\n  return false;\n}"
+    },
+    {
+      "body": "**Same direction, reader and writer.** One pointer reads every element; the other marks where the next kept element goes. This filters or compacts in place, as in removing duplicates from a sorted array or moving zeros to the end.\n\nExample: [1, 1, 2, 2, 3]. w=1. r=1: a[1]=1 equals a[0], skip. r=2: a[2]=2 differs from a[w-1]=1, so a[1]=2, w=2. r=3: 2 equals a[1], skip. r=4: 3 differs, a[2]=3, w=3. The first 3 elements are [1, 2, 3].",
+      "code": "/* remove duplicates from a sorted array in place, return the new length */\nint dedupe(int a[], int n) {\n  if (n == 0) return 0;\n  int w = 1;                      /* write index */\n  for (int r = 1; r < n; r++)     /* read index */\n    if (a[r] != a[w - 1]) a[w++] = a[r];\n  return w;\n}"
+    },
+    {
+      "body": "**Sliding window.** Expand `right` to include a new element, then shrink `left` while the window is too large or invalid. Because `left` and `right` each move only forward, the total work is at most 2n steps even though there is a loop inside a loop.\n\nExample: a = [2, 3, 1, 2, 4, 3], k = 7. The window grows to [2,3,1,2] with sum 8 (>= 7, length 4), then shrinks to [3,1,2] with sum 6. It grows to [3,1,2,4] sum 10 (length 4), shrinks to [1,2,4] sum 7 (length 3, new best), then [2,4] sum 6. It grows to [2,4,3] sum 9, shrinks to [4,3] sum 7, length 2, the answer.",
+      "code": "/* length of the shortest subarray with sum >= k (all values positive), or 0 */\nint min_len(const int a[], int n, long k) {\n  int best = n + 1, left = 0;\n  long sum = 0;\n  for (int right = 0; right < n; right++) {\n    sum += a[right];                    /* grow the window */\n    while (sum >= k) {                  /* shrink while still valid */\n      if (right - left + 1 < best) best = right - left + 1;\n      sum -= a[left++];\n    }\n  }\n  return best == n + 1 ? 0 : best;\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Opposite ends**: pair sum, 3Sum, 4Sum, container with most water, trapping rain water, valid palindrome, reverse a string in place.",
+        "**Reader and writer**: remove duplicates, remove an element, move zeros, partition by predicate (the partition step of quicksort).",
+        "**Fast and slow**: middle of a list, cycle detection, cycle entry, happy number, finding a duplicate in an array of n + 1 values in the range 1 to n.",
+        "**Fixed-size window**: the window length is given (maximum average of k elements, anagram search); slide by adding one and removing one.",
+        "**Variable-size window**: grow and shrink on a condition (smallest subarray with sum at least k, longest substring with at most k distinct characters).",
+        "**Two sequences, one pointer each**: merging two sorted arrays, intersection of sorted arrays, checking whether one string is a subsequence of another.",
+        "**Three-way partition (Dutch national flag)**: `low`, `mid` and `high` pointers sort 0s, 1s and 2s in one pass.",
+        "**Expand around center**: two pointers moving outward find the longest palindromic substring in O(n squared).",
+        "**Monotonic deque window**: combine a window with a deque when you need the maximum or minimum of the window in O(1)."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Opposite-end scan: O(n) time, O(1) space, since the pointers together move at most n steps.",
+        "Sorting first (when input is unsorted): O(n log n) dominates, then O(n) for the scan.",
+        "3Sum: O(n squared); one anchor loop times one two-pointer scan. Brute force is O(n cubed): for n = 3,000, 4.5 billion triples versus about 4.5 million steps.",
+        "4Sum: O(n cubed) with two nested anchors and a two-pointer scan.",
+        "Sliding window: O(n), because each element enters and leaves the window at most once.",
+        "Floyd's cycle detection: O(n) time and O(1) space, versus O(n) space for a hash set of visited nodes.",
+        "Auxiliary tables for windows (character counts of 128 or 256 entries) are O(1) space for a fixed alphabet."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Using the opposite-end pattern on unsorted data**: the argument that discards candidates depends on sorted order. Sort first or use a hash table.",
+        "**Negative numbers in a sum window**: shrinking when the sum is large assumes adding elements only increases it. With negatives, use prefix sums plus a hash map or a deque.",
+        "**Off-by-one on loop conditions**: `lo < hi` for distinct elements, `lo <= hi` when a single element may pair with itself.",
+        "**Overflow in sums**: adding two large `int` values overflows. Widen to `long`.",
+        "**Forgetting to skip duplicates** in 3Sum or 4Sum, which yields repeated triplets.",
+        "**Not null-checking `fast->next`** in a linked list loop; always test `fast && fast->next`.",
+        "**Moving both pointers in the wrong case**: after finding a match in 3Sum, move both `lo` and `hi`; moving only one still works but wastes steps and can duplicate results.",
+        "**Updating the answer at the wrong time** in a window: record the best before shrinking if you want the largest valid window, and inside the shrink loop when you want the smallest."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Merging sorted data**: the merge step of merge sort, merging sorted log files or database index scans (merge joins) uses one pointer per input.",
+        "**Network and stream processing**: sliding windows compute rolling averages, rate limiters, and TCP's sliding window for flow control.",
+        "**Text processing**: tokenizers and in-place string filters use reader and writer indices.",
+        "**Cycle detection**: garbage collectors, linked-list sanity checks and Pollard's rho factoring use tortoise and hare.",
+        "**Genomics and search**: sliding windows over DNA find motifs; two-pointer scans compute overlaps of sorted intervals.",
+        "**Partitioning**: the Lomuto and Hoare partitions in quicksort are two-pointer routines."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**When do I use opposite-end pointers?** Sorted input (or sortable) and a pair or triple condition that moves monotonically.",
+        "**Why is the window loop O(n) with a nested while?** Each pointer only moves forward, so combined moves are at most 2n.",
+        "**How do you detect a cycle in O(1) space?** Floyd: slow moves 1, fast moves 2; they meet if and only if there is a cycle.",
+        "**How do you find the cycle start?** After they meet, reset one pointer to the head and advance both one step at a time; they meet at the entry.",
+        "**Two pointers versus hash map for two sum?** A hash map is O(n) time and O(n) space on unsorted input; two pointers are O(1) space but need sorted input.",
+        "**How do you handle duplicates in 3Sum?** Sort, skip equal anchors, and skip equal `lo` and `hi` values after a match."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Linked lists: fast and slow pointers",
-      "summary": "Floyd cycle detection.",
+      "title": "Pair sum on a sorted array",
+      "summary": "The canonical opposite-ends example and why it is correct.",
       "sections": [
         {
-          "body": "Slow moves one node, fast moves two. If there is a cycle they meet; otherwise fast hits NULL. When fast reaches the end, slow is at the middle. Both run in O(n) with O(1) space."
+          "body": "Claim: at each step, any pair with an index less than `lo` or greater than `hi` has already been ruled out. When `arr[lo] + arr[hi] < target`, every pair (lo, j) with j at most hi has a sum at most that one, so `lo` is useless as a left element and can be dropped. The symmetric argument holds when the sum is too large. The invariant shrinks the live range by one each step, so n minus 1 steps suffice. Variations include the closest pair sum to a target (track the smallest absolute difference) and counting pairs below a threshold (when a pair works, all pairs between lo and hi work too)."
         }
       ]
     },
     {
-      "title": "Container with most water",
-      "summary": "Greedy pointer move.",
+      "title": "Three-sum and four-sum",
+      "summary": "Fix one or two anchors, scan the rest with two pointers.",
       "sections": [
         {
-          "body": "Start with the widest container. Move the pointer at the shorter line inward, because a narrower container can only be taller if the short side changes. O(n)."
+          "body": "Sort, then for each anchor index i search for two numbers to the right that sum to the negative of the anchor. Skipping equal anchors and equal pointer values keeps results unique. The early exit `a[i] > 0` means no triple can sum to zero because all later values are larger.",
+          "code": "/* all unique triplets with a + b + c == 0; a must be sorted. prints each one */\nvoid three_sum(int a[], int n) {\n  for (int i = 0; i + 2 < n && a[i] <= 0; i++) {\n    if (i > 0 && a[i] == a[i - 1]) continue;        /* skip duplicate anchors */\n    int lo = i + 1, hi = n - 1;\n    while (lo < hi) {\n      int s = a[i] + a[lo] + a[hi];\n      if (s < 0) lo++;\n      else if (s > 0) hi--;\n      else {\n        printf(\"%d %d %d\\n\", a[i], a[lo], a[hi]);\n        lo++; hi--;\n        while (lo < hi && a[lo] == a[lo - 1]) lo++;   /* skip duplicates */\n        while (lo < hi && a[hi] == a[hi + 1]) hi--;\n      }\n    }\n  }\n}"
+        },
+        {
+          "body": "Four-sum nests two anchors and runs the same scan, for O(n cubed) overall. For k-sum in general the best simple approach is O(n to the k minus 1). A hash-based meet-in-the-middle approach solves the 4-array variant in O(n squared)."
         }
       ]
     },
     {
-      "title": "Three-sum",
-      "summary": "Sort, then pair-sum.",
+      "title": "Container with most water and trapping rain water",
+      "summary": "Move the pointer at the shorter wall.",
       "sections": [
         {
-          "body": "Sort, fix the first element, and run opposite-end two pointers on the rest, skipping duplicates. O(n²) overall, versus O(n³) brute force."
+          "body": "Area between walls i and j is (j - i) times the smaller height. Starting with the widest container, moving the taller wall inward can only shrink the width without raising the limiting height, so it never helps; always move the shorter wall.",
+          "code": "int max_area(const int h[], int n) {\n  int lo = 0, hi = n - 1, best = 0;\n  while (lo < hi) {\n    int width = hi - lo, height = h[lo] < h[hi] ? h[lo] : h[hi];\n    if (width * height > best) best = width * height;\n    if (h[lo] < h[hi]) lo++; else hi--;      /* move the shorter wall */\n  }\n  return best;\n}"
+        },
+        {
+          "body": "Trapping rain water uses a similar pair: keep `left_max` and `right_max`; whichever side has the smaller max is the one whose water level is already determined, so process it and move that pointer. It runs in O(n) time and O(1) space, versus O(n) space for the prefix and suffix maximum arrays."
         }
       ]
     },
     {
-      "title": "Merging and partitioning",
-      "summary": "Two input pointers.",
+      "title": "Fast and slow pointers on linked lists",
+      "summary": "Floyd's tortoise and hare.",
       "sections": [
         {
-          "body": "Merging two sorted arrays advances one pointer per input; the Dutch national flag uses three pointers (low, mid, high) to partition 0/1/2 in one pass."
+          "body": "For the middle node, advance fast two steps for each slow step; when fast reaches the end, slow is in the middle (the second middle for even lengths). For cycle detection, if a cycle exists the fast pointer gains one node on the slow pointer per step inside the cycle, so they must meet.\n\nTo find the cycle entry, let the head-to-entry distance be a, the entry-to-meeting-point distance b, and the cycle length c. At the meeting point slow has moved a + b and fast 2(a + b), so a + b is a multiple of c, which means that walking a more steps from the meeting point returns to the entry. That is why a second pointer starting at the head meets the first at the entry.",
+          "code": "typedef struct Node { int val; struct Node *next; } Node;\n\nNode *cycle_start(Node *head) {\n  Node *slow = head, *fast = head;\n  while (fast && fast->next) {\n    slow = slow->next;\n    fast = fast->next->next;\n    if (slow == fast) {                 /* they met inside the cycle */\n      slow = head;                      /* restart one pointer at the head */\n      while (slow != fast) { slow = slow->next; fast = fast->next; }\n      return slow;                      /* both now at the cycle entry */\n    }\n  }\n  return NULL;                         /* no cycle */\n}"
         }
       ]
     },
     {
-      "title": "Choosing the pattern",
-      "summary": "Quick guide.",
+      "title": "Sliding window: fixed and variable",
+      "summary": "A contiguous range maintained incrementally.",
       "sections": [
         {
-          "bullets": [
-            "Sorted + pair/triple: opposite ends.",
-            "In-place filtering or removal: slow/fast writer and reader.",
-            "Contiguous subarray/substring with a constraint: sliding window.",
-            "Cycle or middle of a list: fast/slow."
-          ]
+          "body": "**Fixed size k**: add `a[right]`, subtract `a[right - k]` when the window exceeds k, update the answer. Maximum sum of k consecutive elements and finding anagrams of a pattern in a text follow this shape; for anagrams, compare two 26-entry count arrays or maintain a `matches` counter.\n\n**Variable size**: expand `right` until the condition holds (or breaks), then shrink `left` while it still holds (or until it is restored). The longest-substring problem keeps the window valid and records its length every step.",
+          "code": "/* longest substring without repeating characters (ASCII) */\nint longest_unique(const char *s) {\n  int last[256], best = 0, left = 0;\n  for (int i = 0; i < 256; i++) last[i] = -1;\n  for (int right = 0; s[right]; right++) {\n    unsigned char c = (unsigned char)s[right];\n    if (last[c] >= left) left = last[c] + 1;      /* jump past the previous copy */\n    last[c] = right;\n    if (right - left + 1 > best) best = right - left + 1;\n  }\n  return best;\n}"
+        },
+        {
+          "body": "Here the `last` table lets `left` jump directly past the earlier duplicate instead of shrinking one step at a time. The check `last[c] >= left` is essential, because an old occurrence outside the window must be ignored."
+        }
+      ]
+    },
+    {
+      "title": "Reader and writer pointers (in-place filtering)",
+      "summary": "Compact an array without extra memory.",
+      "sections": [
+        {
+          "body": "The writer index always trails the reader index, so overwriting `a[w]` never destroys an unread value. This single pattern solves remove element, remove duplicates (keeping at most two of each by comparing with `a[w - 2]`), move zeros (write non-zeros, then fill zeros), and the partition step of quicksort. It runs in O(n) time with O(1) space and preserves order, unlike the swap-with-last trick, which is faster when order is irrelevant and few elements are removed."
+        }
+      ]
+    },
+    {
+      "title": "Merging, intersection and subsequence checks",
+      "summary": "One pointer per sequence, advance the smaller.",
+      "sections": [
+        {
+          "body": "To merge two sorted arrays, compare the elements at the two pointers, output the smaller and advance that pointer. Merging in place from the back (when the first array has spare capacity at the end) avoids shifting. For the intersection of sorted arrays, advance the pointer at the smaller value and output when equal. To check whether `s` is a subsequence of `t`, walk through `t` and advance the pointer in `s` on each match: O(|t|). Running time is always the sum of the lengths, O(n + m)."
+        }
+      ]
+    },
+    {
+      "title": "Partitioning and the Dutch national flag",
+      "summary": "Three regions maintained by three indices.",
+      "sections": [
+        {
+          "body": "Sort an array of 0s, 1s and 2s in one pass. Keep `low` (next slot for 0), `mid` (current element), and `high` (next slot from the end for 2). If `a[mid]` is 0, swap with `low` and advance both; if 1, advance `mid`; if 2, swap with `high` and retreat `high` without advancing `mid`, because the swapped-in value is not yet examined. The invariant is: everything before `low` is 0, between `low` and `mid` is 1, after `high` is 2. It runs in one pass and O(1) space, and generalizes to the three-way partition used by quicksort on arrays with many equal keys."
+        }
+      ]
+    },
+    {
+      "title": "Choosing between two pointers, hashing and prefix sums",
+      "summary": "A decision guide.",
+      "sections": [
+        {
+          "body": "Use **opposite-end pointers** when the data is sorted (or you can afford O(n log n) to sort) and the condition is monotone in each pointer. Use a **hash map** when the data is unsorted, order must be preserved, or you need indices of the original positions. Use **prefix sums with a hash map** for subarray sums that include negative numbers. Use a **sliding window** when you want a contiguous range whose validity changes monotonically as it grows, for instance all values non-negative or a distinct-count bound. If the window is not monotone, consider a monotonic deque or a different technique such as binary search over the answer."
+        }
+      ]
+    },
+    {
+      "title": "Worked traces of the pair-sum examples",
+      "summary": "Three inputs, including the false case.",
+      "sections": [
+        {
+          "body": "Input [10, 20, 35, 50] with target 70: lo=0, hi=3 gives 60, too small, lo=1; 20 + 50 = 70, found, so the answer is true (the pair 20 and 50). Input [10, 20, 30] with target 70: 10 + 30 = 40 is too small, lo=1; 20 + 30 = 50 is too small, lo=2; now lo equals hi, the loop ends, and the answer is false. Input [-8, 1, 4, 6, 10, 45] with target 16 ends with the pair 6 and 10. The naive version tries every pair with two nested loops in O(n squared) time and O(1) space; the pointer version is O(n) time and O(1) space because each step either raises lo, lowers hi, or stops."
+        }
+      ]
+    },
+    {
+      "title": "Why no valid pair is ever missed",
+      "summary": "The correctness argument in two cases.",
+      "sections": [
+        {
+          "body": "**Case 1, incrementing lo**: we do this when arr[lo] + arr[hi] is below the target. Pairing arr[lo] with anything before hi would give an even smaller sum, so none of those can work. Pairing it with elements after hi is also impossible, because we only moved hi past those values after learning that each was too large to pair with something no larger than arr[lo]. So arr[lo] can be discarded safely. **Case 2, decrementing hi**: the mirror argument applies. Because every step discards an element that cannot be part of any answer, the loop ends only when the whole array has been ruled out or a pair has been found."
+        }
+      ]
+    },
+    {
+      "title": "When to reach for two pointers",
+      "summary": "Four triggers and their typical problems.",
+      "sections": [
+        {
+          "body": "**Sorted input**: pair sums, closest two sum, three sum, four sum, trapping rain water. **Pairs or ranges**: longest substring without repeating characters, maximum consecutive ones (a window that holds only ones), checking whether a string is a palindrome (compare from both ends). **Sliding window**: smallest subarray with sum at least K, and moving all zeros to the end while keeping the order of the rest (reader and writer). **Linked lists**: cycle detection, the middle node, and palindrome checks using slow and fast pointers (find the middle, reverse the second half, compare). If none of these shapes fits, a hash map or prefix sums are likely a better first idea."
         }
       ]
     }
   ],
   "takeaways": [
-    "Two indices replace nested loops: O(n) time, O(1) space.",
-    "Opposite ends for sorted pair problems; same direction for in-place filtering.",
-    "Sliding windows handle contiguous-range constraints.",
-    "Each pointer moves monotonically, which bounds the work."
+    "Two pointers replace an O(n squared) pair search with an O(n) scan by discarding candidates with every move.",
+    "Opposite-end pointers need a sorted (monotone) structure; move the pointer whose value makes the sum too small or too large.",
+    "Reader and writer pointers filter an array in place in O(n) time and O(1) space.",
+    "A sliding window is O(n) even with an inner loop, because each pointer only moves forward.",
+    "Fast and slow pointers find a list's middle and detect cycles in O(1) space (Floyd); resetting one pointer to the head finds the cycle start.",
+    "For 3Sum, sort, fix an anchor, scan with two pointers, and skip duplicates: O(n squared).",
+    "Windows that assume non-negative values fail with negatives; use prefix sums and a hash map instead."
+  ],
+  "practice": [
+    {
+      "title": "Pair with a given sum in a sorted array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Valid palindrome ignoring non-alphanumeric characters",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Remove duplicates from a sorted array in place",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Middle of a linked list and linked list cycle detection",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Container with most water",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "3Sum: all unique triplets that sum to zero",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest substring without repeating characters",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Minimum size subarray with sum at least k",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort colors (Dutch national flag) in one pass",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Trapping rain water in O(n) time and O(1) space",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -91,36 +275,6 @@
     {
       "label": "Reference: Two pointers technique (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/two-pointers-technique/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Two sum on a sorted array",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Remove duplicates from a sorted array in place",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Container with most water",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Three sum",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Longest substring without repeating characters",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Minimum window substring",
-      "difficulty": "Hard"
-    },
-    {
-      "title": "Trapping rain water",
-      "difficulty": "Hard"
     }
   ]
 }

@@ -1,122 +1,243 @@
 {
-  "summary": "A queue is a linear collection with FIFO (first in, first out) access: items leave in the order they arrived. Enqueue adds at the rear and dequeue removes from the front.",
+  "summary": "A queue is a linear collection with FIFO (first in, first out) order: you add at the rear and remove from the front, so items are served in the order they arrived. Enqueue and dequeue are O(1) when implemented with a linked list or a circular array. Queues drive breadth-first search, CPU and I/O scheduling, buffers between producers and consumers, message brokers and any place where fairness matters.",
   "sections": [
     {
-      "heading": "Operations",
+      "heading": "Overview",
+      "body": "A queue models a line at a ticket counter. New arrivals join at the back; service always happens at the front. Compared with a stack, the only change is which end you remove from, yet it flips the behavior from reversing order to preserving it.\n\nQueues appear wherever work must wait its turn. An operating system keeps run queues of ready processes. A network card keeps a ring of packets waiting for the CPU. A web server queues requests; a printer queues jobs. Breadth-first search uses a queue so it visits nodes level by level. Because a queue decouples the speed of a producer from that of a consumer, it is also the basic building block of concurrent systems."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "enqueue(x): add at the rear. O(1).",
-        "dequeue(): remove and return the front. O(1) with the right implementation.",
-        "front()/peek(): read the front element.",
-        "isEmpty(), isFull(), size()."
+        "**FIFO**: the oldest element is served first.",
+        "**Front (head)**: the end where elements are removed.",
+        "**Rear (tail, back)**: the end where elements are added.",
+        "**enqueue(x)**: add x at the rear. O(1).",
+        "**dequeue()**: remove and return the front element. O(1). On an empty queue this is **underflow**.",
+        "**peek() / front()**: read the front without removing. O(1).",
+        "**isEmpty(), isFull(), size()**: constant-time status queries. A bounded queue can overflow.",
+        "**Abstract data type**: arrays, linked lists and ring buffers can all implement a queue; only the order guarantee defines it."
       ]
     },
     {
-      "heading": "Simple array queue and the dead-space problem",
-      "body": "With `front` and `rear` indices that only move forward, slots before `front` are never reused. After several dequeues the queue reports full even though it has free space at the start. Shifting everything left on each dequeue fixes it but costs O(n). The circular queue is the clean fix.",
-      "code": "enqueue: a[++rear] = x;\ndequeue: return a[front++];\n// slots [0 .. front-1] are wasted"
+      "heading": "How It Works",
+      "body": "The simplest array version keeps two indices, `front` and `rear`. Enqueue stores at `rear` and increments it; dequeue reads at `front` and increments it. Both are O(1). The weakness is that indices only move forward, so after enough operations `rear` reaches the end of the array even though the front slots are free. The fix is either to shift elements left on every dequeue (O(n)) or, much better, to wrap the indices around, which is the circular queue covered in its own lesson.\n\nThe linked version avoids the problem. Keep a `head` pointer for dequeue and a `tail` pointer for enqueue. Enqueue links a new node after `tail` and moves `tail`; dequeue unlinks `head`. Without a tail pointer, enqueue would have to walk the whole list and cost O(n).\n\nWorked example. Enqueue 5, 8, 2: front is 5, rear is 2. Dequeue returns 5 and front becomes 8. Enqueue 9: the queue reads 8, 2, 9 from front to rear. Dequeue returns 8, then 2, then 9, and the next dequeue is underflow. Two special cases need care: the first enqueue must set both head and tail, and the last dequeue must reset tail to NULL.",
+      "code": "#include <stdlib.h>\n\ntypedef struct Node { int val; struct Node *next; } Node;\ntypedef struct { Node *head, *tail; size_t size; } Queue;\n\nvoid q_init(Queue *q) { q->head = q->tail = NULL; q->size = 0; }\n\nint enqueue(Queue *q, int x) {\n    Node *n = malloc(sizeof *n);\n    if (!n) return -1;\n    n->val = x; n->next = NULL;\n    if (q->tail) q->tail->next = n;\n    else         q->head = n;        /* first element */\n    q->tail = n;\n    q->size++;\n    return 0;\n}\n\nint dequeue(Queue *q, int *out) {\n    if (!q->head) return -1;         /* underflow */\n    Node *t = q->head;\n    *out = t->val;\n    q->head = t->next;\n    if (!q->head) q->tail = NULL;    /* became empty */\n    free(t);\n    q->size--;\n    return 0;\n}"
     },
     {
-      "heading": "Linked-list queue",
-      "body": "Keep head (front) and tail (rear) pointers. Enqueue appends at the tail, dequeue removes at the head, both O(1) with no capacity limit."
-    },
-    {
-      "heading": "Applications",
+      "heading": "Variants & Types",
       "bullets": [
-        "CPU and disk scheduling (round-robin ready queue).",
-        "Buffering between producer and consumer: keyboard, network packets, print jobs.",
-        "Breadth-first search and level-order tree traversal.",
-        "Message queues and task pipelines."
+        "**Linear (simple) queue**: array with forward-only indices. Wastes freed slots, so it is mainly a teaching version.",
+        "**Circular queue (ring buffer)**: indices wrap with modulo, reusing slots. Fixed capacity, no allocation, ideal for buffers and drivers.",
+        "**Linked queue**: head and tail pointers; unbounded, with a malloc and a pointer per element.",
+        "**Deque (double-ended queue)**: insert and remove at both ends in O(1). Can act as a stack, a queue or both.",
+        "**Priority queue**: dequeue returns the highest priority rather than the oldest, typically via a binary heap with O(log n) operations. Not FIFO.",
+        "**Blocking and concurrent queues**: producers wait when full, consumers wait when empty (condition variables or semaphores); lock-free variants use atomic compare-and-swap.",
+        "**Queue from two stacks**: an in stack and an out stack give amortized O(1) FIFO using only LIFO primitives."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**enqueue, dequeue, peek, isEmpty**: O(1) for linked and circular array implementations.",
+        "**Naive array with shifting**: dequeue is O(n) because every element moves one slot left.",
+        "**Space**: O(n). A linked node for an int on a 64-bit system is 16 bytes (4 data, padding, 8 pointer) before allocator overhead, versus 4 bytes per element in an array.",
+        "**Search**: O(n); a queue offers no random access.",
+        "**Two-stack queue**: amortized O(1) per operation, worst case O(n) for a single dequeue that transfers the whole in stack. Each element is moved at most once, so n operations cost O(n).",
+        "**Priority queue (heap)**: insert and extract are O(log n), peek is O(1)."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Forgetting tail on the last dequeue**: after removing the final node, `head` is NULL but `tail` still dangles. The next enqueue then writes through freed memory.",
+        "**Forgetting head on the first enqueue**: set both pointers when the queue is empty.",
+        "**Linear array drift**: indices that never wrap make the queue report full while most slots are free.",
+        "**Full versus empty ambiguity**: in a circular array, `front == rear` can mean either state unless you track a count or keep one slot unused.",
+        "**Unbounded growth**: a producer faster than its consumer grows memory without limit. Real systems bound the queue and apply back pressure or drop work.",
+        "**Confusing it with a stack**: BFS with a stack becomes DFS. Check which end you remove from.",
+        "**Races**: shared queues need a lock or atomic operations; reading `size` and then dequeuing is a classic time-of-check bug."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Breadth-first search**: the frontier is a queue, which gives shortest paths in unweighted graphs and level-order tree traversal.",
+        "**Operating systems**: ready queues for CPU scheduling (round robin cycles through one), disk I/O queues, and keyboard buffers.",
+        "**Networking**: router and NIC buffers hold packets in order; tail-drop happens when the queue is full.",
+        "**Message brokers**: Kafka, RabbitMQ and SQS are distributed queues that smooth bursts and decouple services.",
+        "**Producer-consumer pipelines**: thread pools pull tasks from a shared work queue.",
+        "**Streaming**: audio and video buffers, and log shippers, use ring buffers.",
+        "**Everyday software**: print spoolers, customer support ticketing, and event loops in UI toolkits and Node.js."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Queue versus stack?** FIFO versus LIFO; a queue preserves order, a stack reverses it.",
+        "**Why a tail pointer in a linked queue?** Without it, enqueue must traverse the list and costs O(n).",
+        "**Why circular arrays?** Wrapping reuses freed slots so enqueue and dequeue stay O(1) with no shifting.",
+        "**Build a queue with two stacks?** Push to the in stack; on dequeue, if the out stack is empty pour the in stack into it. Amortized O(1).",
+        "**Build a stack with queues?** After each push, rotate the earlier n elements behind the new one: O(n) push, O(1) pop.",
+        "**Which algorithm needs a queue?** BFS, level-order traversal, topological sort with Kahn's algorithm, multi-source shortest paths.",
+        "**Sliding window maximum?** Keep a deque of indices with decreasing values; O(n) total.",
+        "**Queue versus priority queue?** The first is by arrival time, the second by priority, usually backed by a heap."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Deque (double-ended queue)",
-      "summary": "Insert and remove at both ends.",
+      "title": "Array implementation and its drift problem",
+      "summary": "Why a straightforward array queue wastes space.",
       "sections": [
         {
-          "body": "A deque supports push/pop at front and back in O(1). It generalizes both stack and queue and enables sliding-window maximum with a monotonic deque."
+          "body": "With `front = 0` and `rear = -1` initially, enqueue does `data[++rear] = x` and dequeue does `data[front++]`. After 5 enqueues and 5 dequeues in a 5-slot array, front is 5 and rear is 4: the queue is empty, yet the next enqueue sees `rear == CAP - 1` and reports overflow. Two cures exist. Reset both indices to 0 whenever the queue becomes empty (helps only in the empty case), or wrap with modulo so slots are reused continuously. The wrapping version is the circular queue and is what you should use. A tidier simple version stores only `front` and `size` and computes the rear as `front + size - 1`. Enqueue writes at the end in O(1); dequeue must move every remaining item one slot toward the front, O(n). Doing it the other way round (insert at the beginning, remove from the end) just moves the cost to enqueue. The same trap exists in JavaScript, which has no built-in queue: using an array with `shift()` is O(n) because the elements are re-indexed."
         }
       ]
     },
     {
-      "title": "Priority queue",
-      "summary": "Order by priority, not arrival.",
+      "title": "Linked-list implementation",
+      "summary": "Head for removal, tail for insertion.",
       "sections": [
         {
-          "body": "Dequeue returns the highest-priority item. A binary heap gives O(log n) insert and extract. Used for scheduling, Dijkstra, and event simulation."
-        }
-      ]
-    },
-    {
-      "title": "Producer-consumer queues",
-      "summary": "Thread-safe buffers.",
-      "sections": [
-        {
-          "body": "A bounded blocking queue lets producers wait when full and consumers wait when empty, decoupling speeds. Lock-free ring buffers are used in networking drivers and audio."
+          "body": "A singly linked list with both `head` and `tail` pointers gives O(1) at both ends in the direction a queue needs. Insertion happens at the tail; removal at the head. Removal at the tail would need O(n) in a singly linked list, which is why the directions are not swapped. Storing an element count lets you answer `size()` in O(1) instead of walking the list. Free each node on dequeue and free the remaining nodes when you destroy the queue, otherwise you leak."
         }
       ]
     },
     {
       "title": "Queue using two stacks",
-      "summary": "A classic interview problem.",
+      "summary": "Amortized O(1) FIFO from LIFO parts.",
       "sections": [
         {
-          "body": "Push onto an `in` stack; when `out` is empty, pop everything from `in` onto `out`. Each element moves at most once, so amortized O(1) per operation."
+          "body": "Keep stack `in` and stack `out`. Enqueue pushes onto `in`. Dequeue pops from `out`; if `out` is empty, first pop everything from `in` and push it onto `out`, which reverses the order so the oldest element ends on top. Example: enqueue 1, 2, 3 gives in = [1, 2, 3]. The first dequeue moves them so out has 1 on top and returns 1. Enqueue 4 goes to in. The next dequeues return 2 and 3 straight from out, and only then does 4 get transferred. Each element is moved at most once, so the amortized cost is O(1)."
+        },
+        {
+          "body": "There is a mirror design where enqueue is the costly operation. Keep the queue front on top of `s1`: to enqueue x, move all of `s1` onto `s2`, push x onto `s1`, then move everything back. Dequeue and front are then a plain pop and peek on `s1`, O(1), but every enqueue is O(n). A third variation uses a single stack plus recursion: enqueue is a push (the stack top is the rear), and dequeue recurses down to the bottom element (the front), removes it and pushes the others back while unwinding, so dequeue and front cost O(n) and the call stack supplies the second stack. The two-stack lazy-transfer design above is usually the best answer because its operations are amortized O(1)."
         }
       ]
     },
     {
-      "title": "Types of queues",
-      "summary": "Variants at a glance.",
+      "title": "Stack using queues",
+      "summary": "The reverse construction.",
       "sections": [
         {
-          "bullets": [
-            "Simple (linear) queue: FIFO with the dead-space problem.",
-            "Circular queue: wraps indices to reuse space.",
-            "Deque: insert and remove at both ends.",
-            "Priority queue: dequeue by priority, usually a heap.",
-            "Blocking and concurrent queues: thread-safe producer-consumer buffers."
-          ]
+          "body": "With one queue, push enqueues the new element and then dequeues and re-enqueues the previous n elements, so the new element ends at the front. Pop is then a plain dequeue and top is a peek. Cost: push O(n), pop O(1). With two queues you can choose to make pop the expensive one instead: push into q1; to pop, move all but the last element of q1 into q2, take the last, then swap the queue roles. You cannot make both operations O(1) with this construction, which is a good point to mention in interviews. With two queues there are two designs. Costly push: enqueue x into the empty helper `q2`, move every element of `q1` behind it, then swap the names of `q1` and `q2`, so the newest item is always at the front of `q1` (push O(n), pop and top O(1)). Costly pop: push simply enqueues into `q1`; pop moves all but the last element of `q1` into `q2`, removes the last one, and swaps the roles (push O(1), pop and top O(n), since top has to do the same shuffle and put the last element back). All three variants use O(n) auxiliary space and keep `size` in O(1)."
+        }
+      ]
+    },
+    {
+      "title": "BFS and level-order traversal",
+      "summary": "The queue as the search frontier.",
+      "sections": [
+        {
+          "body": "Enqueue the start node and mark it visited at enqueue time (not at dequeue time, or you will enqueue a node several times). While the queue is non-empty, dequeue a node and enqueue each unvisited neighbor. Nodes leave the queue in nondecreasing distance from the start, so the first time you reach a target you have a shortest path in edges. For level-order tree traversal, snapshot `size` at the start of each iteration and process exactly that many nodes to separate levels. Time is O(V + E), space O(V).",
+          "code": "void bfs(int n, int adj[][MAXN], int start) {\n    int q[MAXN], head = 0, tail = 0;\n    int seen[MAXN] = {0};\n    q[tail++] = start; seen[start] = 1;\n    while (head < tail) {\n        int u = q[head++];\n        for (int v = 0; v < n; v++)\n            if (adj[u][v] && !seen[v]) {\n                seen[v] = 1;\n                q[tail++] = v;     /* each node enqueued once */\n            }\n    }\n}"
+        }
+      ]
+    },
+    {
+      "title": "Reversing the first k elements",
+      "summary": "Combining a queue with a stack.",
+      "sections": [
+        {
+          "body": "Dequeue the first k elements onto a stack, then pop them back and enqueue them at the rear; the stack reversed their order. Finally dequeue the remaining n minus k elements and enqueue each at the rear so the untouched part returns to its original relative order after the reversed block. Example with k = 3 on 1 2 3 4 5: the stack holds 1 2 3, the queue holds 4 5; popping gives 3 2 1 appended to give 4 5 3 2 1; rotating the first two (4 5) to the back gives 3 2 1 4 5. Time O(n), space O(k)."
+        }
+      ]
+    },
+    {
+      "title": "Sliding window maximum with a deque",
+      "summary": "Maximum of every size-k window in O(n).",
+      "sections": [
+        {
+          "body": "Keep a deque of indices whose values decrease from front to back. For each new index i: remove indices from the front that have left the window (index at most i minus k); remove indices from the back whose values are not greater than a[i], since they can never be a window maximum again; push i at the back. Once i is at least k minus 1, the front index is the maximum of the current window. Every index enters and leaves once, so the time is O(n) rather than O(nk). This is the standard example of a deque used as a monotonic queue. Alternatives: the naive nested loop is O(nk) time and O(1) space; a max-heap holding (value, index) pairs lazily discards entries that have left the window and costs O(n log n) time and O(n) space; the deque is O(n) time and O(k) space. Example: for [1, 2, 3, 1, 4, 5, 2, 3, 6] with k = 3 the answers are [3, 3, 4, 5, 5, 5, 6]; with k = 1 the output equals the input. A natural extension is the sum of the minimum and maximum of every window, which uses two deques."
+        }
+      ]
+    },
+    {
+      "title": "Deque and priority queue",
+      "summary": "Two relatives with different guarantees.",
+      "sections": [
+        {
+          "body": "A deque allows insert and delete at both ends in O(1), implemented as a doubly linked list or a circular buffer (C++ `std::deque` uses blocks). It can model both a stack and a queue, and a deque of deques underlies work-stealing schedulers. A priority queue is not FIFO: `extract` returns the minimum (or maximum) key. A binary heap stores it in an array and gives O(log n) insert and extract and O(1) peek. If a problem says 'process the most urgent first', or 'k-th largest', reach for the priority queue, not the plain queue."
+        }
+      ]
+    },
+    {
+      "title": "Producer-consumer and bounded buffers",
+      "summary": "Queues between threads or processes.",
+      "sections": [
+        {
+          "body": "A bounded queue shared by producers and consumers needs mutual exclusion plus two conditions: not full for producers, not empty for consumers. In C you use a mutex and two condition variables (or two counting semaphores and a mutex). Producers wait while the queue is full; consumers wait while it is empty; each wakes the other after a change. Always re-check the condition in a loop to survive spurious wakeups. Single-producer single-consumer ring buffers can be made lock-free with two atomic indices, which is how many drivers and audio paths work."
+        }
+      ]
+    },
+    {
+      "title": "Terminology, types and operations",
+      "summary": "Front, rear, size, capacity and the three queue families.",
+      "sections": [
+        {
+          "body": "Four terms are used throughout: **front** (head, the next element to be served), **rear** (tail, the most recently added), **size** (current element count) and **capacity** (the maximum a bounded queue can hold). The operations are enqueue, dequeue, getFront, getRear, isEmpty, isFull and size, all O(1) with auxiliary space O(1). Three families exist. A simple queue allows insertion only at the rear and deletion only at the front, built on a linked list or a circular array (a circular queue is just the efficient array form of the simple queue). A double-ended queue allows both at both ends. A priority queue deletes by priority rather than by position. Both-ends and priority variants are covered in a later subtopic."
+        }
+      ]
+    },
+    {
+      "title": "Advantages, drawbacks and applications",
+      "summary": "Where queues fit and where they do not.",
+      "sections": [
+        {
+          "body": "Advantages: they are the right model when several consumers share one service, they give fast data hand-off between processes, and they are building blocks for other structures. Drawbacks: inserting or deleting in the middle is slow, searching is O(n), an array version needs a size fixed up front, and a classical queue only accepts a new element when there is room. Applications: routers and switches buffer packets in queues; mail servers keep a mail queue directory; a CPU schedules jobs one after another from a queue; a queue works as a buffer when two devices run at different speeds (for example keyboard and CPU, or two network hosts); FIFO page replacement evicts the oldest resident page; and everyday lines (ATM booth, ticket counter, call-centre waiting) are queues."
+        }
+      ]
+    },
+    {
+      "title": "Queue problem catalogue",
+      "summary": "Typical exercises and the idea behind each.",
+      "sections": [
+        {
+          "body": "Easy: stack using queues, queue using stacks, level-order traversal, BFS on a graph, FIFO page replacement. Medium: k queues in one array, reversing a queue (dequeue everything onto a stack and back, or recurse), the first non-repeating character in a stream (a queue of candidates plus a count table), and the minimum number of knight steps to a target (BFS over board cells). Hard: reversing the first k elements, sliding window maximum, the shortest path in a binary maze, generating binary numbers from 1 to n (enqueue the string, then output it and enqueue it with 0 and with 1 appended), snake and ladder (BFS where each dice throw is an edge), the shortest safe route through a minefield and a maximum cost path. Whenever a question asks for the fewest steps with equal cost per step, think of BFS and a queue."
         }
       ]
     }
   ],
   "takeaways": [
-    "FIFO: enqueue at rear, dequeue at front.",
-    "A naive array queue wastes space; use a circular buffer or linked list.",
-    "Queues drive BFS, scheduling, and buffering.",
-    "Know deque and priority queue as variants."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Queue data structure (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/queue-data-structure/"
-    }
+    "A queue is FIFO: enqueue at the rear, dequeue from the front, both O(1).",
+    "A linked queue needs both head and tail pointers; reset tail to NULL when the last node is removed.",
+    "A plain array queue drifts forward and wastes space; use a circular buffer instead.",
+    "BFS, level-order traversal and Kahn's topological sort all rely on a queue.",
+    "A queue from two stacks has amortized O(1) operations; a stack from queues cannot get both operations to O(1).",
+    "A deque holds indices in decreasing value order to answer sliding window maximum in O(n).",
+    "Priority queues break FIFO order and use a heap with O(log n) operations."
   ],
   "practice": [
     {
+      "title": "Implement a queue with an array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a queue with a linked list",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Generate binary numbers 1 to n using a queue",
+      "difficulty": "Easy"
+    },
+    {
       "title": "Implement a queue using two stacks",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement a stack using queues",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Level-order traversal with BFS",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Reverse the first K elements of a queue",
       "difficulty": "Medium"
     },
     {
-      "title": "Implement K queues in one array",
+      "title": "Implement a stack using one queue",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reverse the first k elements of a queue",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Level-order traversal grouped by level",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Rotting oranges (multi-source BFS)",
       "difficulty": "Medium"
     },
     {
@@ -124,8 +245,30 @@
       "difficulty": "Hard"
     },
     {
-      "title": "Shortest path in a maze",
+      "title": "Design a bounded blocking queue",
       "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed., chapter 10",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Queue data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/queue-data-structure/"
+    },
+    {
+      "label": "Reference: Queue linked list implementation (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/queue-linked-list-implementation/"
+    },
+    {
+      "label": "Reference: Queue using stacks (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/queue-using-stacks/"
+    },
+    {
+      "label": "Reference: Sliding window maximum (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/sliding-window-maximum-maximum-of-all-subarrays-of-size-k/"
     }
   ]
 }

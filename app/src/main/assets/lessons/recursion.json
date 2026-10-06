@@ -1,103 +1,279 @@
 {
-  "summary": "Recursion solves a problem by having a function call itself on a smaller version of the same problem. Every recursive function needs a base case that stops the calls and a recursive case that makes progress toward it.",
+  "summary": "Recursion is a technique where a function solves a problem by calling itself on a smaller version of the same problem, until it reaches a case simple enough to answer directly. Every recursive function needs a base case that stops the calls and a recursive case that makes progress toward it. It is the natural tool for trees, graphs, divide and conquer, backtracking and dynamic programming, and understanding the call stack behind it is essential for interviews and for avoiding stack overflows.",
   "sections": [
     {
-      "heading": "Anatomy",
-      "bullets": [
-        "Base case: the smallest input, answered directly.",
-        "Recursive case: reduce the problem and combine the sub-result.",
-        "Progress: each call must move closer to the base case or recursion never ends."
-      ],
-      "code": "long fact(int n) {\n  if (n <= 1) return 1;          // base case\n  return n * fact(n - 1);        // recursive case\n}"
+      "heading": "Overview",
+      "body": "A problem is a candidate for recursion when it contains a smaller copy of itself. Summing a list is the first element plus the sum of the rest. Searching a tree is checking the root and then searching its left and right subtrees. Sorting is splitting the array, sorting each half and merging. Writing that self-similarity directly as a function is usually shorter and clearer than managing loops and stacks by hand.\n\nRecursion is built on the **call stack**. Each call gets its own frame with its parameters, local variables and return address. When a call returns, its frame is popped and the caller resumes. That is why recursion is both powerful (the stack remembers where you are for free) and risky (too many nested calls exhaust the stack)."
     },
     {
-      "heading": "The call stack",
-      "body": "Each call pushes a stack frame holding its parameters, locals, and return address. Calls wait in LIFO order, and results return as frames pop. fact(4) pushes fact(4), fact(3), fact(2), fact(1), then unwinds multiplying 1, 2, 6, 24. Depth n uses O(n) stack, and missing or unreachable base cases overflow it."
-    },
-    {
-      "heading": "Classic examples",
+      "heading": "Core Concepts",
       "bullets": [
-        "Factorial and sum of 1..n: linear recursion.",
-        "Fibonacci: tree recursion, exponential time when naive.",
-        "Power by squaring: halve the exponent each call, O(log n).",
-        "Tower of Hanoi: move n-1 disks, move one, move n-1 again; 2^n - 1 moves.",
-        "Binary search, merge sort, quick sort, tree traversals."
-      ],
-      "code": "long fib(int n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }   // O(2^n)\n\ndouble power(double x, int n) {\n  if (n == 0) return 1;\n  double h = power(x, n / 2);\n  return (n % 2) ? h * h * x : h * h;       // O(log n)\n}\n\nvoid hanoi(int n, char from, char to, char via) {\n  if (n == 0) return;\n  hanoi(n - 1, from, via, to);\n  printf(\"move disk %d %c -> %c\\n\", n, from, to);\n  hanoi(n - 1, via, to, from);\n}"
-    },
-    {
-      "heading": "Recursion versus iteration",
-      "bullets": [
-        "Recursion mirrors recursive structures (trees, divide and conquer) and is often shorter.",
-        "Iteration avoids stack growth and call overhead.",
-        "Any recursion can be rewritten with an explicit stack.",
-        "Deep recursion in C risks stack overflow (typically a few hundred thousand frames)."
+        "**Base case**: an input small enough to answer without another call. Without it, the function recurses forever.",
+        "**Recursive case**: the call on a smaller input, plus the work to combine the results.",
+        "**Call stack and frame**: the memory block holding one active call's arguments, locals and return address.",
+        "**Recursion depth**: the maximum number of simultaneously active calls. Stack space is proportional to it.",
+        "**Recurrence relation**: an equation for the running time, for example T(n) = 2T(n/2) + O(n) for merge sort.",
+        "**Tail recursion**: the recursive call is the very last action, so the frame could be reused (tail-call optimization).",
+        "**Backtracking**: explore a choice, recurse, then undo the choice and try the next one.",
+        "**Memoization**: cache results of calls so overlapping subproblems are computed only once.",
+        "**Direct versus indirect recursion**: a function calling itself versus A calling B calling A (mutual recursion)."
       ]
     },
     {
-      "heading": "Analyzing cost",
-      "body": "Write a recurrence and solve it. Factorial: T(n) = T(n-1) + O(1) = O(n). Binary search: T(n) = T(n/2) + O(1) = O(log n). Merge sort: T(n) = 2T(n/2) + O(n) = O(n log n). Naive Fibonacci: T(n) = T(n-1) + T(n-2) = O(2^n), because it recomputes subproblems."
+      "heading": "How It Works",
+      "body": "Follow `factorial(4)`. The call chain grows: factorial(4) waits for factorial(3), which waits for factorial(2), which waits for factorial(1). That last call hits the base case and returns 1. Then the stack unwinds: factorial(2) returns 2 * 1 = 2, factorial(3) returns 3 * 2 = 6, factorial(4) returns 4 * 6 = 24. Four frames were live at the deepest point, so space is O(n).\n\nA reliable three-step recipe: (1) define exactly what the function returns for an input of size n; (2) assume it works for smaller sizes (the leap of faith, which is just induction); (3) express the answer for n using those results, and write the base case that stops the descent. If every recursive call is on a strictly smaller input and the base case is reachable, the function terminates.",
+      "code": "long factorial(int n) {\n  if (n <= 1) return 1;            /* base case */\n  return n * factorial(n - 1);     /* smaller subproblem */\n}"
+    },
+    {
+      "body": "**Branching recursion** makes more than one call per frame. The naive Fibonacci `fib(n) = fib(n-1) + fib(n-2)` builds a tree of calls, recomputing the same values over and over, which costs about 1.618 to the power n calls. Caching each result in an array (memoization) cuts that to n calls. That observation is the doorway to dynamic programming.",
+      "code": "long memo[91];                       /* fib(90) fits in a signed 64-bit long */\n\nlong fib(int n) {\n  if (n < 2) return n;\n  if (memo[n]) return memo[n];\n  return memo[n] = fib(n - 1) + fib(n - 2);\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Linear recursion**: one call per frame (factorial, list sum, linked-list traversal). Depth equals input size.",
+        "**Binary / multiple recursion**: two or more calls per frame (tree traversal, Fibonacci, merge sort).",
+        "**Tail recursion**: the call is last. Compilers such as GCC at -O2 often turn it into a jump, but the C standard does not guarantee it.",
+        "**Mutual recursion**: functions that call each other, such as `is_even` and `is_odd`, or recursive-descent parsers where `expr` calls `term` calls `factor` calls `expr`.",
+        "**Nested recursion**: the argument of a call is itself a recursive call, as in the Ackermann function. It grows explosively.",
+        "**Divide and conquer**: split, solve halves recursively, combine (merge sort, quick sort, binary search, closest pair).",
+        "**Backtracking**: build a candidate step by step and abandon it at the first violation (subsets, permutations, N-queens, Sudoku).",
+        "**Recursion with memoization**: top-down dynamic programming.",
+        "**Iteration with an explicit stack**: the same algorithm without the call stack, used to avoid overflow."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Space: O(depth) for the call stack. A frame in C is commonly 16 to 100+ bytes. A typical 8 MB Linux main-thread stack allows roughly 100,000 to 500,000 frames for a small function.",
+        "Linear recursion over n elements: O(n) time and O(n) stack.",
+        "Fibonacci naive: O(phi to the n) time, about 1.6 to the n; memoized: O(n) time and O(n) space.",
+        "Merge sort: T(n) = 2T(n/2) + O(n) = O(n log n); depth only log2(n).",
+        "Subsets: 2 to the n leaves. Permutations: n! leaves. N-queens: far fewer than n! thanks to pruning.",
+        "Towers of Hanoi: 2 to the n minus 1 moves, so 20 disks need 1,048,575 moves.",
+        "Master theorem for T(n) = aT(n/b) + O(n to the d): O(n to the d) if a < b to the d; O(n to the d log n) if equal; O(n to the log_b a) if greater."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Missing or unreachable base case**: infinite recursion ends in a stack overflow (segmentation fault in C).",
+        "**Not shrinking the input**: `f(n)` calling `f(n)` or `f(n + 1)` never terminates.",
+        "**Recomputing overlapping subproblems**: exponential time where memoization would give polynomial.",
+        "**Forgetting to undo state in backtracking**: a shared array or visited flag left modified corrupts later branches.",
+        "**Returning the wrong thing**: calling recursively but ignoring the returned value (`factorial(n - 1);` alone).",
+        "**Large local arrays in recursive functions**: each frame carries its own copy, so a 4 KB local array times 10,000 depth is 40 MB.",
+        "**Assuming tail-call optimization**: C does not promise it, and debug builds do not do it.",
+        "**Integer overflow in the result**: factorial overflows a 64-bit long at n = 21.",
+        "**Mutating a shared list while iterating** in recursive generation without copying results."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Trees and file systems**: directory walking (`ftw`, `find`), DOM traversal, abstract syntax trees, JSON parsing.",
+        "**Compilers**: recursive-descent parsers and expression evaluation.",
+        "**Sorting and searching**: merge sort, quick sort, binary search, quickselect.",
+        "**Graphs**: depth-first search, connected components, topological sort.",
+        "**Solvers**: Sudoku, N-queens, constraint satisfaction, game-tree search such as minimax with alpha-beta pruning.",
+        "**Fractals and graphics**: Sierpinski triangle, recursive ray tracing, quadtree subdivision.",
+        "**Algorithms in the Linux kernel**: stack-depth is tightly limited (typically 8 or 16 KB per task), so recursion is discouraged there; the networking and filesystem code uses explicit bounds."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What two parts does every recursive function need?** A base case and a recursive case that moves toward it.",
+        "**What happens without a base case?** The call stack overflows.",
+        "**Recursion versus iteration?** Same power; recursion is clearer for trees and divide and conquer, iteration saves stack space.",
+        "**What is tail recursion?** The recursive call is the last operation, so a compiler can reuse the frame.",
+        "**Time of naive Fibonacci?** Exponential, about 1.618 to the n; with memoization O(n).",
+        "**How do you convert recursion to iteration?** Keep an explicit stack of the state that the frames would have held.",
+        "**How do you analyze recursive running time?** Write the recurrence and solve it with the recursion tree or the master theorem."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Tail recursion",
-      "summary": "Recursive call is the last action.",
+      "title": "The call stack in detail",
+      "summary": "What actually happens in memory during recursion.",
       "sections": [
         {
-          "body": "If the call is in tail position, the frame can be reused, making it as cheap as a loop. Scheme guarantees this; C compilers often do it at -O2 but the standard does not require it.",
-          "code": "long fact_tail(int n, long acc) { return n <= 1 ? acc : fact_tail(n - 1, acc * n); }"
+          "body": "Each call pushes a frame holding the arguments, the saved return address, the saved frame pointer and the locals. On x86-64 Linux, a call to a small function uses roughly 32 to 48 bytes. The stack grows downward from high addresses, and the default limit is usually 8 MB for the main thread (`ulimit -s`) and often 1 to 8 MB for other threads. Crossing it hits a guard page and the process receives SIGSEGV. Printing the address of a local in each call shows the addresses falling by one frame size per level."
+        }
+      ]
+    },
+    {
+      "title": "Base cases and termination",
+      "summary": "Proving that the recursion stops.",
+      "sections": [
+        {
+          "body": "Choose a measure that strictly decreases with each call and is bounded below: the length of a list, the size of an interval, the remaining height of a tree. The base case covers the smallest values of that measure. A common mistake is covering only one smallest case. For instance, a function on `n` that calls `n - 2` needs bases for both 0 and 1. Splitting an array at the midpoint requires a base case for length 0 and 1, since halving a length-1 array may produce an empty half. For trees, the base case is a null pointer, and a leaf is handled by the general case with two null children."
+        }
+      ]
+    },
+    {
+      "title": "Divide and conquer",
+      "summary": "Split, solve, combine.",
+      "sections": [
+        {
+          "body": "Binary search discards half the range each call: T(n) = T(n/2) + O(1) = O(log n). Merge sort splits in half, recursively sorts each half, and merges in linear time: T(n) = 2T(n/2) + O(n) = O(n log n). Quick sort partitions around a pivot: expected O(n log n) but O(n squared) when pivots are bad. Fast exponentiation computes `x^n` in O(log n) multiplications by squaring `x^(n/2)`.",
+          "code": "long power(long x, int n) {\n  if (n == 0) return 1;\n  long half = power(x, n / 2);\n  return (n % 2) ? half * half * x : half * half;   /* one recursive call */\n}"
         }
       ]
     },
     {
       "title": "Backtracking",
-      "summary": "Recursion with undo.",
+      "summary": "Try, recurse, undo.",
       "sections": [
         {
-          "body": "Build a solution step by step, recurse, and undo the step if it leads nowhere. Used for permutations, subsets, N-Queens, Sudoku, and maze solving. Pruning invalid partial solutions keeps it practical.",
-          "code": "void subsets(int i, int n, int path[], int len) {\n  if (i == n) { print(path, len); return; }\n  subsets(i + 1, n, path, len);              // exclude i\n  path[len] = i; subsets(i + 1, n, path, len + 1);   // include i\n}"
+          "body": "Backtracking explores a decision tree depth first and abandons a branch the moment it cannot lead to a solution. The generic shape is: if complete, record and return; otherwise for each candidate choice, make it, recurse, then undo it. Subsets have two choices per element, so 2 to the n results.",
+          "code": "void subsets(int a[], int n, int i, int chosen[], int k) {\n  if (i == n) {                          /* decision made for every element */\n    printf(\"{ \");\n    for (int j = 0; j < k; j++) printf(\"%d \", chosen[j]);\n    printf(\"}\\n\");\n    return;\n  }\n  subsets(a, n, i + 1, chosen, k);       /* skip a[i] */\n  chosen[k] = a[i];                      /* choose a[i] */\n  subsets(a, n, i + 1, chosen, k + 1);\n  /* nothing to undo: k is passed by value */\n}"
+        },
+        {
+          "body": "Permutations swap each remaining element into the current position, recurse, then swap back to restore the array. There are n! results.",
+          "code": "void permute(int a[], int n, int start) {\n  if (start == n) {\n    for (int i = 0; i < n; i++) printf(\"%d \", a[i]);\n    printf(\"\\n\");\n    return;\n  }\n  for (int i = start; i < n; i++) {\n    int t = a[start]; a[start] = a[i]; a[i] = t;      /* choose */\n    permute(a, n, start + 1);                         /* explore */\n    t = a[start]; a[start] = a[i]; a[i] = t;          /* undo */\n  }\n}"
         }
       ]
     },
     {
-      "title": "Memoization",
-      "summary": "Cache sub-results.",
+      "title": "N-queens and pruning",
+      "summary": "Cutting branches early changes the practical cost.",
       "sections": [
         {
-          "body": "Store each computed result by argument so repeated subproblems return instantly. This turns naive Fibonacci from O(2^n) into O(n) and is the top-down form of dynamic programming."
+          "body": "Place one queen per row, trying each column. A placement is rejected if it shares a column or diagonal with an earlier queen. Pruning removes whole subtrees: the 8-queens puzzle has 92 solutions and the search visits only a few thousand nodes, not 8 to the 8 (16.7 million) or 8! (40,320) complete placements.",
+          "code": "int cols[16];                       /* cols[r] = column of the queen in row r */\n\nint safe(int r, int c) {\n  for (int i = 0; i < r; i++)\n    if (cols[i] == c || abs(cols[i] - c) == r - i) return 0;   /* column or diagonal */\n  return 1;\n}\n\nint queens(int n, int r) {           /* number of solutions */\n  if (r == n) return 1;\n  int count = 0;\n  for (int c = 0; c < n; c++) {\n    if (!safe(r, c)) continue;         /* prune */\n    cols[r] = c;\n    count += queens(n, r + 1);\n  }\n  return count;\n}"
+        },
+        {
+          "body": "Faster versions replace the `safe` scan with three boolean arrays (columns, diagonals, anti-diagonals) or bitmasks, making each test O(1)."
         }
       ]
     },
     {
-      "title": "Mutual and indirect recursion",
-      "summary": "Functions calling each other.",
+      "title": "Towers of Hanoi",
+      "summary": "A textbook case of a recurrence you can solve exactly.",
       "sections": [
         {
-          "body": "isEven(n) calls isOdd(n-1) and vice versa. Declare prototypes first. Recursive-descent parsers use this heavily, one function per grammar rule."
+          "body": "To move n disks from A to C using B: move n - 1 disks A to B, move the largest A to C, then move n - 1 disks B to C. The move count satisfies M(n) = 2M(n - 1) + 1 with M(0) = 0, which solves to 2 to the n minus 1. The recursion depth is only n, but the output is exponential: 64 disks would take more than 1.8 times 10 to the 19 moves.",
+          "code": "void hanoi(int n, char from, char to, char via) {\n  if (n == 0) return;\n  hanoi(n - 1, from, via, to);                     /* move n-1 out of the way */\n  printf(\"disk %d: %c -> %c\\n\", n, from, to);   /* move the largest */\n  hanoi(n - 1, via, to, from);                     /* put n-1 on top of it */\n}"
         }
       ]
     },
     {
-      "title": "Debugging recursion",
-      "summary": "Practical tips.",
+      "title": "Tail recursion and iteration",
+      "summary": "Removing the stack cost when you can.",
       "sections": [
         {
-          "bullets": [
-            "Verify the base case first, including empty input.",
-            "Print depth and arguments to trace calls.",
-            "Check that each call strictly reduces the problem.",
-            "Use a debugger's call-stack view."
-          ]
+          "body": "A tail-recursive version passes the running answer along in an accumulator. Because nothing remains to do after the call, an optimizing compiler can reuse the frame, giving O(1) stack. The equivalent loop is what you should write when depth could be large, since C does not guarantee tail-call elimination.",
+          "code": "/* not tail recursive: multiplication happens after the call returns */\nlong fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n\n/* tail recursive: the call is the last action; acc carries the result */\nlong fact_tail(int n, long acc) { return n <= 1 ? acc : fact_tail(n - 1, acc * n); }\n\n/* the same thing as a loop, which is what an optimizing compiler produces */\nlong fact_loop(int n) { long acc = 1; while (n > 1) acc *= n--; return acc; }"
+        },
+        {
+          "body": "Not every recursion converts so neatly. Tree traversals need an explicit stack that stores pending nodes, and divide and conquer with two recursive calls needs a stack of subproblems. The conversion pushes the state the frame would hold, loops until the stack is empty, and pops the next subproblem."
+        }
+      ]
+    },
+    {
+      "title": "Memoization and the link to dynamic programming",
+      "summary": "Cache results to turn exponential into polynomial.",
+      "sections": [
+        {
+          "body": "When recursive calls repeat the same arguments, store each result in a table keyed by the arguments. Fibonacci drops from exponential to O(n) calls. Grid path counting, coin change, edit distance and knapsack all follow the pattern. The key requirements are that the function is pure (same input, same output) and that the number of distinct argument combinations is small. If arguments include a mutable structure or a large set, use a bitmask or a hash key. The bottom-up version fills the table iteratively and avoids recursion depth limits entirely."
+        }
+      ]
+    },
+    {
+      "title": "Common recursion problem patterns",
+      "summary": "Spot the template quickly in interviews.",
+      "sections": [
+        {
+          "body": "**Linked list and tree problems**: reverse a list, maximum depth of a tree, lowest common ancestor, path sum. The pattern is 'answer for node = combine(answer for left, answer for right)'. **Grid flood fill**: mark the current cell, recurse into four neighbours, with bounds and visited checks as the base cases. **Combination problems**: generate parentheses (track open and close counts), letter combinations of a phone number, combination sum (reuse allowed, pass the same start index), word search (mark the cell, recurse, unmark). **Generating all** versus **counting**: if you only need the count, a memoized recursion is often polynomial, while listing the results is inherently exponential."
+        }
+      ]
+    },
+    {
+      "title": "Sum of natural numbers and factorial",
+      "summary": "Two small linear recursions traced.",
+      "sections": [
+        {
+          "body": "The checklist: define a base case, define the recursive case in terms of smaller subproblems, make sure every call moves toward a base case, and combine the sub-results. There may be several base cases. Sum of the first n naturals: the base case is n == 1, returning 1; otherwise return n + sum(n - 1). For n = 3 the calls stack as sum(3), sum(2), sum(1) before any addition happens, then the results come back in reverse: sum(1) = 1, sum(2) = 3, sum(3) = 6. For n = 7 the answer is 28. Factorial uses base case n == 0 returning 1 (so 0! = 1) and `n * fact(n - 1)` otherwise. Using `n <= 1` as the base also works and saves one call.",
+          "code": "int sum(int n) {\n  if (n == 1) return 1;            /* base case */\n  return n + sum(n - 1);           /* recursive case */\n}\n\nlong fact(int n) {\n  if (n == 0) return 1;            /* 0! = 1 */\n  return n * fact(n - 1);\n}"
+        }
+      ]
+    },
+    {
+      "title": "Stack growth, wrong base cases and mutual recursion",
+      "summary": "Calls on the way down, prints on the way up, and what breaks termination.",
+      "sections": [
+        {
+          "body": "When a function is called, its record joins the stack and stays until the call finishes; since the last function called finishes first, this is last in, first out. Each call has its own copy of the locals. The function below prints on the way down and again on the way back. For printFun(3) the output is 3 2 1 and then 1 2 3, because printFun(0) hits the base case and returns, and each earlier frame resumes to run its second print. The stack grows with each call and shrinks as the recursion unwinds.",
+          "code": "void printFun(int test) {\n  if (test < 1) return;            /* base case */\n  printf(\"%d \", test);             /* before the call: 3 2 1 */\n  printFun(test - 1);\n  printf(\"%d \", test);             /* after the call: 1 2 3 */\n}"
+        },
+        {
+          "body": "Consider `fact(n)` whose base case is `if (n == 100) return 1;`. Calling fact(10) recurses to fact(9), fact(8) and so on, counting down past zero, and n never equals 100, so the base case never fires. The frames pile up until the stack memory is exhausted and the program crashes with a stack overflow. The fix is a base case that the argument actually reaches, such as `n == 0`. Also direct recursion is a function calling itself, while indirect (mutual) recursion has f call g and g call f, forming a chain through several functions.",
+          "code": "void a(int n);\nvoid b(int n);\n\nvoid a(int n) { if (n > 0) { printf(\"a%d \", n); b(n - 1); } }\nvoid b(int n) { if (n > 0) { printf(\"b%d \", n); a(n / 2); } }"
+        }
+      ]
+    },
+    {
+      "title": "Recursion versus iteration: trade-offs",
+      "summary": "Why you pick one or the other.",
+      "sections": [
+        {
+          "body": "Every recursive program can be written iteratively and the other way round. Recursion gives clean, short code and suits inherently recursive problems such as tree traversals, graph DFS and Towers of Hanoi (which can also be done iteratively with an explicit stack, as in non-recursive inorder traversal). Its costs: more space and some time to maintain the call stack, and code that is harder to debug because you must reason about several levels at once. Recursion also builds the thinking needed for divide and conquer and dynamic programming. For Fibonacci, the recurrence is T(n) = T(n-1) + T(n-2) + O(1); a loose upper bound is O(2 to the n), and the tighter growth is about 1.618 to the n. Other applications of recursion include fractal generation such as the Mandelbrot set and recursive sorting."
         }
       ]
     }
   ],
   "takeaways": [
-    "Base case plus a recursive step that makes progress.",
-    "Each call uses a stack frame: depth equals memory.",
-    "Naive tree recursion can be exponential; memoize to fix it.",
-    "Tail calls and explicit stacks avoid overflow."
+    "Every recursive function needs a base case and a recursive case that moves toward it.",
+    "Each call uses a stack frame; recursion depth d costs O(d) space and can overflow the stack.",
+    "Tail recursion lets compilers reuse frames, but C does not guarantee it; write a loop when depth can be large.",
+    "Naive branching recursion can be exponential (Fibonacci about 1.618 to the n); memoization makes it O(n).",
+    "Backtracking is choose, recurse, undo; prune early to cut the search tree.",
+    "Solve recurrences with the recursion tree or the master theorem: T(n) = 2T(n/2) + O(n) is O(n log n).",
+    "Any recursion can be rewritten iteratively with an explicit stack."
+  ],
+  "practice": [
+    {
+      "title": "Sum the digits of a number recursively",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Reverse a string or linked list recursively",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Compute x to the power n in O(log n) using recursion",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Generate all subsets of a set (the power set)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Generate all permutations of distinct integers, then of an array with duplicates",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Generate all well-formed parentheses strings of n pairs",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Word search in a grid using backtracking",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Solve N-queens and count the solutions for n = 8",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Solve Sudoku with backtracking and constraint pruning",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Convert a recursive tree traversal into an iterative one with an explicit stack",
+      "difficulty": "Medium"
+    }
   ],
   "references": [
     {
@@ -111,32 +287,6 @@
     {
       "label": "Reference: Introduction to recursion (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/introduction-to-recursion-2/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Sum the digits of a number recursively",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Reverse a string recursively",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Print all subsets of a set",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Generate all permutations of a string",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Solve N-Queens for N = 6",
-      "difficulty": "Hard"
-    },
-    {
-      "title": "Convert fib to memoized and compare running times",
-      "difficulty": "Medium"
     }
   ]
 }

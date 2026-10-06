@@ -1,93 +1,272 @@
 {
-  "summary": "Dynamic programming (DP) solves problems that break into overlapping subproblems with optimal substructure. Instead of recomputing the same subproblem, it stores each answer once and reuses it, turning exponential brute force into polynomial time.",
+  "summary": "Dynamic programming (DP) solves a problem by breaking it into overlapping subproblems, solving each distinct subproblem once, and combining the stored answers. It applies when the problem has optimal substructure (a best answer is built from best answers to smaller pieces) and overlapping subproblems (the same pieces recur). DP turns exponential brute-force recursions into polynomial algorithms and underlies knapsack, edit distance, shortest paths, sequence alignment and many interview classics.",
   "sections": [
     {
-      "heading": "When DP applies",
+      "heading": "Overview",
+      "body": "Brute-force recursion often solves the same subproblem again and again. Counting the ways to climb n stairs one or two at a time with plain recursion repeats `ways(n-2)` inside both `ways(n-1)` and `ways(n)`, and the number of calls grows exponentially. Dynamic programming stores each answer the first time it is computed and reuses it, so each distinct subproblem costs O(1) extra work after its first solution.\n\nThe word 'programming' here means planning with a table, not writing code. A DP solution always has four parts: the **state** (what a subproblem is), the **transition** (how a state's answer follows from smaller states), the **base cases**, and the **order** in which to fill the states. Getting the state definition right is 80 percent of the work."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Optimal substructure: an optimal solution is built from optimal solutions to subproblems.",
-        "Overlapping subproblems: the same subproblems are needed many times.",
-        "Typical signals: count the ways, find the minimum/maximum, is it possible, choices at each step."
+        "**Optimal substructure**: an optimal solution contains optimal solutions to its subproblems, so you can build the best answer from best sub-answers.",
+        "**Overlapping subproblems**: the same subproblem appears many times. If subproblems never repeat (as in merge sort), the technique is divide and conquer, not DP.",
+        "**State**: the minimal set of parameters that identifies a subproblem, for example `(i, c)`: using the first i items with capacity c.",
+        "**Transition (recurrence)**: the formula that computes a state from smaller ones, such as `dp[i][j] = dp[i-1][j-1] + 1`.",
+        "**Memoization (top-down)**: write the natural recursion and cache results in a table keyed by the state.",
+        "**Tabulation (bottom-up)**: fill the table iteratively from base cases upward in an order that respects dependencies.",
+        "**Base case**: the states answered directly, for example `dp[0] = 0`.",
+        "**Space optimization**: when a state depends on only the previous row or a few previous values, keep only those.",
+        "**Reconstruction**: recovering the actual solution (not just its value) by recording choices or by walking the table backward."
       ]
     },
     {
-      "heading": "Two styles",
-      "bullets": [
-        "Top-down (memoization): write the recursion, cache results in a table keyed by the arguments.",
-        "Bottom-up (tabulation): fill a table iteratively from the smallest subproblems up."
-      ],
-      "code": "/* top-down */\nlong memo[100];\nlong fib(int n) {\n  if (n < 2) return n;\n  if (memo[n]) return memo[n];\n  return memo[n] = fib(n - 1) + fib(n - 2);\n}\n/* bottom-up, O(1) space */\nlong fib2(int n) { long a = 0, b = 1; for (int i = 0; i < n; i++) { long t = a + b; a = b; b = t; } return a; }"
+      "heading": "How It Works",
+      "body": "A practical procedure: (1) write the brute-force recursion; (2) identify the parameters that change between calls, which form the state; (3) check that the same states repeat; (4) add a cache (memoization), or invert to a loop (tabulation); (5) shrink the memory if only a window of the table is needed.\n\nTake Fibonacci. The plain recursion makes about 1.618 to the n calls. Top-down memoization makes one computation per value of n, so O(n). Bottom-up needs only the last two values, so O(1) space.",
+      "code": "long memo[91];                           /* 0 means not computed yet */\n\nlong fib_memo(int n) {                    /* top-down: recursion plus a cache */\n  if (n < 2) return n;\n  if (memo[n]) return memo[n];\n  return memo[n] = fib_memo(n - 1) + fib_memo(n - 2);\n}\n\nlong fib_tab(int n) {                     /* bottom-up with O(1) space */\n  long a = 0, b = 1;\n  for (int i = 0; i < n; i++) { long t = a + b; a = b; b = t; }\n  return a;\n}"
     },
     {
-      "heading": "A recipe",
+      "body": "**0/1 knapsack.** Given items with weights and values and a capacity W, choose a subset of maximum value. State: `dp[c]` is the best value achievable with capacity c using the items seen so far. For each item, either skip it (`dp[c]` stays) or take it (`dp[c - wt] + val`). The inner loop runs downward so that each item is used at most once; running upward would let an item be reused, turning it into the unbounded knapsack.\n\nExample: weights {1, 3, 4, 5}, values {1, 4, 5, 7}, W = 7. After all items the table ends with dp[7] = 9, from items of weight 3 and 4 (values 4 + 5).",
+      "code": "/* 0/1 knapsack: best value with capacity W, each item used at most once */\nint knapsack(int n, const int wt[], const int val[], int W) {\n  int dp[W + 1];                          /* dp[c] = best value with capacity c */\n  for (int c = 0; c <= W; c++) dp[c] = 0;\n  for (int i = 0; i < n; i++)\n    for (int c = W; c >= wt[i]; c--) {    /* go downward so item i is used once */\n      int take = dp[c - wt[i]] + val[i];\n      if (take > dp[c]) dp[c] = take;\n    }\n  return dp[W];\n}"
+    },
+    {
+      "body": "**Coin change (fewest coins).** State: `dp[a]` is the fewest coins to make amount a. Transition: `dp[a] = 1 + min(dp[a - coin])` over coins not exceeding a. For coins {1, 3, 4} and amount 6, greedy picks 4 + 1 + 1 (three coins), but DP finds 3 + 3 (two coins). That mismatch is the typical sign that greedy fails and DP is needed.",
+      "code": "#include <limits.h>\n\n/* fewest coins to make amount, or -1 */\nint coin_change(const int coins[], int n, int amount) {\n  int dp[amount + 1];\n  dp[0] = 0;\n  for (int a = 1; a <= amount; a++) {\n    dp[a] = INT_MAX;\n    for (int i = 0; i < n; i++)\n      if (coins[i] <= a && dp[a - coins[i]] != INT_MAX && dp[a - coins[i]] + 1 < dp[a])\n        dp[a] = dp[a - coins[i]] + 1;\n  }\n  return dp[amount] == INT_MAX ? -1 : dp[amount];\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Define the state: what does dp[i] (or dp[i][j]) mean?",
-        "Write the transition: how does it depend on smaller states?",
-        "Set the base cases.",
-        "Choose an order that computes dependencies first.",
-        "Read the answer from the right cell.",
-        "Optionally compress space by keeping only the rows you need."
+        "**Top-down versus bottom-up**: top-down computes only reachable states and is easier to write; bottom-up avoids recursion depth and enables space optimization.",
+        "**1D DP**: Fibonacci, climbing stairs, house robber, coin change, longest increasing subsequence.",
+        "**2D grid and sequence DP**: unique paths, minimum path sum, longest common subsequence, edit distance.",
+        "**Knapsack family**: 0/1, unbounded, bounded, subset sum, partition equal subset sum, target sum.",
+        "**Interval DP**: `dp[i][j]` over a substring or range, split at k (matrix chain multiplication, burst balloons, palindrome partitioning).",
+        "**Bitmask DP**: the state includes a subset of up to about 20 items (traveling salesman in O(2 to the n times n squared), assignment problems).",
+        "**DP on trees**: per-node states combined from children (maximum independent set, house robber on a tree).",
+        "**Digit DP**: count numbers up to N with a property by processing digits with a tight flag.",
+        "**DP on DAGs and shortest paths**: Bellman-Ford and Floyd-Warshall are DP; so is longest path in a DAG after a topological sort.",
+        "**Probability and expectation DP**: states hold probabilities or expected values."
       ]
     },
     {
-      "heading": "0/1 knapsack",
-      "body": "State dp[w] = best value using capacity w. Iterate capacity downward so each item is used at most once.",
-      "code": "int knapsack(int W, int wt[], int val[], int n) {\n  int dp[W + 1]; memset(dp, 0, sizeof dp);\n  for (int i = 0; i < n; i++)\n    for (int w = W; w >= wt[i]; w--)\n      dp[w] = max(dp[w], dp[w - wt[i]] + val[i]);\n  return dp[W];\n}"
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "General formula: time is (number of states) times (cost of one transition); space is the number of states, unless a window of them is enough.",
+        "Fibonacci: O(n) time, O(1) space in the rolling form (versus about 1.6 to the n calls without memoization).",
+        "0/1 knapsack: O(nW) time, O(W) space. Pseudo-polynomial, since W is a number and not the input length.",
+        "Coin change: O(n times amount) time, O(amount) space.",
+        "LCS and edit distance: O(mn) time; O(mn) space to recover the answer, O(min(m, n)) for the length only.",
+        "LIS: O(n squared) with the simple DP, O(n log n) with the patience (binary search) method.",
+        "Matrix chain and other interval DP: O(n cubed) time, O(n squared) space.",
+        "Traveling salesman with bitmasks: O(2 to the n times n squared); feasible to about n = 20, where 2 to the 20 is 1,048,576 states per city."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Wrong state**: if two subproblems that differ in some hidden variable share a state, the answer is wrong. Add the missing dimension.",
+        "**Wrong loop direction**: in 0/1 knapsack with a 1D array, iterate capacity downward; iterate upward for the unbounded version.",
+        "**Using 0 as the 'not computed' marker** when 0 is a legitimate answer; use -1 or a separate visited array.",
+        "**Uninitialized or INT_MAX overflow**: `dp[a - coin] + 1` overflows if the stored value is INT_MAX. Test before adding.",
+        "**Applying greedy where it fails**: coin change with {1, 3, 4} is the classic counterexample.",
+        "**Deep recursion**: top-down DP with n of 100,000 can overflow the stack; use bottom-up.",
+        "**Huge tables**: a 2D table of 10,000 by 10,000 ints needs 400 MB; use rolling arrays.",
+        "**Off-by-one with 1-indexed tables**: `dp[i][j]` often refers to the first i characters, so compare `s[i - 1]`.",
+        "**Counting problems**: forgetting the modulus, or counting order-dependent versus order-independent combinations (loop order matters in coin ways)."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Bioinformatics**: Needleman-Wunsch and Smith-Waterman align DNA and protein sequences with 2D DP.",
+        "**Diff and version control**: `diff` and `git diff` rely on LCS or the related Myers algorithm; spell checkers use edit distance.",
+        "**Speech and language**: the Viterbi algorithm for HMMs, CYK parsing, and tokenization are DP.",
+        "**Finance and operations**: option pricing on binomial trees, inventory planning, resource allocation (knapsack), Bellman equations in reinforcement learning.",
+        "**Networking and compilers**: shortest paths in routing, register allocation heuristics, optimal instruction selection on trees.",
+        "**Text layout**: Knuth-Plass line breaking in TeX is a DP over breakpoints."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How do you recognize a DP problem?** Asking for a count, a minimum, a maximum or a yes/no over choices, with overlapping subproblems and a small state.",
+        "**Memoization versus tabulation?** Same complexity. Top-down is easier to derive; bottom-up avoids recursion limits and allows rolling arrays.",
+        "**Difference from divide and conquer?** DP subproblems overlap and are cached; divide and conquer subproblems are independent.",
+        "**Difference from greedy?** Greedy commits to one local choice; DP considers all choices and picks the best.",
+        "**Why is knapsack pseudo-polynomial?** O(nW) depends on the numeric value W, which is exponential in the number of bits that encode it.",
+        "**How do you reconstruct the solution?** Store the choice per state or backtrack from `dp[m][n]` through the transitions that produced it."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Longest common subsequence",
-      "summary": "Two-sequence DP.",
+      "title": "Spotting DP: substructure and overlap",
+      "summary": "The two properties that justify the technique.",
       "sections": [
         {
-          "body": "dp[i][j] is the LCS length of the first i characters of A and first j of B. If A[i-1] == B[j-1] then dp[i][j] = dp[i-1][j-1] + 1, else max(dp[i-1][j], dp[i][j-1]). O(nm) time.",
-          "code": "for (i = 1; i <= n; i++) for (j = 1; j <= m; j++)\n  dp[i][j] = (a[i-1] == b[j-1]) ? dp[i-1][j-1] + 1 : max(dp[i-1][j], dp[i][j-1]);"
+          "body": "**Optimal substructure**: if the best route from A to C passes through B, then the part A to B is also a best route from A to B. This fails for some problems, such as the longest simple path in a graph, which is why they are not DP-friendly. **Overlapping subproblems**: draw the recursion tree for a small input. If the same node appears twice, memoization will pay off. A quick test: if the brute force enumerates exponentially many sequences of choices but the number of distinct 'situations' reached is polynomial, DP applies."
         }
       ]
     },
     {
-      "title": "Coin change",
-      "summary": "Minimum coins for an amount.",
+      "title": "Top-down memoization versus bottom-up tabulation",
+      "summary": "Two ways to fill the same table.",
       "sections": [
         {
-          "body": "dp[x] = min over coins c of dp[x - c] + 1, with dp[0] = 0. Unreachable amounts stay at infinity. O(amount × coins).",
-          "code": "for (x = 1; x <= amt; x++) { dp[x] = INF;\n  for (k = 0; k < nc; k++) if (coins[k] <= x && dp[x - coins[k]] + 1 < dp[x]) dp[x] = dp[x - coins[k]] + 1; }"
+          "body": "Top-down keeps the recursive structure: check the cache, compute and store. It visits only reachable states, which can save work when most of the table is irrelevant. Its costs are recursion overhead and the stack-depth limit. Bottom-up replaces recursion by loops in dependency order: for edit distance, rows then columns, since `dp[i][j]` needs left, up and up-left. It is usually faster by a constant, and it makes space optimization natural. A good habit is to write the recurrence first, then choose the form. When the ordering is hard to see (for example states that depend on one another in a complex way), prefer top-down."
+        }
+      ]
+    },
+    {
+      "title": "Climbing stairs, house robber and 1D DP",
+      "summary": "Linear states with a short memory.",
+      "sections": [
+        {
+          "body": "Climbing stairs: `ways[n] = ways[n-1] + ways[n-2]`, the Fibonacci recurrence. House robber: `best[i] = max(best[i-1], best[i-2] + nums[i])`, because you either skip house i or rob it and skip i - 1. Both depend on only the last two values, so two variables replace the whole array. For the circular variant of house robber, solve twice (excluding the first house, then excluding the last) and take the maximum. Maximum subarray (Kadane) is another 1D DP: `best_ending_here = max(a[i], best_ending_here + a[i])`."
+        }
+      ]
+    },
+    {
+      "title": "Grid paths",
+      "summary": "2D states over a matrix.",
+      "sections": [
+        {
+          "body": "Unique paths in an m by n grid with right and down moves: `dp[i][j] = dp[i-1][j] + dp[i][j-1]`, with the first row and column equal to 1, giving C(m + n - 2, m - 1) paths. For a 3 by 7 grid, that is 28. Minimum path sum replaces the addition by `grid[i][j] + min(dp[i-1][j], dp[i][j-1])`. Obstacles set the cell's value to 0. Because each row depends only on the one above, a single row array is enough: O(n) space. Larger moves, such as the triangle problem or dungeon game (solved backward from the goal), follow the same method."
+        }
+      ]
+    },
+    {
+      "title": "Longest common subsequence and edit distance",
+      "summary": "Two-string DP tables.",
+      "sections": [
+        {
+          "body": "For LCS, `dp[i][j]` is the length of the longest common subsequence of the first i characters of X and the first j of Y. If the characters match, extend the diagonal; otherwise take the better of dropping a character from either string.",
+          "code": "#include <string.h>\n\nint lcs(const char *x, const char *y) {\n  int m = strlen(x), n = strlen(y);\n  int dp[m + 1][n + 1];\n  for (int i = 0; i <= m; i++)\n    for (int j = 0; j <= n; j++) {\n      if (i == 0 || j == 0) dp[i][j] = 0;\n      else if (x[i - 1] == y[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;\n      else dp[i][j] = dp[i - 1][j] > dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];\n    }\n  return dp[m][n];\n}"
+        },
+        {
+          "body": "Edit distance (Levenshtein) counts the fewest insertions, deletions and replacements to turn s into t. Here `dp[i][j]` is the distance between the first i characters of s and the first j of t. For \"kitten\" to \"sitting\" the answer is 3. To print the edit script, walk back from `dp[m][n]` choosing the predecessor that produced each value.",
+          "code": "#include <string.h>\n\nstatic int min3(int a, int b, int c) { int m = a < b ? a : b; return m < c ? m : c; }\n\nint edit_distance(const char *s, const char *t) {\n  int m = strlen(s), n = strlen(t);\n  int dp[m + 1][n + 1];\n  for (int i = 0; i <= m; i++) dp[i][0] = i;           /* delete everything */\n  for (int j = 0; j <= n; j++) dp[0][j] = j;           /* insert everything */\n  for (int i = 1; i <= m; i++)\n    for (int j = 1; j <= n; j++)\n      dp[i][j] = s[i - 1] == t[j - 1] ? dp[i - 1][j - 1]\n               : 1 + min3(dp[i - 1][j - 1],            /* replace */\n                          dp[i - 1][j],                /* delete */\n                          dp[i][j - 1]);               /* insert */\n  return dp[m][n];\n}"
         }
       ]
     },
     {
       "title": "Longest increasing subsequence",
-      "summary": "O(n²) and O(n log n).",
+      "summary": "From O(n squared) to O(n log n).",
       "sections": [
         {
-          "body": "dp[i] = 1 + max dp[j] for j < i with a[j] < a[i], giving O(n²). Maintaining a sorted list of smallest tails and binary searching improves it to O(n log n)."
+          "body": "The simple DP sets `dp[i]` to one plus the best `dp[j]` over j < i with `a[j] < a[i]`, taking O(n squared). The faster method keeps `tails[k]`, the smallest possible last value of an increasing subsequence of length k + 1. Each new element replaces the first tail that is at least as large (via binary search) or extends the list. The array `tails` is not itself the subsequence, but its length is the answer. For [10, 9, 2, 5, 3, 7, 101, 18] the length is 4.",
+          "code": "/* length of the longest strictly increasing subsequence, O(n log n) */\nint lis(const int a[], int n) {\n  int tails[n], len = 0;      /* tails[k]: least tail of a run of length k+1 */\n  for (int i = 0; i < n; i++) {\n    int lo = 0, hi = len;\n    while (lo < hi) {                          /* first tail >= a[i] */\n      int mid = (lo + hi) / 2;\n      if (tails[mid] < a[i]) lo = mid + 1; else hi = mid;\n    }\n    tails[lo] = a[i];\n    if (lo == len) len++;\n  }\n  return len;\n}"
         }
       ]
     },
     {
-      "title": "Greedy versus DP",
-      "summary": "Know the difference.",
+      "title": "Knapsack family and subset sum",
+      "summary": "Choose items under a budget.",
       "sections": [
         {
-          "body": "Greedy commits to a locally best choice and never revisits it; it works only when that choice is provably safe (Dijkstra, Kruskal). DP considers all choices via stored subproblems, so it handles cases greedy gets wrong, such as coin change with arbitrary denominations."
+          "body": "**Subset sum** asks whether some subset reaches a target T: `dp[s]` is a boolean, with `dp[0] = true`, updating downward. **Partition equal subset sum** is subset sum with T = total / 2 (the total must be even). **Unbounded knapsack** (coin change) loops the capacity upward so an item can repeat. **Target sum** (assign plus or minus to each number) reduces to subset sum with T = (total + target) / 2. All of these run in O(nT) time and O(T) space, and all are pseudo-polynomial: a target of 10 to the 9 makes the table too large. Bitsets speed up the boolean versions by a factor of the word size."
         }
       ]
     },
     {
-      "title": "Space optimization",
-      "summary": "Rolling arrays.",
+      "title": "Interval, bitmask and tree DP",
+      "summary": "States richer than a prefix.",
       "sections": [
         {
-          "body": "If dp[i] depends only on dp[i-1], keep two rows or one row updated in the right direction. Knapsack uses a single array iterated downward; LCS needs only the previous row."
+          "body": "**Interval DP**: `dp[i][j]` for the range i..j, trying every split k, for example matrix chain multiplication `dp[i][j] = min(dp[i][k] + dp[k+1][j] + p[i-1]*p[k]*p[j])` in O(n cubed). Order the loops by increasing interval length. **Bitmask DP**: when n is at most about 20, a mask records which items are used. The traveling salesman problem uses `dp[mask][last]` and runs in O(2 to the n times n squared), far better than n! for n = 20. **Tree DP**: do a DFS and, for each node, combine states of its children (for example 'take this node or not' for a maximum independent set). The tree itself gives the evaluation order."
+        }
+      ]
+    },
+    {
+      "title": "Recovering solutions and saving space",
+      "summary": "Turn a number into an answer, and shrink the table.",
+      "sections": [
+        {
+          "body": "To output the actual items, either store a parent choice per state (`take[i][c]`) or walk backward through the finished table: from the end, if `dp[i][c] != dp[i-1][c]` then item i was taken, reduce c by its weight, and continue. Rolling arrays keep only the previous row, reducing O(mn) to O(n), but then the walk-back is lost. Hirschberg's algorithm recovers an LCS in O(mn) time and O(min(m, n)) space by splitting the problem in half recursively. Always decide early whether the problem wants the value or the solution, since it affects which optimizations are legal."
+        }
+      ]
+    },
+    {
+      "title": "Fibonacci four ways",
+      "summary": "Brute force, memoization, tabulation and constant space on one problem.",
+      "sections": [
+        {
+          "body": "The sequence is 0, 1, 1, 2, 3, 5, 8, 13, 21, 34 and so on. The brute force adds fib(n-1) and fib(n-2), making two calls per call, so the time is exponential and bounded by O(2 to the n). The recursion tree shows the same subproblems repeated: fib(n-2) is needed by both fib(n) and fib(n-1), and the call for n - 1 itself calls n - 2 and n - 3. Memoization uses a table initialized to -1, meaning not yet computed: check the cell before recursing, and store the answer after. That is O(n) time and O(n) space. Tabulation fills dp[0] = 0, dp[1] = 1 and then dp[i] = dp[i-1] + dp[i-2] up to n, also O(n) and O(n).",
+          "code": "long fib_brute(int n) {                 /* exponential, bounded by O(2^n) */\n  if (n <= 1) return n;\n  return fib_brute(n - 1) + fib_brute(n - 2);\n}\n\nlong fib_memo(int n, long memo[]) {       /* memo[] initialized to -1 */\n  if (n <= 1) return n;\n  if (memo[n] != -1) return memo[n];\n  return memo[n] = fib_memo(n - 1, memo) + fib_memo(n - 2, memo);\n}\n\nlong fib_table(int n) {                   /* tabulation: O(n) time, O(n) space */\n  if (n <= 1) return n;\n  long dp[n + 1];\n  dp[0] = 0; dp[1] = 1;\n  for (int i = 2; i <= n; i++) dp[i] = dp[i - 1] + dp[i - 2];\n  return dp[n];\n}"
+        },
+        {
+          "body": "Since each value needs only the previous two, keep two variables instead of the table: O(n) time and O(1) space (the rolling form shown earlier). The pattern, brute force then memo then table then reduced space, applies to nearly every DP problem."
+        }
+      ]
+    },
+    {
+      "title": "Subproblem examples from the standard tutorial",
+      "summary": "Minimum cost path and the four-step recipe.",
+      "sections": [
+        {
+          "body": "For the minimum-cost path from a source to a destination in a weighted graph, the best route can be assembled from the best path from the source to each intermediate node plus the best path from that node to the destination: optimal substructure. The four-step recipe is: identify the subproblems (here F(n-1) and F(n-2)); store each solution in a table so it is not recomputed; build up larger answers from the stored ones (F(n) looks up the two previous values and adds them); and avoid recomputation, so each subproblem such as F(2) is solved once."
+        }
+      ]
+    },
+    {
+      "title": "Classic DP algorithms and why DP pays off",
+      "summary": "A map of the field.",
+      "sections": [
+        {
+          "body": "The standard list: longest common subsequence (the idea behind the diff utility), edit distance (the idea behind did-you-mean suggestions), longest increasing subsequence, Bellman-Ford single-source shortest paths, Floyd-Warshall all-pairs shortest paths, the knapsack problem, matrix chain multiplication (choose the order that minimizes scalar operations), and Fibonacci. Advantages: no subproblem is recomputed, which brings large time savings, and because all combinations are considered the optimum is guaranteed. Applications span optimization (knapsack, shortest path, maximum subarray), computer science (LCS, edit distance, string matching) and operations research (inventory, scheduling, resource allocation). Related reading worth doing next: DP versus plain recursion, DP versus greedy, and tabulation versus memoization."
         }
       ]
     }
   ],
   "takeaways": [
-    "DP = overlapping subproblems + optimal substructure + stored answers.",
-    "Define state, transition, base case, and order.",
-    "Memoization (top-down) and tabulation (bottom-up) are equivalent in power.",
-    "Compress space when a state needs only recent rows."
+    "DP needs optimal substructure and overlapping subproblems; solve each distinct state once and store it.",
+    "Define the state, the transition, the base cases and the fill order before writing code.",
+    "Top-down memoization is easiest to derive; bottom-up tabulation avoids recursion limits and allows rolling arrays.",
+    "Time equals states times transition cost; many table rows depend only on the previous row, so space can drop from O(mn) to O(n).",
+    "0/1 knapsack iterates capacity downward in a 1D array; unbounded knapsack and coin change iterate upward.",
+    "Greedy can fail where DP works: coins {1, 3, 4} for amount 6 needs 3 + 3, not 4 + 1 + 1.",
+    "Knapsack-style DP is pseudo-polynomial: O(nW) depends on the value of W, not its bit length."
+  ],
+  "practice": [
+    {
+      "title": "Climbing stairs and Fibonacci with memoization and with rolling variables",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "House robber (linear and circular)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Coin change: fewest coins and number of ways",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Unique paths and minimum path sum in a grid with obstacles",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "0/1 knapsack and partition equal subset sum",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest common subsequence with the actual string recovered",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest increasing subsequence in O(n log n)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Edit distance between two words",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Burst balloons or matrix chain multiplication (interval DP)",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Traveling salesman for n at most 15 using bitmask DP",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -101,36 +280,6 @@
     {
       "label": "Reference: Introduction to dynamic programming (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/introduction-to-dynamic-programming-data-structures-and-algorithm-tutorials/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Climbing stairs",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "House robber",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Coin change (minimum coins)",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Longest common subsequence",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "0/1 knapsack",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Edit distance",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Longest increasing subsequence in O(n log n)",
-      "difficulty": "Hard"
     }
   ]
 }

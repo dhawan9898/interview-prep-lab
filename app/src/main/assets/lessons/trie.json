@@ -1,130 +1,280 @@
 {
-  "summary": "A trie (prefix tree) stores strings along root-to-node paths, one character per edge. Inserting, searching, and prefix-searching a string of length L all take O(L) time regardless of how many strings are stored, which makes tries ideal for autocomplete and dictionaries.",
+  "summary": "A trie (prefix tree) stores a set of strings by spreading their characters along tree edges, so all words sharing a prefix share the same path from the root. Insert, exact search and prefix search each cost O(L) for a word of length L, independent of how many words are stored. That makes it the natural structure for autocomplete, spell checking, dictionaries, word games and longest-prefix routing tables, at the price of heavy memory use when nodes are wasteful. Hash tables and balanced trees cannot answer prefix queries as directly.",
   "sections": [
     {
-      "heading": "Structure",
-      "body": "Each node has links to children (an array of 26 for lowercase letters, or a map for larger alphabets) and a flag marking that a word ends here. The root represents the empty prefix.",
-      "code": "typedef struct TrieNode {\n  struct TrieNode *child[26];\n  int is_end;\n} TrieNode;\n\nTrieNode *node_new(void) { return calloc(1, sizeof(TrieNode)); }"
-    },
-    {
-      "heading": "Insert and search",
-      "body": "Walk the characters, creating missing nodes on insert. Search succeeds only if the walk completes and the final node's end flag is set.",
-      "code": "void insert(TrieNode *root, const char *w) {\n  for (; *w; w++) {\n    int c = *w - 'a';\n    if (!root->child[c]) root->child[c] = node_new();\n    root = root->child[c];\n  }\n  root->is_end = 1;\n}\nint search(TrieNode *root, const char *w) {\n  for (; *w; w++) { root = root->child[*w - 'a']; if (!root) return 0; }\n  return root->is_end;\n}"
-    },
-    {
-      "heading": "Prefix queries",
-      "body": "To test whether any word starts with a prefix, walk the prefix and succeed if all nodes exist (ignore the end flag). To autocomplete, walk the prefix, then depth-first collect every word below that node."
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Overview",
+      "body": "Imagine storing the words cat, car, cart and dog. A hash set can tell you whether car is present, but asking for every word that starts with ca means scanning everything. A trie turns the question around: it walks one character per level, so the prefix ca is a node you can reach in two steps, and everything beneath that node is a completion. Each edge is labeled with a character, each root-to-node path spells a prefix, and a flag on a node marks that the prefix is also a complete word.",
       "bullets": [
-        "Insert, search, prefix check: O(L) where L is the string length, independent of the number of words.",
-        "Space: O(total characters × alphabet size) in the array form; can be large.",
-        "No hashing or collision handling needed; keys come out in lexicographic order."
+        "**Problem it solves**: fast prefix queries and lookups whose cost depends on key length, not on the number of keys.",
+        "**Compared with a hash table**: no hashing and no collisions, sorted order is available by walking children in order, but the memory footprint is usually larger.",
+        "**Compared with a balanced BST of strings**: BST lookup costs O(L log n) because each comparison is O(L); a trie costs O(L).",
+        "**Name**: from retrieval, usually pronounced like try."
+      ]
+    },
+    {
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Node**: holds an array or map of children (one per possible next character) and an end-of-word flag; sometimes also a count or a stored value.",
+        "**Root**: represents the empty string and holds no character.",
+        "**Edge label**: the character you consume when moving from a node to a child. In array implementations the label is the child's index.",
+        "**End-of-word flag**: distinguishes a stored word from a mere prefix. Without it, storing car would make ca look like a word.",
+        "**Prefix**: any path from the root. `starts_with(p)` succeeds if the path for p exists, whether or not it ends at a word.",
+        "**Alphabet size (sigma)**: 26 for lowercase English, 128 or 256 for bytes, 2 for bits. It sets the width of each node's child array.",
+        "**Depth**: the length of the longest key. Operations cost O(L) in that length.",
+        "**Shared prefixes**: the source of space saving; words like car, card and care share the car path.",
+        "**Pruning**: removing nodes that no longer lead to any word after a delete."
+      ]
+    },
+    {
+      "heading": "How It Works",
+      "body": "A node in C for lowercase words uses an array of 26 child pointers. Allocation with `calloc` zeroes everything, so all children start NULL and the flag starts false.\n\n**Insert** walks the word one character at a time, creating any missing child, and marks the final node as a word end. **Search** walks the same path and succeeds only if the path exists and the last node's flag is set. **Prefix search** is the same walk but ignores the flag. All three take O(L).\n\n**Worked example**: insert car, cart, cat, dog. The root gets children c and d. Under c: a. Under a: r and t. The r node is marked end (car) and gets child t, also marked end (cart). The t under a is marked end (cat). Under d: o, then g marked end (dog). Now `search(\"ca\")` walks c, a and finds the node exists but its flag is false, so it returns false. `starts_with(\"ca\")` returns true. `search(\"cart\")` is true. `search(\"cards\")` breaks after c, a, r, then no d child, so it fails. The structure holds 4 words in 8 non-root nodes: c, a, r, t, t, d, o, g.\n\n**Delete** is recursive: walk to the word's last node, clear the end flag, and on the way back free any node that has no children and is not itself a word end. Deleting cart frees the t node under r (it is now childless and not an end), but leaves car intact; deleting car afterwards would keep r only if something else hangs below it.",
+      "code": "#include <stdbool.h>\n#include <stdlib.h>\n\n#define SIGMA 26\n\nstruct Trie {\n    struct Trie *ch[SIGMA];\n    bool end;\n};\n\nstatic struct Trie *node(void) {\n    struct Trie *t = calloc(1, sizeof *t);\n    if (!t) abort();\n    return t;\n}\n\nvoid insert(struct Trie *root, const char *s) {\n    struct Trie *t = root;\n    for (; *s; s++) {\n        int c = *s - 'a';\n        if (!t->ch[c]) t->ch[c] = node();\n        t = t->ch[c];\n    }\n    t->end = true;\n}\n\nstatic const struct Trie *walk(const struct Trie *t, const char *s) {\n    for (; t && *s; s++) t = t->ch[*s - 'a'];\n    return t;                         /* NULL if the path breaks */\n}\n\nbool search(const struct Trie *root, const char *s) {\n    const struct Trie *t = walk(root, s);\n    return t && t->end;\n}\n\nbool starts_with(const struct Trie *root, const char *p) {\n    return walk(root, p) != NULL;\n}\n\nstatic bool is_empty(const struct Trie *t) {\n    for (int i = 0; i < SIGMA; i++) if (t->ch[i]) return false;\n    return true;\n}\n\n/* returns true if the caller should free and unlink t */\nstatic bool del(struct Trie *t, const char *s) {\n    if (!*s) {\n        if (!t->end) return false;           /* word not present */\n        t->end = false;\n        return is_empty(t);\n    }\n    int c = *s - 'a';\n    if (!t->ch[c]) return false;\n    if (del(t->ch[c], s + 1)) {\n        free(t->ch[c]);\n        t->ch[c] = NULL;\n        return !t->end && is_empty(t);\n    }\n    return false;\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Array-child trie**: fixed `ch[SIGMA]` per node. O(1) child access, simple, but each node costs SIGMA pointers (208 bytes for 26 on a 64-bit machine) even if only one child is used.",
+        "**Hash-map or sorted-list children**: store only existing children. Saves memory for large alphabets such as Unicode at the cost of slower or non-constant child lookup.",
+        "**Compressed trie (radix tree, Patricia trie)**: collapses chains of single-child nodes into one edge labeled with a whole substring. Node count drops to O(number of words); used in routers, IP lookup, the Linux kernel radix tree and XArray, and HTTP routers.",
+        "**Ternary search tree**: each node holds one character and three pointers (less, equal, greater). Far smaller than a 26-way trie and still supports prefix search; lookups cost O(L + log n).",
+        "**Suffix trie and suffix tree**: store all suffixes of a text for substring search; the compressed form (suffix tree) is built in O(n) with Ukkonen's algorithm.",
+        "**Bitwise trie (binary trie)**: alphabet of 0 and 1, one level per bit of an integer. Used for maximum-XOR queries and IP prefixes.",
+        "**DAWG or minimal acyclic automaton**: merges identical suffixes as well as prefixes, shrinking dictionaries massively, used in Scrabble solvers and spell checkers.",
+        "**Aho-Corasick**: a trie with failure links that matches many patterns in a text in a single pass."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Insert, search, prefix search, delete**: O(L) time for a key of length L, regardless of n.",
+        "**Worst-case space**: O(n * L * sigma) for n words with an array per node. With 26 children and 8-byte pointers, one node is about 208 bytes with padding for the flag, so 100,000 words averaging 8 characters with little sharing can approach 150 MB.",
+        "**Best-case space**: O(total characters) shared prefixes, much smaller for natural-language dictionaries.",
+        "**With hashed or sorted children**: space O(total characters), time O(L) expected or O(L log sigma).",
+        "**Compressed trie**: at most 2n - 1 nodes for n words.",
+        "**Listing all words with a prefix**: O(L + size of the subtree) because after reaching the prefix node you traverse everything below it.",
+        "**Lexicographic traversal**: pre-order walk visiting children in alphabet order outputs words in sorted order, O(total characters).",
+        "**Cache behaviour**: pointer chasing causes many cache misses; the cost per character is a memory access, not an ALU operation."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Missing end flag**: without it you cannot tell car from the prefix ca. Search must check the flag; prefix search must not.",
+        "**Wrong alphabet assumption**: indexing with `c - 'a'` on uppercase letters, digits or spaces writes outside the array. Validate input or widen SIGMA to 128 or 256, and cast to `unsigned char`.",
+        "**Memory blowup**: 26 pointers per node is expensive. Use compressed tries, ternary trees or hashed children when memory matters.",
+        "**Forgetting to free**: tries have many nodes; free recursively in post-order, and prune nodes on delete.",
+        "**Delete mistakes**: freeing a node that still has children or still marks another word (cart and car) corrupts the trie. Prune only childless, non-end nodes.",
+        "**Empty string**: decide whether the empty word is allowed; it would mark the root as an end.",
+        "**Duplicates**: inserting a word twice is harmless as a set, but if you count occurrences you need a counter instead of a boolean.",
+        "**Case and Unicode**: normalize case first; for Unicode use bytes of UTF-8 (256 children) or a map-based node rather than a char array.",
+        "**Recursion depth on long keys**: very long strings can overflow the stack with recursive insert or delete; prefer loops."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Autocomplete and search suggestions**: walk to the typed prefix, then rank the completions beneath it, often by a stored frequency.",
+        "**Spell checking and dictionaries**: word lookup in O(L), plus nearby-word search by exploring branches with limited edits.",
+        "**IP routing**: routers perform longest-prefix match of a destination address against route prefixes using binary tries or compressed tries (see the LPM lesson).",
+        "**Word games**: Boggle and Scrabble solvers prune the search as soon as the current path is not a prefix of any word.",
+        "**Text indexing**: suffix trees and suffix automata for substring search and bioinformatics.",
+        "**Multi-pattern matching**: Aho-Corasick in antivirus and intrusion-detection systems.",
+        "**Routing in web frameworks and file systems**: path-segment tries match URL routes and directory prefixes.",
+        "**T9 keyboards and phone directories**: map digit sequences to words through a trie."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What does a trie store?** Strings, with each node representing a prefix and a flag marking complete words.",
+        "**Complexity of insert and search?** O(L) in the key length, independent of the number of keys.",
+        "**Space complexity?** O(total characters) at best, O(n * L * sigma) worst case with array children.",
+        "**Trie versus hash set?** A trie supports prefix queries and ordered traversal; a hash set has less memory and no prefix support.",
+        "**How do you implement autocomplete?** Walk to the prefix node, then DFS its subtree collecting words (optionally top-k by frequency).",
+        "**How do you delete a word?** Clear the end flag and prune nodes that have no children and are not word ends, bottom up.",
+        "**How do you find the longest common prefix of many strings?** Insert them all, then follow the path from the root while the node has exactly one child and is not an end.",
+        "**What is a compressed trie?** One that merges single-child chains into edges labeled with strings, cutting node count to O(n).",
+        "**How do you find the maximum XOR pair?** Insert numbers into a binary trie, then for each number walk preferring the opposite bit at each level, O(32 n)."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Deletion",
-      "summary": "Prune unused branches.",
+      "title": "Node design and memory",
+      "summary": "The child array is the main cost.",
       "sections": [
         {
-          "body": "Unmark the end flag, then walk back up freeing nodes that have no children and are not the end of another word. Recursion makes this natural."
-        }
-      ]
-    },
-    {
-      "title": "Reducing memory",
-      "summary": "Compressed tries and maps.",
-      "sections": [
-        {
+          "body": "The simplest node is a fixed array of SIGMA pointers plus a boolean. For lowercase letters that is 26 times 8 = 208 bytes of pointers plus padding on a 64-bit machine, often 216 bytes per node, where only a few slots are typically used. The design question is how to store children compactly.",
           "bullets": [
-            "Store children in a hash map or sorted list instead of a fixed array.",
-            "Compressed (radix/Patricia) trie: merge chains of single-child nodes into one edge labelled with a substring.",
-            "Ternary search tries: three-way BST nodes per character, compact and still prefix-friendly."
+            "**Array**: fastest, wasteful. Good for small alphabets such as DNA (4) or bits (2).",
+            "**Hash map or small sorted vector per node**: pay only for existing children; lookup is O(1) expected or O(log k).",
+            "**First-child/next-sibling lists**: smallest, but lookup is O(sigma).",
+            "**Node pool**: allocate nodes from one big array and use 32-bit indexes instead of 64-bit pointers, halving pointer size and improving locality."
           ]
         }
       ]
     },
     {
-      "title": "Applications",
-      "summary": "Where tries are used.",
+      "title": "Insert, search and starts-with",
+      "summary": "The three core operations in detail.",
+      "sections": [
+        {
+          "body": "All three follow the same walk, differing only in what they do at the end. Insert creates missing nodes and sets the flag. Search requires the walk to succeed and the flag to be set. Starts-with requires only that the walk succeeds. Each step is a single array lookup, so a lookup performs exactly L steps for a word of length L, and a miss can stop as soon as a child is absent, which makes failed searches cheap when the first few letters are unusual. Because the cost is independent of n, a trie with ten million words answers a ten-letter query in ten steps."
+        }
+      ]
+    },
+    {
+      "title": "Deleting a word",
+      "summary": "Clear the flag and prune dead branches.",
+      "sections": [
+        {
+          "body": "There are three situations. The word is not present (do nothing). The word is a prefix of another word (just clear the end flag; do not free any node). The word is unique (free the tail nodes that lead only to it, stopping at a node that has another child or is itself a word end). The recursive helper above encodes this: return true if the node can be deleted, and let the parent free it. Skipping the pruning is legal for correctness but leaves unreachable-in-practice nodes that waste memory."
+        }
+      ]
+    },
+    {
+      "title": "Autocomplete and prefix listing",
+      "summary": "Walk to the prefix, then enumerate beneath it.",
+      "sections": [
+        {
+          "body": "Find the node for the prefix, then run a depth-first search from it appending characters to a buffer; every time you hit an end flag, output the buffer. Visiting children in alphabet order gives alphabetical results. For ranked suggestions store a frequency (or the top few completions) at each node, so a query returns the best k without exploring the whole subtree. The cost is O(L + k * average length) with cached tops.",
+          "code": "#include <stdio.h>\n\nstatic void collect(const struct Trie *t, char *buf, int len) {\n    if (t->end) { buf[len] = '\\0'; puts(buf); }\n    for (int i = 0; i < SIGMA; i++)\n        if (t->ch[i]) { buf[len] = (char)('a' + i); collect(t->ch[i], buf, len + 1); }\n}"
+        }
+      ]
+    },
+    {
+      "title": "Compressed trie (radix tree)",
+      "summary": "Merge single-child chains.",
+      "sections": [
+        {
+          "body": "In a plain trie the words romane, romanus and romulus create long chains where nothing branches. A radix tree stores a string on each edge, so romane, romanus and romulus become: root, edge rom, which branches into edges an and ulus; the an node branches into e and us. The number of nodes is proportional to the number of words rather than to the total number of characters. Insert may need to split an edge when a new word diverges mid-edge, and delete may need to merge an edge with its sibling. Linux kernel code, routing tables and HTTP routers use this form; Patricia tries are the bit-level version where each node stores the index of the bit to test."
+        }
+      ]
+    },
+    {
+      "title": "Ternary search tree",
+      "summary": "Three pointers instead of 26.",
+      "sections": [
+        {
+          "body": "Each node holds one character plus `lo`, `eq` and `hi` pointers. To match the next character of the key, compare it with the node's character: smaller goes lo, larger goes hi, equal goes eq and consumes the character. It behaves like a BST of characters nested inside a trie. Nodes are 24 to 32 bytes, so memory is far smaller than the array trie, and it supports prefix and near-neighbour searches. Lookup is O(L + log n) in the typical balanced case, and it degrades if keys are inserted in sorted order, like any unbalanced BST."
+        }
+      ]
+    },
+    {
+      "title": "Binary trie and maximum XOR",
+      "summary": "A trie over the bits of integers.",
+      "sections": [
+        {
+          "body": "Insert each 32-bit number as a path of 32 edges labeled 0 or 1, most significant bit first. To find the number in the set that gives the largest XOR with x, walk from the top bit: at each level prefer the child that holds the opposite bit of x, since that produces a 1 in the result, and fall back to the same bit if the opposite is absent. The path you follow spells the best partner. Insert and query are O(32) each, so n numbers cost O(32 n). The same structure stores IPv4 prefixes for longest-prefix match.",
+          "code": "struct B { struct B *c[2]; };\n\nunsigned best_xor(const struct B *t, unsigned x) {\n    unsigned r = 0;\n    for (int b = 31; b >= 0; b--) {\n        int bit = (x >> b) & 1;\n        if (t->c[!bit]) { r |= 1u << b; t = t->c[!bit]; }\n        else t = t->c[bit];\n    }\n    return r;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Word search with a trie",
+      "summary": "Prune the search as soon as the prefix is dead.",
+      "sections": [
+        {
+          "body": "In Boggle-style grids and word-search problems, backtracking over the grid for each word is exponential. Putting the dictionary into a trie lets one DFS from each cell carry the current trie node along. If the next letter has no child, stop immediately: no dictionary word starts that way. When a node's flag is set, record the word (and clear the flag so it is not reported twice). This turns a search over W separate words into one search whose branching is limited by the dictionary itself."
+        }
+      ]
+    },
+    {
+      "title": "Longest common prefix and counting prefixes",
+      "summary": "Per-node counters unlock more queries.",
+      "sections": [
+        {
+          "body": "Add an integer `pass` to each node that counts how many inserted words go through it. Then the number of words starting with a prefix is the `pass` value at the prefix node, in O(L). The longest common prefix of a set is the path from the root while the node has a single child and is not a word end, or while `pass` equals the number of words inserted. A second counter `ends` lets the structure act as a multiset that supports count of exact word occurrences and a rank-like query for the number of words smaller than a given one by summing counts of lesser siblings along the path."
+        }
+      ]
+    },
+    {
+      "title": "Trie versus hash table versus sorted array",
+      "summary": "Choosing by the queries you need.",
       "sections": [
         {
           "bullets": [
-            "Autocomplete and typeahead.",
-            "Spell checkers and dictionary lookups.",
-            "IP routing tables: a binary trie over address bits implements longest-prefix match.",
-            "T9 text prediction and word games.",
-            "Longest common prefix of many strings."
+            "**Hash table**: smallest and fastest for exact lookup; no prefix query and no order.",
+            "**Sorted array with binary search**: compact; prefix queries via lower_bound in O(L log n); expensive inserts.",
+            "**Trie**: O(L) exact and prefix queries, ordered traversal, incremental inserts; larger memory.",
+            "**Compressed trie or DAWG**: when the dictionary is huge and read-mostly, they give trie queries with a fraction of the memory."
           ]
         }
       ]
     },
     {
-      "title": "Trie versus hash table",
-      "summary": "Trade-offs.",
+      "title": "Worked example with and, ant, do, dad",
+      "summary": "Tracing the three operations on a small dictionary.",
       "sections": [
         {
-          "bullets": [
-            "Trie supports prefix search and sorted iteration; hash tables do not.",
-            "Hash tables use less memory and have better constants for exact lookups.",
-            "Trie lookup time depends on key length, not table size."
-          ]
-        }
-      ]
-    },
-    {
-      "title": "Binary tries for numbers",
-      "summary": "Bitwise tries.",
-      "sections": [
-        {
-          "body": "Store integers bit by bit to answer queries like 'maximum XOR with any stored number' in O(bits): at each bit choose the child that gives the opposite bit when possible."
+          "body": "Insert and, ant, do, dad. Inserting and creates nodes a, n, d (child indexes 0, 13, 3) and marks d as a word end. Inserting ant reuses a and n and creates only t, marked as an end. do creates d, o under the root; dad reuses the d node and adds a and d. Now search do succeeds (flag set), search gee fails at the first letter because no child g exists, search bat fails likewise. For prefix queries: ge fails, ba fails, do succeeds, de fails because d has no child e. Search costs O(L) time and O(1) extra space, while insert costs O(L) time and may allocate up to L new nodes."
         }
       ]
     }
   ],
   "takeaways": [
-    "Paths from the root spell strings; a flag marks word ends.",
-    "Insert, search, and prefix queries are O(L).",
-    "Great for autocomplete and longest-prefix problems; memory can be large.",
-    "Compressed tries cut memory by merging single-child chains."
+    "A trie stores strings character by character, so shared prefixes share nodes and each node marks whether a word ends there.",
+    "Insert, search and prefix search all cost O(L) for key length L, independent of how many words are stored.",
+    "Always keep an end-of-word flag: search checks it, starts-with ignores it.",
+    "The weakness is memory: an array of SIGMA pointers per node; use compressed tries, ternary trees or hashed children to save space.",
+    "Delete by clearing the flag and pruning childless non-word nodes on the way back up.",
+    "Autocomplete is a walk to the prefix node plus a DFS of its subtree; per-node counters or cached top-k speed up ranking.",
+    "A binary trie over integer bits solves maximum-XOR and longest-prefix-match problems in O(bits)."
+  ],
+  "practice": [
+    {
+      "title": "Implement a trie with insert, search and startsWith",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the longest common prefix of an array of strings",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count the words that share a given prefix",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Autocomplete: return all words with a given prefix, in order",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Delete a word from a trie and prune unused nodes",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Replace words in a sentence with their shortest dictionary root",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Maximum XOR of two numbers in an array",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Word search II: find all dictionary words in a grid",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a search autocomplete system that ranks by frequency",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Count distinct substrings of a string using a suffix trie",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
+    {
+      "label": "Reference: Trie insert and search (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/trie-insert-and-search/"
+    },
     {
       "label": "CLRS: Introduction to Algorithms, 4th ed.",
       "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
     },
     {
-      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
-      "url": "https://algs4.cs.princeton.edu/home/"
-    },
-    {
-      "label": "Reference: Trie data structure (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/trie-insert-and-search/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Implement insert, search, and startsWith",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Autocomplete: list all words with a given prefix",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Longest common prefix of an array of strings",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Word search II: find dictionary words in a grid",
-      "difficulty": "Hard"
-    },
-    {
-      "title": "Maximum XOR of two numbers using a binary trie",
-      "difficulty": "Hard"
+      "label": "Sedgewick and Wayne, Algorithms 4th ed., chapter 5.2 Tries",
+      "url": "https://algs4.cs.princeton.edu/52trie/"
     }
   ]
 }

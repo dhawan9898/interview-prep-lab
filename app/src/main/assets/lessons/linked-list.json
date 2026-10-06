@@ -1,114 +1,241 @@
 {
-  "summary": "A singly linked list is a chain of nodes, each holding a value and a pointer to the next node. It grows and shrinks dynamically, and inserting or deleting at a known position needs no shifting.",
+  "summary": "A singly linked list is a chain of heap-allocated nodes, each holding a value and a pointer to the next node, with a head pointer marking the start. Inserting or deleting at the head is O(1) and the list grows one node at a time with no resizing, but reaching the k-th element costs O(k) because there is no indexing. It is the foundation for stacks, queues, hash chains, adjacency lists and allocator free lists, and it is the most common source of pointer-manipulation interview questions.",
   "sections": [
     {
-      "heading": "Node structure",
-      "body": "A list is identified by a `head` pointer to the first node; the last node's `next` is NULL.",
-      "code": "struct Node { int data; struct Node *next; };\nstruct Node *head = NULL;   // empty list"
+      "heading": "Overview",
+      "body": "An array stores elements side by side, so index i is found by arithmetic but inserting in the middle shifts everything after it. A linked list makes the opposite trade. Each element lives in its own node, wherever the allocator put it, and a `next` pointer links it to the following node. The last node's `next` is NULL, and the whole list is identified by one pointer to the first node, the **head**.\n\nBecause nodes are connected only by pointers, you can splice a node in or out by rewriting one or two pointers, without moving any other element. The price is that you can only reach a node by walking from the head, you pay a pointer of overhead per element, and you lose cache locality. Understanding when that trade is worth it, and how to manipulate the pointers without losing nodes, is what linked list questions test."
     },
     {
-      "heading": "Traversal",
-      "body": "Follow `next` until NULL. O(n).",
-      "code": "for (struct Node *p = head; p; p = p->next)\n  printf(\"%d \", p->data);"
-    },
-    {
-      "heading": "Insertion",
+      "heading": "Core Concepts",
       "bullets": [
-        "At head: new->next = head; head = new. O(1).",
-        "At tail: walk to the last node (O(n)), or keep a tail pointer (O(1)).",
-        "After a node p: new->next = p->next; p->next = new. O(1) once p is known."
-      ],
-      "code": "void push_front(struct Node **head, int v) {\n  struct Node *n = malloc(sizeof *n);\n  n->data = v; n->next = *head; *head = n;\n}"
+        "**Node**: a struct holding data and a `next` pointer.",
+        "**Head**: pointer to the first node. An empty list has `head == NULL`. Losing the head loses the whole list.",
+        "**Tail**: the last node, whose `next` is NULL. Keeping a separate tail pointer makes append O(1).",
+        "**Traversal**: start at head and follow `next` until NULL. O(n).",
+        "**Singly linked**: each node knows only its successor, so you can walk in one direction only.",
+        "**Pointer to pointer** (`Node **`): lets a function change the caller's head without a special case for the first node.",
+        "**Sentinel (dummy) node**: a fake node placed before the real head so that insertion and deletion at the front need no special case.",
+        "**Length**: not stored by default, so computing it is O(n) unless you maintain a counter."
+      ]
     },
     {
-      "heading": "Deletion",
-      "body": "To delete a node you need the node before it. Deleting the head just moves `head`. Always free the removed node.",
-      "code": "void delete_value(struct Node **head, int v) {\n  for (struct Node **pp = head; *pp; pp = &(*pp)->next)\n    if ((*pp)->data == v) { struct Node *t = *pp; *pp = t->next; free(t); return; }\n}"
+      "heading": "How It Works",
+      "body": "Every operation is a short, careful rewrite of pointers. The golden rule is to link the new node to the rest of the list before you cut the old link, otherwise you lose the remainder.\n\nInsert at the head: allocate a node, set `new->next = head`, then `head = new`. O(1). Insert at the tail: without a tail pointer walk to the last node (O(n)) and set `last->next = new`; with a tail pointer it is O(1). Insert after position k: walk to the node at k minus 1, then `new->next = prev->next; prev->next = new`. The order of those two lines matters.\n\nDelete the head: save it, advance `head = head->next`, free the saved node. Delete a node by value: keep a `prev` pointer while you search; when found, `prev->next = cur->next` and free `cur`. Deleting the last node needs the second-to-last node, so it is O(n) in a singly linked list.\n\nWorked example. List 10 -> 20 -> 40. Insert 30 after 20: walk to 20, set `new->next` to 40, then set 20's `next` to the new node, giving 10 -> 20 -> 30 -> 40. Delete 10: head moves to 20 and the old node is freed. If you had swapped the two insert lines, `20->next` would point at the new node before the new node pointed at 40, and 40 would be orphaned and leaked.",
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n\ntypedef struct Node {\n    int val;\n    struct Node *next;\n} Node;\n\nNode *new_node(int v) {\n    Node *n = malloc(sizeof *n);\n    if (!n) return NULL;\n    n->val = v; n->next = NULL;\n    return n;\n}\n\nvoid push_front(Node **head, int v) {\n    Node *n = new_node(v);\n    if (!n) return;\n    n->next = *head;          /* link to the rest first */\n    *head = n;\n}\n\nvoid push_back(Node **head, int v) {\n    Node *n = new_node(v);\n    if (!n) return;\n    Node **pp = head;\n    while (*pp) pp = &(*pp)->next;   /* find the NULL link */\n    *pp = n;\n}\n\nint delete_value(Node **head, int v) {\n    for (Node **pp = head; *pp; pp = &(*pp)->next) {\n        if ((*pp)->val == v) {\n            Node *dead = *pp;\n            *pp = dead->next;        /* bypass */\n            free(dead);\n            return 1;\n        }\n    }\n    return 0;\n}\n\nvoid print_list(const Node *h) {\n    for (; h; h = h->next) printf(\"%d -> \", h->val);\n    puts(\"NULL\");\n}"
     },
     {
-      "heading": "Complexity vs array",
+      "heading": "Variants & Types",
       "bullets": [
-        "Access by index: O(n) (array O(1)).",
-        "Search: O(n).",
-        "Insert/delete at head: O(1) (array O(n)).",
-        "Extra memory: one pointer per node, plus malloc overhead.",
-        "Poor cache locality: nodes are scattered in memory."
+        "**Singly linked list**: one `next` pointer per node; cheapest in memory; forward traversal only.",
+        "**Doubly linked list**: adds `prev`, so you can delete a known node in O(1) and walk both ways. Covered in its own lesson.",
+        "**Circular linked list**: the last node points back to the head. Good for round-robin rotation and for queues that keep only a tail pointer.",
+        "**With a tail pointer**: append becomes O(1), which is what a linked queue needs.",
+        "**With a sentinel**: fewer special cases in insert and delete code.",
+        "**Intrusive list**: the link fields live inside the data struct (Linux `list_head`), so one allocation serves both data and links and one object can sit in several lists.",
+        "**Skip list and XOR list**: a skip list adds express pointers for O(log n) search; an XOR list stores `prev ^ next` in one field to save memory at a cost of clarity.",
+        "**Array versus list**: choose an array for index access and cache speed; choose a list when you insert and remove at known positions often and never need indexing."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Access by index and search by value**: O(n). There is no binary search because there is no random access.",
+        "**Insert or delete at head**: O(1).",
+        "**Insert at tail**: O(n) without a tail pointer, O(1) with one. Delete at tail is O(n) either way in a singly linked list, since you need the previous node.",
+        "**Insert or delete after a node you already hold**: O(1). Finding that node is the O(n) part.",
+        "**Space**: O(n). On a 64-bit machine a node with an `int` is 16 bytes (4 data, 4 padding, 8 pointer) plus allocator overhead of 8 to 16 bytes, versus 4 bytes per int in an array: roughly 4x to 6x the memory.",
+        "**Locality**: nodes are scattered, so a traversal can miss cache on every node. A list of 1,000,000 ints often traverses 5 to 10 times slower than the same data in an array.",
+        "**Reverse in place**: O(n) time, O(1) extra space."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Dereferencing NULL**: walking `cur->next->next` without checking each pointer, or calling a function on an empty list.",
+        "**Losing the rest of the list**: assigning `prev->next = new` before `new->next = prev->next`.",
+        "**Forgetting to update head**: inserting or deleting the first node changes the caller's head. Use `Node **head` or return the new head.",
+        "**Memory leaks**: dropping nodes without `free`, or overwriting a pointer that was the only reference.",
+        "**Use after free**: freeing a node and then reading `node->next` in the loop update. Save `next` before freeing.",
+        "**Cycles**: a bug that makes a node point backward causes an infinite loop in traversal and in `free`-all loops. Floyd's algorithm detects it.",
+        "**Off by one on positions**: decide whether position 0 or 1 is the first node and handle insertion at the end (position equal to length) explicitly.",
+        "**Assuming O(1) size**: `length()` walks the whole list unless you cache a counter and keep it updated."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Stacks and queues**: linked stacks push and pop at the head; linked queues use head and tail.",
+        "**Hash tables**: separate chaining stores a short list in each bucket.",
+        "**Graphs**: adjacency lists store each vertex's neighbors as a list.",
+        "**Memory allocators**: free lists chain unused blocks together, using the blocks themselves as nodes.",
+        "**Operating systems**: the Linux kernel's `list_head` is an intrusive circular doubly linked list used for tasks, inodes, timers and wait queues; file system block chains such as FAT are linked structures.",
+        "**Polynomial and sparse data**: terms stored as nodes so insertion of a new term needs no shifting.",
+        "**Functional languages**: immutable cons lists, where prepending shares the tail, are the default sequence in Lisp, Haskell and OCaml.",
+        "**Undo history and blockchains**: each entry points at its predecessor."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Array versus linked list?** Array: O(1) index, contiguous, cache friendly. List: O(1) insert and delete at a known node, no shifting, but O(n) access and extra memory.",
+        "**Reverse a list?** Iterate with `prev`, `cur`, `next`: save next, point cur back at prev, advance both. O(n) time, O(1) space.",
+        "**Find the middle?** Slow and fast pointers: when fast reaches the end, slow is at the middle.",
+        "**Detect a cycle?** Floyd's tortoise and hare: if the pointers ever meet there is a cycle. To find its start, reset one pointer to head and move both one step at a time.",
+        "**Remove the n-th node from the end?** Advance a lead pointer n steps, then move both until the lead hits the end; use a dummy head.",
+        "**Delete a node given only that node?** Copy the next node's value into it and bypass the next node. It fails for the tail.",
+        "**Merge two sorted lists?** Walk both with a dummy head, appending the smaller each step. O(m + n), no extra nodes.",
+        "**Why not binary search a list?** No random access, so reaching the middle already costs O(n)."
       ]
     }
   ],
   "subtopics": [
     {
+      "title": "Node structure and creating a list",
+      "summary": "The self-referential struct and the head pointer.",
+      "sections": [
+        {
+          "body": "A node type refers to itself, so in C you need the struct tag: `struct Node { int val; struct Node *next; }`. Allocate each node with `malloc`, check for NULL, and initialize `next` to NULL immediately so a half-built node never carries garbage. A list is just the head pointer, so passing `Node *head` by value to a function lets you read the list but not change which node is first. To change it, pass `Node **head` or return the new head and have the caller assign it. Building a list from an array is easiest by keeping a tail pointer and appending each element in O(1). Building a three-node list by hand shows the mechanics: allocate the first node and call it head; allocate the second and set `head->next` to it; allocate the third and set the second's `next` to it; the third node's `next` stays NULL so the list has a clear end. Many exercises number positions from 1 rather than 0, so read the problem statement before choosing a convention."
+        }
+      ]
+    },
+    {
+      "title": "Traversal and search",
+      "summary": "Walk with a cursor; stop on NULL.",
+      "sections": [
+        {
+          "body": "The loop `for (Node *p = head; p; p = p->next)` visits every node once. Never move `head` itself during traversal; use a separate cursor or you lose the list. Search by value is the same loop with a comparison and returns the node (or its position) on a hit and NULL after the loop. A recursive version, `find(h, v) = !h ? NULL : h->val == v ? h : find(h->next, v)`, is elegant but uses O(n) call stack, so avoid it for long lists. Counting length, summing values and printing are all traversals and cost O(n) time and O(1) space iteratively. Traversal prints or processes `1 -> 2 -> 3 -> 4 -> 5` by starting a temporary pointer at head, stopping when it is NULL and otherwise visiting the node and stepping to `next`. The recursive form has the base case 'node is NULL, return', handles the node, and calls itself on `next`; both are O(n) time but the recursive one uses O(n) stack space. Searching for a key follows the same two shapes: iterative O(n) time and O(1) space, recursive O(n) time and O(n) space, returning true on the first match and false on reaching NULL."
+        }
+      ]
+    },
+    {
+      "title": "Insertion at head, tail and position",
+      "summary": "Three cases with different costs.",
+      "sections": [
+        {
+          "body": "Head: two pointer writes, O(1), and the only case that changes the head. Tail: walk to the end unless you hold a tail pointer; when the list is empty the new node becomes both head and tail. Position k (0 based): handle k equal to 0 as a head insert, otherwise walk k minus 1 steps, stopping with an error if you run off the end, then splice with `n->next = prev->next; prev->next = n`. Inserting at position equal to length is a valid append. Always check the walk against NULL so an out-of-range index does not crash."
+        }
+      ]
+    },
+    {
+      "title": "Deletion at head, tail and by value",
+      "summary": "Find the predecessor, bypass, then free.",
+      "sections": [
+        {
+          "body": "Head: save the node, move head, free the saved node; an empty list is a no-op. Tail: walk until `cur->next->next` is NULL (or keep `prev`), set `prev->next = NULL`, free the last node; a single-node list must set head to NULL instead. By value or position: track `prev` while searching, bypass with `prev->next = cur->next`, then free `cur`. The pointer-to-pointer idiom from the code above removes the head special case entirely, because `*pp` is either the head variable or some node's `next` field. Deleting every occurrence of a value is a loop that does not advance `pp` after a removal. Deleting by 1-based position x has a naive and a proper solution. The naive one stores every node pointer in an array so the node at x is reachable directly: O(n) time but O(n) extra space. The proper single traversal keeps `prev` and `cur`, stops when `cur` is at position x, and sets `prev->next = cur->next`; if x is 1 it just moves the head. For 2 -> 5 -> 7 -> 8 -> 99 -> 100 and x = 6, `prev` ends at 99 and `cur` at 100, so 99's next becomes NULL and 100 is freed. Time O(n), space O(1)."
+        }
+      ]
+    },
+    {
       "title": "Reversing a list",
-      "summary": "Three-pointer technique.",
+      "summary": "Three pointers, one pass.",
       "sections": [
         {
-          "body": "Walk the list keeping `prev`, `cur`, `next`; point each node back at prev. O(n) time, O(1) space.",
-          "code": "struct Node *prev = NULL, *cur = head;\nwhile (cur) { struct Node *nx = cur->next; cur->next = prev; prev = cur; cur = nx; }\nhead = prev;"
+          "body": "Iterative: keep `prev = NULL` and `cur = head`. Each step save `nxt = cur->next`, set `cur->next = prev`, then `prev = cur; cur = nxt`. When `cur` is NULL, `prev` is the new head. Example 1 -> 2 -> 3 becomes 3 -> 2 -> 1 after three steps. O(n) time, O(1) space. Recursive: reverse the rest, then make the next node point back at the current one and set the current `next` to NULL; it is O(n) time but O(n) stack. Two other correct methods exist. Recursive: recurse to the last node, which becomes the new head; while the calls return, each node sets `node->next->next = node` and `node->next = NULL`; time O(n), stack O(n). Stack based: push all nodes, make the last one the head, then pop and append each in turn; time O(n), space O(n). The iterative three-pointer method is the one to prefer because it needs no extra space.",
+          "code": "Node *reverse(Node *head) {\n    Node *prev = NULL, *cur = head;\n    while (cur) {\n        Node *nxt = cur->next;   /* save the rest */\n        cur->next = prev;        /* flip the link */\n        prev = cur;\n        cur = nxt;\n    }\n    return prev;\n}"
         }
       ]
     },
     {
-      "title": "Fast and slow pointers",
-      "summary": "Middle and cycle detection.",
+      "title": "Middle element and slow/fast pointers",
+      "summary": "One pass to the midpoint.",
       "sections": [
         {
-          "body": "Move `slow` one step and `fast` two steps. When fast reaches the end, slow is at the middle. If the list has a cycle, fast eventually meets slow (Floyd's algorithm)."
+          "body": "Start `slow` and `fast` at head. Move slow one node and fast two nodes per step while `fast && fast->next`. When fast stops, slow is at the middle. For an even length of 4 (1 2 3 4) slow ends on the second middle node, 3; if you need the first middle, start fast at `head->next`. The same technique finds the k-th from the end (with a k-node lead), splits a list for merge sort, and checks for a palindrome by reversing the second half and comparing."
         }
       ]
     },
     {
-      "title": "Doubly and circular lists",
-      "summary": "Variants.",
+      "title": "Cycle detection (Floyd)",
+      "summary": "Detect a loop and find where it starts.",
       "sections": [
         {
-          "bullets": [
-            "Doubly linked: prev and next pointers allow O(1) deletion given the node and backward traversal; used by the Linux kernel's `list_head`.",
-            "Circular: the last node points to the head; natural for round-robin."
-          ]
+          "body": "Move slow one step and fast two steps. If there is a cycle, fast eventually laps slow and they meet inside the loop; if fast reaches NULL there is none. To find the entry node, leave one pointer at the meeting point and set the other to head; advance both one step at a time and they meet at the first node of the cycle. The reason is that the distance from head to the cycle start equals the distance from the meeting point forward to the start, modulo the cycle length. Time O(n), space O(1), versus O(n) space for a hash set of visited nodes."
+        },
+        {
+          "body": "To remove the cycle, walk to the node whose `next` is the cycle start and set it to NULL.",
+          "code": "Node *cycle_start(Node *head) {\n    Node *slow = head, *fast = head;\n    while (fast && fast->next) {\n        slow = slow->next;\n        fast = fast->next->next;\n        if (slow == fast) {\n            slow = head;\n            while (slow != fast) {\n                slow = slow->next;\n                fast = fast->next;\n            }\n            return slow;\n        }\n    }\n    return NULL;\n}"
         }
       ]
     },
     {
-      "title": "Linked list vs dynamic array",
-      "summary": "Choosing between them.",
+      "title": "Merging and sorting lists",
+      "summary": "Where linked lists beat arrays.",
       "sections": [
         {
-          "body": "Arrays win on indexing, iteration speed, and memory use. Lists win only when you hold node pointers and insert/delete in the middle often, or need stable addresses. In practice arrays are usually faster even for middle insertions on small data."
+          "body": "Merging two sorted lists needs no extra nodes: use a dummy head and a tail pointer, repeatedly append the smaller front node, then attach whatever remains. It is O(m + n) time and O(1) space. Merge sort is the natural sort for a linked list: split at the middle with slow and fast pointers, sort each half recursively, merge. It runs in O(n log n) time with only O(log n) stack, and it is stable. Quick sort and heap sort suffer because they need random access."
+        }
+      ]
+    },
+    {
+      "title": "Dummy head and edge cases",
+      "summary": "Make the first node behave like any other.",
+      "sections": [
+        {
+          "body": "Allocate a sentinel `Node dummy; dummy.next = head;` on the stack and work with `dummy` as the predecessor of the head. Insertions and deletions at the front then use the same code as everywhere else, and you return `dummy.next` at the end. The common edge cases to test are an empty list, a single node, operating on the head, operating on the tail, and a target that is missing. Drawing three nodes with arrows and stepping through each pointer assignment catches most bugs before you run anything."
+        }
+      ]
+    },
+    {
+      "title": "Freeing a list safely",
+      "summary": "Avoid leaks and use after free.",
+      "sections": [
+        {
+          "body": "Destroying a list means freeing every node exactly once. Save the next pointer before freeing the current node, then advance. After the loop set the caller's head to NULL so no stale pointer remains. Valgrind or AddressSanitizer will report any node you forgot (leak) or touched after freeing (use after free).",
+          "code": "void free_list(Node **head) {\n    Node *cur = *head;\n    while (cur) {\n        Node *nxt = cur->next;   /* read before free */\n        free(cur);\n        cur = nxt;\n    }\n    *head = NULL;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Operation overview and advantages",
+      "summary": "What a singly linked list supports and what it costs.",
+      "sections": [
+        {
+          "body": "Standard operations: traversal, insertion (beginning, end, specific position), deletion (beginning, end, specific position), searching, updating a value and reversal. Advantages: the size is dynamic with no fixed limit, insertion and deletion at the beginning are O(1) and insertion after a node you already hold is O(1), and it is a building block for stacks, queues and graphs. Disadvantages: every node needs an extra pointer, there is no random access so reaching position k costs O(k), and nodes are scattered in memory so it is not cache friendly. Be precise about the end of the list: appending is O(1) only with a tail pointer, and removing the last node is O(n) in a singly linked list because the second-to-last node must be found first."
+        }
+      ]
+    },
+    {
+      "title": "Insertion and deletion cost summary",
+      "summary": "The worked costs for every position.",
+      "sections": [
+        {
+          "body": "Insert at front: O(1), set `new->next = head`, then `head = new`. Insert at end: O(n) to walk to the last node (unless a tail pointer is kept), setting the new node's `next` to NULL, and if the list is empty the new node becomes the head. Insert at position: walk to the node just before the position and splice, O(n). Remove first node: save head, advance it, free the old node, O(1) time and O(1) space. Remove last node: an empty list returns NULL; a single node is freed and NULL returned; otherwise walk to the second-to-last node and set its `next` to NULL, O(n). Remove at position: O(n) to find, O(1) to unlink. These cost figures are what you quote when comparing the list to a dynamic array, where insertion at the front is O(n) but indexing is O(1)."
         }
       ]
     }
   ],
   "takeaways": [
-    "Nodes hold data and a next pointer; `head` identifies the list.",
-    "O(1) insert/delete at the head, O(n) search and index access.",
-    "Deleting needs the predecessor; use a pointer-to-pointer for clean code.",
-    "Master reversal and fast/slow pointer patterns."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Singly linked list tutorial (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
-    }
+    "A singly linked list gives O(1) insert and delete at the head and after a known node, but O(n) indexing and search.",
+    "Always link the new node to the rest of the list before you redirect the old pointer, or you orphan nodes.",
+    "Use `Node **head` or a dummy node so inserting and deleting the first node needs no special case.",
+    "Reverse with prev, cur and next pointers in O(n) time and O(1) space.",
+    "Slow and fast pointers find the middle, the k-th from the end and cycles in O(n) time with O(1) space.",
+    "Each node costs about 16 to 32 bytes for an int and scatters across memory, so arrays usually win unless you really need cheap splicing.",
+    "Save `next` before `free` when destroying a list, and set the head to NULL afterward."
   ],
   "practice": [
+    {
+      "title": "Insert at head, tail and position",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Delete a node by value or position",
+      "difficulty": "Easy"
+    },
     {
       "title": "Reverse a linked list",
       "difficulty": "Easy"
     },
     {
-      "title": "Find the middle node",
+      "title": "Find the middle of a linked list",
       "difficulty": "Easy"
     },
     {
-      "title": "Merge two sorted lists",
-      "difficulty": "Easy"
+      "title": "Merge two sorted linked lists",
+      "difficulty": "Medium"
     },
     {
-      "title": "Detect a cycle with Floyd fast/slow pointers",
+      "title": "Detect a cycle and find where it begins",
       "difficulty": "Medium"
     },
     {
@@ -116,8 +243,34 @@
       "difficulty": "Medium"
     },
     {
+      "title": "Check whether a list is a palindrome",
+      "difficulty": "Medium"
+    },
+    {
       "title": "Reverse nodes in groups of k",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Sort a linked list in O(n log n)",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Singly linked list tutorial (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/singly-linked-list-tutorial/"
+    },
+    {
+      "label": "Reference: Reverse a linked list (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/reverse-a-linked-list/"
+    },
+    {
+      "label": "Reference: Traversal of singly linked list (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/traversal-of-singly-linked-list/"
+    },
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed., chapter 10",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
     }
   ]
 }

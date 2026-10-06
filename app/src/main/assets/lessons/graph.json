@@ -1,120 +1,261 @@
 {
-  "summary": "A graph is a set of vertices connected by edges. Breadth-first search (BFS) explores it level by level using a queue; depth-first search (DFS) follows one path as deep as possible using a stack or recursion. Both run in O(V + E).",
+  "summary": "A graph is a set of vertices connected by edges, and it models almost any relationship: road maps, social networks, web links, dependencies, state machines and networks. You store one as an adjacency matrix, an adjacency list or an edge list, and explore it with breadth-first search (BFS, level by level using a queue) or depth-first search (DFS, deep first using recursion or a stack). Both visit every vertex and edge once in O(V + E) time, and which one you pick decides what you can prove: BFS finds fewest-edge paths, DFS finds cycles, components and orderings. Nearly every shortest-path, spanning-tree and scheduling algorithm is built on this foundation.",
   "sections": [
     {
-      "heading": "Representations",
+      "heading": "Overview",
+      "body": "Trees, linked lists and arrays are special cases of a more general idea: things (vertices, also called nodes) and the links between them (edges). A graph can be directed or undirected, weighted or unweighted, sparse or dense, connected or in pieces. Two decisions shape every graph program: how you store the graph, and how you traverse it. Storage determines memory and the cost of asking about neighbours; traversal determines the order in which you meet vertices and therefore what the traversal can compute.",
       "bullets": [
-        "Adjacency list: for each vertex, a list of neighbours. Space O(V + E); best for sparse graphs.",
-        "Adjacency matrix: V×V table of 0/1 (or weights). Space O(V²); O(1) edge lookup; best for dense graphs.",
-        "Edge list: simple list of pairs; used by Kruskal's algorithm."
+        "**Problem it solves**: representing and answering questions about relationships, such as is B reachable from A, what is the shortest route, is there a cycle, which tasks must come first.",
+        "**Where it sits**: after arrays, lists and trees. Weighted shortest paths (Dijkstra), spanning trees (MST), union-find and topological sort all build on the traversals here.",
+        "**Mental model**: BFS spreads like a ripple in a pond; DFS follows one corridor to its end, then backs up."
       ]
     },
     {
-      "heading": "Breadth-first search",
-      "body": "Visit the start, then all vertices at distance 1, then distance 2, and so on. Mark vertices when enqueued so none is queued twice. In an unweighted graph BFS finds shortest paths by edge count.",
-      "code": "BFS(G, s):\n  mark s; enqueue s; dist[s] = 0\n  while queue not empty:\n    u = dequeue\n    for v in adj[u]:\n      if not marked v: mark v; dist[v] = dist[u] + 1; enqueue v"
-    },
-    {
-      "heading": "Depth-first search",
-      "body": "Go as deep as possible along one branch, then backtrack. Implemented recursively or with an explicit stack. Records discovery and finish times used by several algorithms.",
-      "code": "DFS(u):\n  mark u\n  for v in adj[u]:\n    if not marked v: DFS(v)"
-    },
-    {
-      "heading": "BFS vs DFS",
+      "heading": "Core Concepts",
       "bullets": [
-        "BFS: queue, level order, shortest path in unweighted graphs, more memory on wide graphs.",
-        "DFS: stack/recursion, less memory on wide graphs, natural for cycle detection, topological sort, and connected components.",
-        "Both: O(V + E) time."
+        "**Vertex and edge**: written G(V, E). V is the vertex count, E the edge count. An edge (u, v) connects two vertices. A triangle on vertices 0, 1, 2 has an adjacency matrix with 1 everywhere except the diagonal.",
+        "**Directed versus undirected**: a directed edge u to v can be followed one way only; an undirected edge works both ways and is stored as two directed edges.",
+        "**Weighted**: each edge carries a number (distance, cost, capacity). Unweighted graphs treat every edge as cost 1.",
+        "**Degree**: number of edges at a vertex; in-degree and out-degree for directed graphs. The sum of degrees in an undirected graph is 2E.",
+        "**Path and cycle**: a path is a sequence of vertices joined by edges; a cycle is a path that returns to its start. A graph with no cycles is acyclic; a directed acyclic graph is a DAG.",
+        "**Connected component**: a maximal set of vertices all reachable from each other (undirected). In a directed graph, strongly connected components require reachability both ways.",
+        "**Simple graph**: no self loops and no parallel edges. Real data often has both; decide how to treat them.",
+        "**Sparse versus dense**: sparse means E is near V; dense means E approaches V squared. The maximum edges are V(V-1)/2 undirected and V(V-1) directed.",
+        "**Tree**: a connected undirected graph with no cycle, equivalently V - 1 edges and connected.",
+        "**Visited set**: the mark that prevents infinite loops on cycles. Every graph traversal needs one."
+      ]
+    },
+    {
+      "heading": "How It Works",
+      "body": "There are three standard representations. An **adjacency matrix** is a V by V grid where cell [i][j] is 1 (or the weight) if there is an edge from i to j. An **adjacency list** keeps, for every vertex, the list of its neighbours. An **edge list** is just an array of (u, v, w) triples. The code below builds an adjacency list in C with a compact linked-edge array, which uses O(V + E) memory and no per-edge malloc.\n\n**BFS** starts at a source, marks it visited, and puts it in a queue. It repeatedly removes the front vertex and enqueues every unvisited neighbour, marking it as it enqueues so nothing is added twice. Because the queue is first in, first out, vertices are processed in order of distance from the source, so the first time BFS reaches a vertex it has used the fewest edges possible. Recording `dist[v] = dist[u] + 1` and `parent[v] = u` gives shortest hop counts and a way to rebuild the path.\n\n**DFS** goes as deep as possible along one branch before backtracking. Recursively: mark the vertex, then call DFS on each unvisited neighbour. Using an explicit stack gives the same family of orders. DFS can record a discovery time on entry and a finish time on exit; those timestamps classify edges as tree, back, forward or cross and are the basis of cycle detection and topological sort.\n\n**Worked example**: take an undirected graph with edges 0-1, 0-2, 1-3, 2-3, 3-4. BFS from 0 visits 0, then its neighbours 1 and 2 (distance 1), then 3 (distance 2, reached through 1 first), then 4 (distance 3). The order is 0, 1, 2, 3, 4 with dist 0, 1, 1, 2, 3. DFS from 0 (neighbours in index order) goes 0, 1, 3, 2 (from 3 it can reach 2 before 4), then backs up and visits 4. The order can differ depending on neighbour order; DFS order is 0, 1, 3, 2, 4 here, diving to 3 before it ever looks at 2, whereas BFS computes distances 0, 1, 1, 2, 3 by layer.",
+      "code": "#include <stdbool.h>\n#include <stdlib.h>\n\nstruct Graph {\n    int V, E, cnt;\n    int *head;      /* head[u] = index of first edge out of u, or -1 */\n    int *to, *next; /* edge i goes to to[i]; next[i] chains the list */\n};\n\nstruct Graph *graph_new(int V, int maxE) {\n    struct Graph *g = malloc(sizeof *g);\n    g->V = V; g->E = maxE; g->cnt = 0;\n    g->head = malloc(V * sizeof *g->head);\n    g->to = malloc(maxE * sizeof *g->to);\n    g->next = malloc(maxE * sizeof *g->next);\n    for (int i = 0; i < V; i++) g->head[i] = -1;\n    return g;\n}\n\nvoid add_edge(struct Graph *g, int u, int v) {   /* directed u -> v */\n    g->to[g->cnt] = v;\n    g->next[g->cnt] = g->head[u];\n    g->head[u] = g->cnt++;\n}\n\nvoid bfs(const struct Graph *g, int s, int *dist, int *parent) {\n    int *q = malloc(g->V * sizeof *q);\n    int qh = 0, qt = 0;\n    for (int i = 0; i < g->V; i++) { dist[i] = -1; parent[i] = -1; }\n    dist[s] = 0;\n    q[qt++] = s;\n    while (qh < qt) {\n        int u = q[qh++];\n        for (int e = g->head[u]; e != -1; e = g->next[e]) {\n            int v = g->to[e];\n            if (dist[v] == -1) {          /* unvisited */\n                dist[v] = dist[u] + 1;\n                parent[v] = u;\n                q[qt++] = v;\n            }\n        }\n    }\n    free(q);\n}\n\nstatic void dfs_rec(const struct Graph *g, int u, bool *seen) {\n    seen[u] = true;\n    for (int e = g->head[u]; e != -1; e = g->next[e]) {\n        int v = g->to[e];\n        if (!seen[v]) dfs_rec(g, v, seen);\n    }\n}\n\nvoid dfs_iter(const struct Graph *g, int s, bool *seen) {\n    int *st = malloc((g->cnt + 1) * sizeof *st), top = 0;\n    st[top++] = s;\n    while (top) {\n        int u = st[--top];\n        if (seen[u]) continue;\n        seen[u] = true;\n        for (int e = g->head[u]; e != -1; e = g->next[e])\n            if (!seen[g->to[e]]) st[top++] = g->to[e]; /* may push duplicates */\n    }\n    free(st);\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Adjacency matrix**: O(1) edge test, O(V) to list neighbours, O(V^2) memory. Best for dense graphs or small V, and it makes matrix tricks (such as Floyd-Warshall) simple.",
+        "**Adjacency list**: O(V + E) memory, O(degree) to list neighbours, O(degree) edge test. The default for sparse graphs, which is most real graphs.",
+        "**Edge list**: just the triples. Compact and ideal for algorithms that sort edges (Kruskal's MST) or process each edge once (Bellman-Ford).",
+        "**Compressed sparse row (CSR)**: all neighbours in one array with an offset array; excellent cache behaviour for read-only graphs.",
+        "**Implicit graphs**: grids, game states and word ladders are not stored; neighbours are computed on the fly. BFS on a grid with 4 or 8 directions is an interview staple.",
+        "**Directed acyclic graph**: allows topological ordering and dynamic programming over dependencies.",
+        "**Bipartite graph**: vertices split into two sets with edges only between sets; tested with BFS or DFS 2-coloring.",
+        "**Multigraph, hypergraph, weighted graph**: extensions where edges repeat, join many vertices, or carry costs, requiring Dijkstra, Bellman-Ford or other algorithms for weighted shortest paths."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**BFS and DFS with adjacency list**: O(V + E) time, O(V) extra space for the visited array plus queue or stack.",
+        "**BFS and DFS with adjacency matrix**: O(V^2) time, because finding the neighbours of each vertex scans a whole row.",
+        "**Queue size in BFS**: up to the widest level, O(V) worst case. **Recursion depth in DFS**: up to O(V), which is a stack overflow risk on a path of 100,000 vertices.",
+        "**Edge existence**: matrix O(1); list O(degree); sorted list O(log degree).",
+        "**Iterate neighbours of u**: matrix O(V); list O(degree of u).",
+        "**Memory**: matrix V^2 cells (1,000 vertices is a million cells, 100,000 vertices is 10 billion, which does not fit); list about V + 2E entries for an undirected graph.",
+        "**Break-even**: use the list unless E is a large fraction of V^2; a matrix of bits packs 8 edges per byte.",
+        "**Shortest path on unweighted graph**: BFS in O(V + E). Weighted: Dijkstra O((V + E) log V) with a heap."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Marking visited too late in BFS**: mark when you enqueue, not when you dequeue, otherwise the same vertex enters the queue many times and the work blows up.",
+        "**No visited set**: any graph with a cycle loops forever. Trees do not need one; graphs do.",
+        "**Disconnected graphs**: one traversal from one source reaches only that component. Loop over all vertices and start a new search from each unvisited one.",
+        "**Directed versus undirected**: for undirected graphs add the edge in both directions; in cycle detection an undirected DFS must ignore the edge back to its parent, while a directed one must track the recursion stack.",
+        "**Recursion depth**: recursive DFS overflows the stack on long chains; use an explicit stack or raise the limit.",
+        "**Using BFS on weighted graphs for shortest path**: BFS counts edges, not weight. Use Dijkstra (non-negative weights) or Bellman-Ford (negative weights).",
+        "**Self loops and parallel edges**: they affect degree counts, cycle checks and matrix entries. Normalize or handle explicitly.",
+        "**Vertex numbering**: arrays want 0..V-1. Map strings or sparse ids to dense integers first.",
+        "**Matrix for large V**: allocating a V by V matrix for a sparse graph wastes memory and time."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Maps and navigation**: roads are weighted edges; routing uses Dijkstra and A-star over graphs built from the same BFS and DFS ideas.",
+        "**Social and web graphs**: friend-of-friend recommendations are BFS to depth 2; web crawlers are BFS with a frontier queue.",
+        "**Build systems and package managers**: dependencies form a DAG; DFS gives a topological order and detects circular dependencies.",
+        "**Networking**: link-state routing (OSPF) runs shortest-path over the network graph; spanning tree protocols prune loops.",
+        "**Garbage collection**: mark phases traverse the object graph with DFS or BFS from the roots.",
+        "**Games and puzzles**: states are vertices and moves are edges; BFS finds the fewest moves, DFS explores deeply for solutions, as in mazes, sudoku and word ladders.",
+        "**Compilers and analysis**: control-flow graphs and call graphs use DFS orderings and strongly connected components.",
+        "**Image processing**: flood fill and connected-component labelling are BFS or DFS on a pixel grid."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What are the ways to represent a graph?** Adjacency matrix, adjacency list, edge list; choose by density and which queries you need.",
+        "**BFS versus DFS?** BFS uses a queue and finds shortest paths in unweighted graphs; DFS uses a stack or recursion and suits cycle detection, components, topological order and exhaustive search.",
+        "**Complexity?** O(V + E) with a list, O(V^2) with a matrix.",
+        "**How do you detect a cycle in an undirected graph?** DFS and check for a visited neighbour that is not the parent, or use union-find.",
+        "**In a directed graph?** DFS with three states (unvisited, in the current recursion stack, done); an edge to an in-stack vertex is a cycle.",
+        "**How do you check if a graph is bipartite?** BFS or DFS 2-coloring; a same-colour edge means no.",
+        "**How do you count connected components?** Start a traversal from each unvisited vertex and count the starts.",
+        "**Shortest path in a grid with obstacles?** BFS from the source, with the four or eight neighbour offsets.",
+        "**Why mark on enqueue?** To keep each vertex in the queue at most once."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Cycle detection",
-      "summary": "Undirected and directed.",
+      "title": "Graph terminology",
+      "summary": "The words every problem statement assumes.",
       "sections": [
         {
-          "body": "Undirected: DFS finding a visited neighbour that is not the parent. Directed: DFS finding an edge to a vertex currently on the recursion stack (a 'back edge')."
-        }
-      ]
-    },
-    {
-      "title": "Topological sort",
-      "summary": "Ordering a DAG.",
-      "sections": [
-        {
-          "body": "Order vertices so every edge goes forward: reverse DFS finish order, or Kahn's algorithm that repeatedly removes vertices with in-degree 0. Used for build systems and task scheduling."
-        }
-      ]
-    },
-    {
-      "title": "Connected components",
-      "summary": "Group reachable vertices.",
-      "sections": [
-        {
-          "body": "Run BFS/DFS from each unvisited vertex; each run discovers one component. Union-find solves the same problem incrementally."
-        }
-      ]
-    },
-    {
-      "title": "Shortest paths beyond BFS",
-      "summary": "Weighted graphs.",
-      "sections": [
-        {
+          "body": "Interview prompts use graph vocabulary casually, so be precise. A **walk** may repeat vertices and edges; a **path** repeats no vertex; a **cycle** starts and ends at the same vertex. A graph is **connected** if every vertex is reachable from every other (undirected). A **complete graph** has all possible edges. A **tree** is a connected acyclic graph with V - 1 edges, and a **forest** is a set of trees. The **handshake lemma** says the degrees in an undirected graph sum to 2E, so the number of odd-degree vertices is even. A **DAG** is directed and acyclic, which is exactly what makes topological ordering possible.",
           "bullets": [
-            "Dijkstra: non-negative weights, heap-based, O((V+E) log V).",
-            "Bellman-Ford: negative weights allowed, O(VE).",
-            "Floyd-Warshall: all pairs, O(V³)."
+            "Undirected edges are stored twice in an adjacency list (u to v and v to u).",
+            "The **density** of a graph is E divided by the maximum possible number of edges; below about 0.1 you should usually use lists."
           ]
         }
       ]
     },
     {
-      "title": "Bipartite check",
-      "summary": "Two-coloring with BFS.",
+      "title": "Adjacency matrix",
+      "summary": "Constant-time edge tests at quadratic memory.",
       "sections": [
         {
-          "body": "Color start vertex 0 and alternate colors across edges; a conflict means an odd cycle, so the graph is not bipartite."
+          "body": "A V by V array `m` where `m[u][v] = 1` means an edge from u to v (or stores the weight, with 0 or infinity for no edge). For an undirected graph the matrix is symmetric. Checking whether two vertices are adjacent is a single array lookup. Listing a vertex's neighbours scans a full row, O(V), and a whole traversal therefore costs O(V^2). Memory is V^2 cells regardless of E, so 10,000 vertices already needs 100 million cells. Matrices shine for dense graphs, for graphs with small V, and for algorithms phrased as matrix operations: powers of the matrix count walks, and Floyd-Warshall computes all-pairs shortest paths in O(V^3).",
+          "code": "#define N 5\nint m[N][N];                          /* zero-initialized as a global */\n\nvoid add_undirected(int u, int v) { m[u][v] = m[v][u] = 1; }\nint  has_edge(int u, int v)       { return m[u][v]; }"
         }
       ]
     },
     {
-      "title": "Tree traversals are special-case graph searches",
-      "summary": "DFS orders and level order.",
+      "title": "Adjacency list",
+      "summary": "Memory proportional to what actually exists.",
       "sections": [
         {
-          "body": "On a binary tree, DFS gives inorder (left, node, right), preorder (node, left, right), and postorder (left, right, node); BFS gives level order. A tree is a connected acyclic graph, so no visited set is needed, but general graphs need one to avoid infinite loops."
+          "body": "Each vertex owns a list of its neighbours. The total storage is V list heads plus E entries (2E for undirected), so a social network with a million users and fifty million friendships fits in memory where a matrix of a trillion cells never could. Iterating the neighbours of u costs O(degree(u)), so a whole traversal is O(V + E). Edge existence is O(degree) unless the lists are sorted or hashed. Implementations include arrays of vectors, linked lists, and the compact head, next and to arrays shown earlier, which avoid allocation per edge and keep memory contiguous."
+        }
+      ]
+    },
+    {
+      "title": "Breadth-first search",
+      "summary": "Layer by layer with a queue.",
+      "sections": [
+        {
+          "body": "BFS finds the minimum number of edges from the source to every reachable vertex. Because vertices leave the queue in non-decreasing distance order, the first discovery of a vertex is along a shortest path, and the `parent` array reconstructs it by walking back from the target. BFS also yields the layers themselves, which is what level-order tree traversal is. Variants include multi-source BFS (enqueue all sources at distance 0, as in rotting oranges or nearest-gate problems), 0-1 BFS (a deque for edges of weight 0 or 1), and bidirectional BFS (search from both ends and stop when the frontiers meet, which explores far fewer vertices in graphs with high branching).",
+          "bullets": [
+            "Memory worry: the queue can hold an entire level, which for wide graphs is large.",
+            "Grid problems: encode (row, col) as a single index and use offset arrays for the neighbours."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Depth-first search",
+      "summary": "Go deep, then back up.",
+      "sections": [
+        {
+          "body": "DFS explores one branch completely before trying alternatives. The recursion stack holds the current path, which is what makes it so useful: when you reach an already-visited vertex still on the stack you have found a cycle, and when a vertex finishes (all neighbours explored) you can append it to a list that will be a reverse topological order. DFS uses O(depth) memory, usually far less than a wide BFS frontier. It does not find shortest paths, because the first path it discovers to a vertex can be long. Timestamps record entry and exit times, and the interval structure of those times tells you ancestor relationships in the DFS tree in O(1)."
+        }
+      ]
+    },
+    {
+      "title": "BFS versus DFS",
+      "summary": "Pick the traversal for the question.",
+      "sections": [
+        {
+          "bullets": [
+            "**Shortest path by edges**: BFS only.",
+            "**Cycle detection, topological sort, strongly connected components, articulation points and bridges**: DFS.",
+            "**Connected components, reachability**: either; DFS is simpler to write recursively, BFS avoids deep recursion.",
+            "**Memory**: BFS holds a level, up to O(V) in wide graphs; DFS holds a path, up to O(V) in deep graphs. For a balanced binary tree BFS needs O(n) and DFS O(log n).",
+            "**Finding any path or a solution deep in a search tree (backtracking)**: DFS.",
+            "**Level-order output, nearest something**: BFS."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Connected components and cycle detection",
+      "summary": "Two classic DFS and BFS jobs.",
+      "sections": [
+        {
+          "body": "**Components**: loop over all vertices; whenever one is unvisited, run a traversal from it and increment a counter. Every vertex gets a component id in O(V + E) total. **Undirected cycle**: during DFS, an edge to a visited vertex that is not the parent is a back edge and therefore a cycle. **Directed cycle**: keep a state per vertex (0 unvisited, 1 on the current recursion stack, 2 finished). An edge to a vertex in state 1 closes a cycle; an edge to state 2 is harmless. Union-find offers a near-linear alternative for undirected graphs when edges arrive one at a time.",
+          "code": "/* directed cycle: state 0 = new, 1 = on stack, 2 = done */\nstatic bool has_cycle(const struct Graph *g, int u, int *state) {\n    state[u] = 1;\n    for (int e = g->head[u]; e != -1; e = g->next[e]) {\n        int v = g->to[e];\n        if (state[v] == 1) return true;\n        if (state[v] == 0 && has_cycle(g, v, state)) return true;\n    }\n    state[u] = 2;\n    return false;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Bipartite check and topological order",
+      "summary": "Two more uses of the same traversals.",
+      "sections": [
+        {
+          "body": "**Bipartite**: colour the source 0, give every neighbour the opposite colour during BFS, and if you ever meet a neighbour already holding your colour the graph has an odd cycle and is not bipartite. This also answers two-team and two-colour problems. **Topological sort**: for a DAG, either run DFS and output vertices in decreasing finish time, or use Kahn's algorithm: repeatedly remove a vertex with in-degree zero from a queue and decrement its neighbours' in-degrees. If fewer than V vertices come out, a cycle exists. Both run in O(V + E)."
+        }
+      ]
+    },
+    {
+      "title": "Graphs on grids and implicit graphs",
+      "summary": "Not every graph is stored.",
+      "sections": [
+        {
+          "body": "A maze, an image or a board is a graph whose vertices are cells and whose edges join adjacent cells. You never build an adjacency list; you compute the neighbours with offset arrays. BFS from the start returns the shortest path length around walls, and DFS flood fill labels a region. Puzzle states (sliding tiles, Rubik's cube positions, word ladder words) are implicit too: a vertex is a configuration and its neighbours are the states one move away. The visited set becomes a hash set of encoded states, and memory is the limit, so bidirectional BFS and heuristics (A-star) matter.",
+          "code": "static const int dr[4] = {-1, 1, 0, 0}, dc[4] = {0, 0, -1, 1};\n\n/* shortest steps in a grid of 0 (open) and 1 (wall), or -1 */\nint grid_bfs(int R, int C, const int *g, int sr, int sc, int tr, int tc) {\n    int *dist = malloc(R * C * sizeof *dist), *q = malloc(R * C * sizeof *q);\n    int qh = 0, qt = 0, ans = -1;\n    for (int i = 0; i < R * C; i++) dist[i] = -1;\n    dist[sr * C + sc] = 0; q[qt++] = sr * C + sc;\n    while (qh < qt) {\n        int u = q[qh++], r = u / C, c = u % C;\n        if (r == tr && c == tc) { ans = dist[u]; break; }\n        for (int k = 0; k < 4; k++) {\n            int nr = r + dr[k], nc = c + dc[k];\n            if (nr < 0 || nr >= R || nc < 0 || nc >= C) continue;\n            if (g[nr * C + nc] || dist[nr * C + nc] != -1) continue;\n            dist[nr * C + nc] = dist[u] + 1; q[qt++] = nr * C + nc;\n        }\n    }\n    free(dist); free(q);\n    return ans;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Beyond BFS and DFS",
+      "summary": "Where weighted and structural problems lead.",
+      "sections": [
+        {
+          "bullets": [
+            "**Dijkstra**: shortest paths with non-negative weights, a BFS where the queue is a min-heap, O((V + E) log V).",
+            "**Bellman-Ford**: handles negative weights and detects negative cycles in O(VE).",
+            "**Minimum spanning tree**: Kruskal (sort edges, union-find) or Prim (grow from a vertex with a heap).",
+            "**Union-find**: dynamic connectivity in nearly constant amortized time.",
+            "**Strongly connected components**: Kosaraju or Tarjan, both built on DFS finish times.",
+            "**Network flow and matching**: augmenting paths found with BFS (Edmonds-Karp)."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Tree traversals as graph searches",
+      "summary": "Binary trees are graphs without cycles.",
+      "sections": [
+        {
+          "body": "A tree needs no visited set because there is only one path to each node. Its breadth-first traversal is level-order: enqueue the root, then repeatedly dequeue a node, visit it and enqueue its children, so nodes appear level by level. Its depth-first traversals come in three orders: in-order (left, node, right), pre-order (node, left, right) and post-order (left, right, node). BFS builds the picture level by level and is better at finding vertices near the source, while DFS builds it subtree by subtree and is better when solutions lie far from the source. BFS is a FIFO queue, DFS is a LIFO stack."
         }
       ]
     }
   ],
   "takeaways": [
-    "Adjacency lists for sparse graphs, matrices for dense ones.",
-    "BFS = queue, level order, shortest unweighted paths; DFS = stack/recursion, deep first.",
-    "Both are O(V + E); mark visited to avoid revisiting.",
-    "DFS underlies cycle detection, topological sort, and components."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Graph and its representations (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/graph-and-its-representations/"
-    },
-    {
-      "label": "Reference: BFS vs DFS (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/bfs-vs-dfs-binary-tree/"
-    }
+    "A graph is vertices plus edges; choose directed or undirected, weighted or unweighted before coding.",
+    "Adjacency list uses O(V + E) memory and suits sparse graphs; adjacency matrix uses O(V^2) memory and gives O(1) edge tests for dense graphs.",
+    "BFS uses a queue, visits by distance, and gives shortest paths in unweighted graphs; mark vertices when you enqueue them.",
+    "DFS uses recursion or a stack and powers cycle detection, topological sort, components and backtracking.",
+    "Both traversals run in O(V + E) with a list and O(V^2) with a matrix, and both need a visited set.",
+    "For disconnected graphs start a new traversal from every unvisited vertex.",
+    "BFS ignores weights; use Dijkstra for non-negative weights and Bellman-Ford when edges can be negative."
   ],
   "practice": [
     {
-      "title": "BFS shortest path in an unweighted graph",
+      "title": "Implement BFS and DFS on an adjacency list",
       "difficulty": "Easy"
     },
     {
-      "title": "Number of islands",
+      "title": "Find whether a path exists between two vertices",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count the connected components of an undirected graph",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Number of islands in a grid",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Shortest path in a binary matrix with 8-way moves",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Clone a graph",
       "difficulty": "Medium"
     },
     {
@@ -122,12 +263,30 @@
       "difficulty": "Medium"
     },
     {
-      "title": "Topological sort",
+      "title": "Course schedule: can all courses be finished given prerequisites",
       "difficulty": "Medium"
     },
     {
-      "title": "Word ladder",
+      "title": "Check whether a graph is bipartite",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Word ladder: shortest transformation sequence",
       "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Graph and its representations (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/graph-and-its-representations/"
+    },
+    {
+      "label": "Reference: BFS vs DFS for binary tree (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/bfs-vs-dfs-binary-tree/"
+    },
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed., chapter 20",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
     }
   ]
 }

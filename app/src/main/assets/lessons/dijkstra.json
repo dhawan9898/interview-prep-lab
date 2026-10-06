@@ -1,96 +1,253 @@
 {
-  "summary": "Dijkstra's algorithm finds the shortest paths from one source vertex to every other vertex in a graph whose edge weights are non-negative. It repeatedly finalizes the closest unfinalized vertex and relaxes its outgoing edges.",
+  "summary": "Dijkstra's algorithm computes the cheapest path from one source vertex to every other vertex in a weighted graph whose edge weights are all non-negative. It works greedily: always finalize the closest vertex not yet finalized, then relax its outgoing edges. It is the engine behind map routing, link-state protocols such as OSPF and IS-IS, game pathfinding (through A*), and countless interview problems like network delay time and cheapest flights.",
   "sections": [
     {
-      "heading": "Idea",
-      "body": "Keep a tentative distance dist[v] for every vertex, initially infinity except dist[source] = 0. At each step pick the unfinalized vertex u with the smallest dist, declare it final (its shortest path is now known), and try to improve its neighbours: if dist[u] + w(u, v) < dist[v], update dist[v]. This is the greedy choice: with non-negative weights no later path can reach u more cheaply."
+      "heading": "Overview",
+      "body": "Shortest-path problems ask for the minimum-cost route between vertices. The **single-source** version fixes one start vertex and asks for the best distance to everything else. Dijkstra solves it for directed or undirected graphs as long as no edge has a negative weight. Edsger Dijkstra published it in 1959, and it remains the default answer whenever weights are non-negative.\n\nThe key idea is a growing set of vertices whose distance is already final. You keep a tentative distance for every other vertex and repeatedly promote the smallest one into the final set. Promotion is safe because every remaining path must leave the final set through some unfinalized vertex, and that vertex already costs at least as much. With no negative edges, adding more edges can never make the path cheaper."
     },
     {
-      "heading": "Array version, O(V²)",
-      "body": "Simple and best for dense graphs. A 0 in the matrix means no edge.",
-      "code": "void dijkstra(int V, int g[V][V], int src, int dist[]) {\n  int done[V];\n  for (int i = 0; i < V; i++) { dist[i] = INT_MAX; done[i] = 0; }\n  dist[src] = 0;\n  for (int c = 0; c < V; c++) {\n    int u = -1;\n    for (int v = 0; v < V; v++)\n      if (!done[v] && (u == -1 || dist[v] < dist[u])) u = v;\n    if (dist[u] == INT_MAX) break;      // rest unreachable\n    done[u] = 1;\n    for (int v = 0; v < V; v++)\n      if (g[u][v] && !done[v] && dist[u] + g[u][v] < dist[v])\n        dist[v] = dist[u] + g[u][v];\n  }\n}"
-    },
-    {
-      "heading": "Priority-queue version",
-      "body": "Store (distance, vertex) pairs in a min-heap. Pop the smallest; skip it if it is stale (larger than the current dist). Relax edges and push improved neighbours. With adjacency lists the total time is O((V + E) log V).",
-      "code": "push (0, src)\nwhile heap not empty:\n  (d, u) = pop_min\n  if d > dist[u]: continue          # stale entry\n  for (v, w) in adj[u]:\n    if d + w < dist[v]:\n      dist[v] = d + w; parent[v] = u\n      push (dist[v], v)"
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Array: O(V²) time, O(V) extra space.",
-        "Binary heap + adjacency lists: O((V + E) log V).",
-        "Fibonacci heap: O(E + V log V) in theory.",
-        "Space: O(V + E) for the graph."
+        "**Relaxation**: testing whether going through u gives v a cheaper route, that is `dist[u] + w(u,v) < dist[v]`, and updating `dist[v]` if so.",
+        "**Tentative distance**: the best cost found so far for a vertex. It only ever decreases, and it starts at infinity (except the source at 0).",
+        "**Finalized (settled) vertex**: one whose distance can no longer improve. Once settled, a vertex is never touched again.",
+        "**Greedy choice**: among unsettled vertices, the one with the smallest tentative distance is already optimal.",
+        "**Parent (predecessor) array**: records which vertex last improved each distance, so you can rebuild the actual path.",
+        "**Shortest-path tree**: the set of edges `(parent[v], v)`. It is a tree rooted at the source that contains one best path to every reachable vertex.",
+        "**Non-negative weights**: the precondition. A weight of 0 is fine; a negative weight is not.",
+        "**Stale entry**: in the heap version, an old (distance, vertex) pair left behind after a later relaxation found a better distance for the same vertex."
       ]
     },
     {
-      "heading": "Negative edges",
-      "body": "Dijkstra's correctness relies on a finalized vertex never being improved later. A negative edge could make a path through an unfinalized vertex cheaper, so the answer would be wrong. Use Bellman-Ford (O(VE)) when negative weights exist."
+      "heading": "How It Works",
+      "body": "The algorithm in five steps: (1) set every distance to infinity and the source to 0; (2) pick the unsettled vertex u with the smallest distance; (3) mark u settled; (4) for each edge u to v, relax it; (5) repeat until every reachable vertex is settled.\n\nWorked example on the undirected graph A-B 4, A-C 2, C-B 1, B-D 5, C-D 8, B-E 3, D-E 1, source A.\n\nStart: A=0, everything else infinity. Settle A: B becomes 4, C becomes 2. Settle C (2): B improves to 2+1=3, D becomes 2+8=10. Settle B (3): D improves to 3+5=8, E becomes 3+3=6. Settle E (6): D improves to 6+1=7. Settle D (7). Final distances: A0, C2, B3, E6, D7. The path to D is A, C, B, E, D, found by following parents backwards.\n\nBelow is the array version for a dense graph stored as an adjacency matrix, where 0 means no edge.",
+      "code": "#include <limits.h>\n\n#define INF INT_MAX\n\nvoid dijkstra(int V, int g[V][V], int src, int dist[], int parent[]) {\n  int done[V];\n  for (int i = 0; i < V; i++) { dist[i] = INF; done[i] = 0; parent[i] = -1; }\n  dist[src] = 0;\n  for (int round = 0; round < V; round++) {\n    int u = -1;\n    for (int v = 0; v < V; v++)\n      if (!done[v] && (u == -1 || dist[v] < dist[u])) u = v;\n    if (u == -1 || dist[u] == INF) break;   /* the rest is unreachable */\n    done[u] = 1;\n    for (int v = 0; v < V; v++) {\n      if (g[u][v] && !done[v] && dist[u] + g[u][v] < dist[v]) {\n        dist[v] = dist[u] + g[u][v];\n        parent[v] = u;\n      }\n    }\n  }\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Array (linear scan) version**: finding the minimum costs O(V) per round, so O(V squared) total. Best for dense graphs where E is close to V squared.",
+        "**Binary-heap version**: O((V + E) log V) with adjacency lists. The standard choice for sparse graphs such as road networks.",
+        "**Fibonacci or pairing heap**: O(E + V log V) in theory. Rarely worth the constant factors in practice.",
+        "**Bellman-Ford**: O(VE), handles negative edges and detects negative cycles. Use it when weights can be negative.",
+        "**BFS**: when all weights are equal (or 1), a plain queue gives shortest paths in O(V + E). **0-1 BFS** uses a deque for weights in {0, 1}.",
+        "**DAG shortest paths**: on a directed acyclic graph, relax edges in topological order for O(V + E), even with negative weights.",
+        "**A\\***: Dijkstra plus an admissible heuristic that estimates the remaining cost. It expands fewer vertices when you have one target.",
+        "**Bidirectional Dijkstra**: search from both ends and stop when the frontiers meet. Often several times faster on road graphs.",
+        "**Floyd-Warshall / Johnson**: all-pairs shortest paths. Johnson reweights edges and then runs Dijkstra from every vertex."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Array version: O(V squared) time, O(V) extra space beyond the graph.",
+        "Binary heap with lazy deletion: O((V + E) log V) time; the heap can hold up to E entries, so O(E) heap space in the worst case.",
+        "Fibonacci heap: O(E + V log V) amortized.",
+        "Graph storage: O(V + E) with adjacency lists, O(V squared) with a matrix.",
+        "Break-even: the heap version wins when E is below roughly V squared / log V. With V = 10,000 and E = 50,000 the heap does about 60,000 times 14 = 840,000 steps against 100,000,000 for the array.",
+        "Distances need a wide type. Summing two `INT_MAX` values overflows, so test for infinity before adding, or use `long long`."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Negative edges**: the greedy argument breaks. With A to B costing 2, A to C costing 5 and C to B costing -4, Dijkstra settles B at 2 and never revisits it, though the true best is 1. Reach for Bellman-Ford.",
+        "**Overflow on infinity**: `INT_MAX + w` wraps to a negative number and looks like a great distance. Guard with `dist[u] != INF`.",
+        "**Forgetting the stale check**: in the heap version, skip a popped entry when `d > dist[u]`. Without it you re-process vertices and can blow up to O(V*E).",
+        "**Marking visited on push instead of on pop**: a vertex is final only when popped, not when first discovered.",
+        "**Undirected graphs**: you must insert each edge in both directions in the adjacency list.",
+        "**Disconnected graphs**: unreachable vertices keep infinity. Do not treat that as a path cost.",
+        "**Parallel edges and self loops**: harmless for correctness, but a matrix cannot represent parallel edges, so keep the minimum."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Link-state routing**: OSPF and IS-IS routers run Dijkstra (the SPF calculation) over the link-state database to build their forwarding tables.",
+        "**Maps and navigation**: production routers use Dijkstra variants with contraction hierarchies or A* with landmarks on graphs of tens of millions of edges.",
+        "**Games**: A* pathfinding on grids and navigation meshes is Dijkstra with a heuristic.",
+        "**Network planning**: choosing minimum-latency or minimum-cost paths in overlay networks and CDNs.",
+        "**Scheduling and finance**: currency conversion with log-weights (without arbitrage) and minimum-cost workflows are modeled as shortest paths."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why does it fail with negative edges?** A settled vertex is assumed final, but a later negative edge could lower it.",
+        "**Complexity with a binary heap?** O((V + E) log V).",
+        "**Do you need a decrease-key?** No. Push a new entry and discard stale ones on pop; the heap holds at most E entries.",
+        "**How do you get the path?** Store a parent pointer on each successful relaxation and walk back from the target.",
+        "**Dijkstra vs BFS?** BFS is Dijkstra for unit weights, using a plain queue instead of a heap.",
+        "**Dijkstra vs Prim?** Both are greedy and use a heap. Prim keys on the edge weight into the tree; Dijkstra keys on the total distance from the source."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Worked example",
-      "summary": "Source A.",
+      "title": "Why the greedy choice is correct",
+      "summary": "The smallest tentative distance among unsettled vertices cannot be beaten.",
       "sections": [
         {
-          "body": "Edges: A-B 4, A-C 2, C-B 1, B-D 5, C-D 8. Start dist = {A:0}. Finalize A: B=4, C=2. Finalize C (2): B improves to 3, D=10. Finalize B (3): D improves to 8. Finalize D. Final: A0, C2, B3, D8; path to D is A -> C -> B -> D."
+          "body": "Suppose u is the unsettled vertex with the smallest tentative distance d. Any other route to u must leave the settled set through some unsettled vertex x, and dist[x] is at least d because u was the minimum. The rest of that route adds only non-negative weights, so its total is at least d as well. Therefore d is already optimal for u.\n\nThis is an exchange-style argument by induction on the number of settled vertices: the invariant is that every settled vertex holds its true shortest distance. The proof uses non-negativity at exactly one place, which is why a single negative edge is enough to break it."
+        }
+      ]
+    },
+    {
+      "title": "Heap-based implementation",
+      "summary": "Adjacency lists plus a binary min-heap give O((V + E) log V).",
+      "sections": [
+        {
+          "body": "A heap of (distance, vertex) pairs replaces the linear scan. Because C has no standard priority queue, you write one. The heap needs capacity for one entry per successful relaxation, which is at most E plus the initial push.",
+          "code": "typedef struct { int d, v; } Item;          /* (distance, vertex) */\ntypedef struct { Item *a; int n; } Heap;\n\nstatic void swap(Item *x, Item *y) { Item t = *x; *x = *y; *y = t; }\n\nvoid push(Heap *h, int d, int v) {            /* capacity >= E + 1 */\n  int i = h->n++;\n  h->a[i] = (Item){ d, v };\n  while (i > 0 && h->a[(i - 1) / 2].d > h->a[i].d) {\n    swap(&h->a[i], &h->a[(i - 1) / 2]);\n    i = (i - 1) / 2;\n  }\n}\n\nItem pop(Heap *h) {\n  Item top = h->a[0];\n  h->a[0] = h->a[--h->n];\n  int i = 0;\n  for (;;) {\n    int l = 2 * i + 1, r = l + 1, m = i;\n    if (l < h->n && h->a[l].d < h->a[m].d) m = l;\n    if (r < h->n && h->a[r].d < h->a[m].d) m = r;\n    if (m == i) break;\n    swap(&h->a[i], &h->a[m]);\n    i = m;\n  }\n  return top;\n}"
+        },
+        {
+          "heading": "Main loop",
+          "code": "typedef struct Edge { int to, w; struct Edge *next; } Edge;\n\nvoid dijkstra_heap(int V, Edge *adj[], int src, int dist[], int parent[], Heap *h) {\n  for (int i = 0; i < V; i++) { dist[i] = INT_MAX; parent[i] = -1; }\n  dist[src] = 0;\n  push(h, 0, src);\n  while (h->n > 0) {\n    Item cur = pop(h);\n    if (cur.d > dist[cur.v]) continue;          /* stale entry */\n    for (Edge *e = adj[cur.v]; e; e = e->next) {\n      int nd = cur.d + e->w;\n      if (nd < dist[e->to]) {\n        dist[e->to] = nd;\n        parent[e->to] = cur.v;\n        push(h, nd, e->to);\n      }\n    }\n  }\n}"
+        }
+      ]
+    },
+    {
+      "title": "Lazy deletion and the stale check",
+      "summary": "Skip outdated heap entries instead of implementing decrease-key.",
+      "sections": [
+        {
+          "body": "When a shorter route to v is found while an older entry for v is still in the heap, you just push a second entry. When the older, larger entry is popped later, `cur.d > dist[cur.v]` is true and you skip it. Each edge pushes at most one entry, so the heap size is bounded by E and the cost per push or pop is O(log E) = O(log V), since E is at most V squared. The alternative, an indexed heap with true decrease-key, saves memory but needs a position array and is harder to get right under interview time pressure."
         }
       ]
     },
     {
       "title": "Recovering the path",
-      "summary": "Parent pointers.",
+      "summary": "Parent pointers turn distances into routes.",
       "sections": [
         {
-          "body": "Whenever you improve dist[v] through u, set parent[v] = u. After the run, follow parents from the target back to the source and reverse the list."
+          "body": "Set `parent[v] = u` whenever relaxation through u improves v. After the run, start at the target and follow parents until you reach -1 (the source has no parent). That visits the path backwards, so print it with recursion or reverse an array. If `dist[target]` is still infinity, there is no path and the parent chain is meaningless.",
+          "code": "void print_path(int parent[], int target) {\n  if (target == -1) return;\n  print_path(parent, parent[target]);\n  printf(\"%d \", target);\n}"
         }
       ]
     },
     {
-      "title": "Early exit and A*",
-      "summary": "Faster to one target.",
+      "title": "Negative edges and Bellman-Ford",
+      "summary": "Know when to abandon Dijkstra.",
       "sections": [
         {
-          "body": "If you need only one destination, stop when it is popped. A* adds a heuristic estimate of remaining distance to the priority, expanding fewer vertices while staying optimal for admissible heuristics (used in maps and games)."
+          "body": "Counterexample: A to B costs 2, A to C costs 5, C to B costs -4. Dijkstra settles B at 2 because it is the closest, then C at 5. The real best path to B is A, C, B with cost 1. Once B is settled the algorithm never revisits it, so it returns 2.\n\nBellman-Ford fixes this by relaxing every edge V-1 times, giving O(VE). One more pass that still finds an improvement proves a negative cycle is reachable, in which case shortest paths are undefined. A cheap middle ground is SPFA, a queue-based Bellman-Ford that is fast on average but still O(VE) in the worst case."
         }
       ]
     },
     {
-      "title": "Dijkstra versus BFS, Bellman-Ford, Floyd-Warshall",
-      "summary": "Choosing a shortest-path algorithm.",
+      "title": "Early exit and single-target search",
+      "summary": "Stop when the target is popped.",
       "sections": [
         {
-          "bullets": [
-            "BFS: unweighted graphs, O(V + E).",
-            "Dijkstra: weighted, non-negative, single source.",
-            "Bellman-Ford: negative edges and negative-cycle detection, O(VE).",
-            "Floyd-Warshall: all pairs, O(V³)."
-          ]
+          "body": "If you only need one destination, return as soon as the target comes off the heap: its distance is final at that moment. For long, narrow searches this can skip most of the graph. Bidirectional search runs two Dijkstras, from the source on the original graph and from the target on the reversed graph, and stops once the best meeting point cannot improve. It cuts the explored area dramatically, because the area grows roughly with the square of the radius on road-like graphs."
         }
       ]
     },
     {
-      "title": "Real uses",
-      "summary": "Where it runs.",
+      "title": "A* search",
+      "summary": "Dijkstra with a heuristic that points toward the goal.",
       "sections": [
         {
-          "bullets": [
-            "Route planning and navigation.",
-            "Network routing: OSPF runs Dijkstra on the link-state database.",
-            "Game pathfinding and robotics.",
-            "Minimum-cost flow subroutines."
-          ]
+          "body": "A* orders the heap by `dist[u] + h(u)` where h(u) estimates the remaining cost to the target. The result is optimal if h is **admissible** (never overestimates) and, for the simple version without reopening nodes, **consistent** (`h(u) <= w(u,v) + h(v)`). On a grid with 4-direction moves, the Manhattan distance is a good heuristic; for 8-direction moves with diagonal cost 1, use Chebyshev distance; for straight-line travel, Euclidean distance. With h = 0, A* is exactly Dijkstra."
+        }
+      ]
+    },
+    {
+      "title": "Dijkstra versus Prim, BFS and DAG relaxation",
+      "summary": "Four neighbours in the algorithm family.",
+      "sections": [
+        {
+          "body": "Prim's minimum spanning tree algorithm has the same loop shape but selects by the weight of the single edge connecting a vertex to the tree, not by cumulative distance. Take edges A-B 3, A-C 4, B-C 2 from A. Dijkstra reaches C directly at 4 (the route through B costs 5), so its shortest-path tree has weight 3 + 4 = 7. Prim attaches C by its cheapest connecting edge, B-C at 2, for a spanning tree of weight 5.\n\nBFS is the special case of unit weights. For a DAG, relax vertices in topological order and you get O(V + E) with negative weights allowed. For problems with state, such as cheapest flights with at most K stops, extend the vertex to a pair (city, stops used) and run Dijkstra on that expanded graph, or use K+1 rounds of Bellman-Ford."
+        }
+      ]
+    },
+    {
+      "title": "Modeling interview problems",
+      "summary": "Most tasks reduce to building the right graph.",
+      "sections": [
+        {
+          "body": "**Network delay time**: run Dijkstra from the source and return the maximum distance, or -1 if any vertex is unreachable. **Path with minimum effort** on a grid: the edge weight is the absolute height difference and the path cost is the maximum edge, so replace the sum in the relaxation with `max`; Dijkstra still works because the cost is monotone non-decreasing along a path. **Swim in rising water** and **path with maximum probability** (use a max-heap or negative log of probabilities) follow the same pattern. The trick is to identify the vertex (often a cell or a pair), the edge cost, and an aggregation that never gets better as you extend a path."
+        }
+      ]
+    },
+    {
+      "title": "Worked example on a five-vertex graph",
+      "summary": "Trace the settle order and the final distances by hand.",
+      "sections": [
+        {
+          "body": "Take an undirected graph with edges 0-1 weight 4, 0-2 weight 8, 1-2 weight 3, 1-4 weight 6, 2-3 weight 2 and 3-4 weight 10, source 0. Start with dist = [0, inf, inf, inf, inf].\n\nSettle 0 (distance 0): vertex 1 becomes 4 and vertex 2 becomes 8. Settle 1 (distance 4): vertex 2 improves to 4 + 3 = 7 and vertex 4 becomes 4 + 6 = 10. Settle 2 (distance 7): vertex 3 becomes 7 + 2 = 9. Settle 3 (distance 9): the route to vertex 4 would cost 19, which does not beat 10. Settle 4. The final distances are [0, 4, 7, 9, 10]. Notice that the direct edge 0-2 (8) loses to the detour 0, 1, 2 (7), and the route to vertex 3 is the three-edge path 0, 1, 2, 3 with cost 4 + 3 + 2 = 9.\n\nIn the heap version the same run pushes (8, 2) early and later pops it as a stale entry after (7, 2) has already been handled, which is exactly the check `d > dist[u]`."
+        }
+      ]
+    },
+    {
+      "title": "Settled set, frontier and the priority queue",
+      "summary": "Why a heap is the natural container for the frontier.",
+      "sections": [
+        {
+          "body": "Think of two sets: the vertices already in the shortest-path tree, and the rest. Every round moves the closest outside vertex into the tree and refreshes the distances of its neighbours. A priority queue always hands you the entry with the smallest current distance, so you explore short paths before long ones. Once a vertex has been popped, its neighbours have already been offered the best possible distance through it, so any later duplicate entry for that vertex carries no new information and is skipped. The auxiliary space of this version is O(V + E): the distance array is O(V) and the queue can hold one entry per relaxed edge."
+        }
+      ]
+    },
+    {
+      "title": "Related shortest-path problems",
+      "summary": "Problems that reduce to this family and what changes.",
+      "sections": [
+        {
+          "body": "**Shortest path in a DAG**: relax edges in topological order, O(V + E), negative weights allowed. **Minimum cost path in a grid**: each cell is a vertex, moving to a neighbour costs that cell's value; Dijkstra with a heap works when moves go in all four directions. **Print a negative weight cycle**: Dijkstra cannot, use Bellman-Ford and walk the parent chain. **Number of ways to reach the destination in the shortest time**: keep a count array; when a strictly shorter route is found reset the count to the predecessor's count, and when an equal route is found add it. **Snake and Ladder** and **Word Ladder**: every move costs 1, so plain BFS is the right tool, which is Dijkstra with unit weights and a simple queue."
         }
       ]
     }
   ],
   "takeaways": [
-    "Greedy: repeatedly finalize the closest unfinalized vertex and relax its edges.",
-    "O(V²) with arrays, O((V+E) log V) with a heap.",
-    "Requires non-negative weights.",
-    "Track parents to rebuild the actual path."
+    "Dijkstra gives single-source shortest paths when every edge weight is non-negative.",
+    "Each round settles the unsettled vertex with the smallest distance, then relaxes its outgoing edges.",
+    "Array version is O(V squared); binary-heap version is O((V + E) log V).",
+    "Use lazy deletion: push duplicates and skip entries where `d > dist[v]`.",
+    "A single negative edge can break it; switch to Bellman-Ford (O(VE)).",
+    "Keep a parent array to rebuild the path, and guard INT_MAX before adding.",
+    "A* is Dijkstra plus an admissible heuristic; BFS is Dijkstra with unit weights."
+  ],
+  "practice": [
+    {
+      "title": "Run Dijkstra by hand on a 6-vertex graph and list the settle order",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain with a counterexample why a negative edge breaks Dijkstra",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement the array version for an adjacency matrix and print the path",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement the heap version with adjacency lists and lazy deletion",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Network delay time: time for a signal from node k to reach all nodes",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Path with minimum effort across a height grid",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Path with maximum probability on an undirected graph",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Cheapest flights within K stops (state = city and stops used)",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Count the number of distinct shortest paths from 0 to n-1 modulo 1e9+7",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Snake and Ladder: fewest dice throws, using BFS as unit-weight Dijkstra",
+      "difficulty": "Medium"
+    }
   ],
   "references": [
     {
@@ -104,32 +261,6 @@
     {
       "label": "Reference: Dijkstra's shortest path (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/dijkstras-shortest-path-algorithm-greedy-algo-7/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Run Dijkstra by hand on a 6-vertex graph",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement the heap-based version with adjacency lists",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Reconstruct the shortest path, not only the distance",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Network delay time (LeetCode-style)",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Cheapest flights within K stops",
-      "difficulty": "Hard"
-    },
-    {
-      "title": "Explain why a negative edge breaks Dijkstra with a counterexample",
-      "difficulty": "Easy"
     }
   ]
 }

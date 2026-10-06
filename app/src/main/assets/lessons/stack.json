@@ -1,100 +1,216 @@
 {
-  "summary": "A stack is a linear collection with LIFO (last in, first out) access: only the top is accessible. Push adds to the top, pop removes from it, all in O(1).",
+  "summary": "A stack is a linear collection where you only touch one end, the top, so the last item you push is the first one you pop (LIFO). Push, pop and peek are all O(1), which makes it the cheapest structure for anything that must be undone in reverse order. You use stacks every time a function is called (the call stack), when a compiler matches brackets or evaluates expressions, in undo history, and in iterative depth-first search and backtracking.",
   "sections": [
     {
-      "heading": "Operations",
+      "heading": "Overview",
+      "body": "Picture a pile of plates. You add a plate to the top and take a plate from the top; reaching into the middle is not allowed. That single restriction is the whole idea. By giving up random access you get a structure whose operations never need to shift, search or rebalance anything, so every operation is constant time.\n\nStacks matter because so many problems have a nested or reversible shape. A bracket you opened last must be closed first. The function you called last must return first. The edit you made last is the one undo reverses first. Whenever the most recent unfinished thing is the next thing to deal with, a stack is the natural fit. The machine itself relies on one: your program's call stack holds a frame per active function call."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "push(x): add x on top. O(1).",
-        "pop(): remove and return the top. O(1).",
-        "peek()/top(): read the top without removing. O(1).",
-        "isEmpty(), size(). O(1).",
-        "Overflow: push onto a full fixed-size stack. Underflow: pop from an empty one."
+        "**LIFO**: last in, first out. The most recently pushed element is the next one popped.",
+        "**Top**: the only accessible end. Everything below it is hidden until the top is removed.",
+        "**push(x)**: place x on top. O(1) (amortized O(1) if the backing array may grow).",
+        "**pop()**: remove and return the top element. O(1). Popping an empty stack is an error called **underflow**.",
+        "**peek() / top()**: read the top without removing it. O(1).",
+        "**isEmpty() and size()**: O(1) queries. A correct pop or peek always checks isEmpty first.",
+        "**Overflow**: pushing onto a full fixed-capacity stack. A linked or growable stack only overflows when memory runs out.",
+        "**Abstract data type**: a stack is defined by its operations and their order guarantees, not by its storage. Arrays, linked lists and deques can all implement it."
       ]
     },
     {
-      "heading": "Array implementation",
-      "body": "Keep an array and an index `top` (-1 when empty). Push increments top then stores; pop reads then decrements. Fixed capacity unless you grow the array (amortized O(1) push).",
-      "code": "typedef struct { int data[100]; int top; } Stack;\nvoid init(Stack *s) { s->top = -1; }\nint push(Stack *s, int x) { if (s->top == 99) return -1; s->data[++s->top] = x; return 0; }\nint pop(Stack *s, int *out) { if (s->top < 0) return -1; *out = s->data[s->top--]; return 0; }"
+      "heading": "How It Works",
+      "body": "The simplest implementation is an array plus an integer `top` that holds the index of the current top element, or -1 when the stack is empty. Push increments `top` and then stores; pop reads the element and then decrements `top`. Nothing is erased on pop; the slot is simply considered free and will be overwritten by the next push.\n\nWorked example. Start empty (top = -1). push(10) gives top = 0, data = [10]. push(20) gives top = 1, data = [10, 20]. push(30) gives top = 2. pop() returns 30 and top becomes 1. peek() now returns 20 without changing anything. pop() twice more returns 20 then 10 and leaves top = -1. A further pop would be underflow and must be reported, not silently ignored.\n\nThe code below is a complete fixed-capacity stack in C. Note that `push` and `pop` return a status instead of crashing, so callers can react to overflow and underflow.",
+      "code": "#include <stdio.h>\n#include <stdbool.h>\n\n#define CAP 100\n\ntypedef struct {\n    int data[CAP];\n    int top;            /* index of top element, -1 when empty */\n} Stack;\n\nvoid init(Stack *s)           { s->top = -1; }\nbool is_empty(const Stack *s) { return s->top == -1; }\nbool is_full(const Stack *s)  { return s->top == CAP - 1; }\n\nbool push(Stack *s, int x) {\n    if (is_full(s)) return false;       /* overflow */\n    s->data[++s->top] = x;\n    return true;\n}\n\nbool pop(Stack *s, int *out) {\n    if (is_empty(s)) return false;      /* underflow */\n    *out = s->data[s->top--];\n    return true;\n}\n\nbool peek(const Stack *s, int *out) {\n    if (is_empty(s)) return false;\n    *out = s->data[s->top];\n    return true;\n}\n\nint main(void) {\n    Stack s; init(&s);\n    int v;\n    push(&s, 10); push(&s, 20); push(&s, 30);\n    pop(&s, &v);  printf(\"%d\\n\", v);   /* 30 */\n    peek(&s, &v); printf(\"%d\\n\", v);   /* 20 */\n    return 0;\n}"
     },
     {
-      "heading": "Linked-list implementation",
-      "body": "Push and pop at the head of a singly linked list. No capacity limit, but each element carries a pointer and a malloc."
-    },
-    {
-      "heading": "Applications",
+      "heading": "Variants & Types",
       "bullets": [
-        "Function calls: the call stack stores frames and return addresses.",
-        "Undo/redo and browser history.",
-        "Balanced parentheses and syntax checking.",
-        "Expression evaluation and infix-to-postfix conversion.",
-        "Depth-first search and backtracking.",
-        "Monotonic stack problems (next greater element, largest rectangle)."
+        "**Array stack (fixed)**: simplest and fastest, contiguous and cache friendly, but capacity is fixed at compile time or creation time.",
+        "**Dynamic array stack**: when full, `realloc` to double the capacity. Push is amortized O(1); one push in a while costs O(n) for the copy.",
+        "**Linked stack**: push and pop at the head of a singly linked list. No capacity limit and no resize spikes, but one `malloc` and one pointer of overhead per element, and poorer locality.",
+        "**Deque as a stack**: C++ `std::stack` defaults to `std::deque`; Python and Java programmers often use a deque or list. It grows in chunks, so there is no whole-buffer copy.",
+        "**Two stacks in one array**: grow one from the left end and the other from the right end of a single array. Overflow happens only when they meet, so space is shared.",
+        "**Min stack**: a stack that also reports the minimum in O(1) by keeping a second stack of running minimums (or storing pairs).",
+        "**Monotonic stack**: a stack kept sorted by an invariant (always decreasing or increasing). Used for next-greater and range problems."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**push, pop, peek, isEmpty, size**: O(1) worst case for array (non-growing) and linked implementations.",
+        "**Dynamic array push**: O(1) amortized, O(n) worst case on the push that triggers a resize. Doubling keeps the total copy work under 2n for n pushes.",
+        "**Space**: O(n) for n elements. A linked stack on a 64-bit machine pays about 8 bytes for the next pointer plus allocator overhead (often 16 to 32 bytes total per node for an int payload), versus 4 bytes per int in an array.",
+        "**Search**: O(n), because you must pop through elements. If you need lookup, a stack is the wrong tool.",
+        "**Call stack limit**: typically 8 MB per thread on Linux (`ulimit -s`) and 1 MB on Windows by default. A recursion about 100,000 frames deep can exhaust it."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Forgetting the empty check**: popping or peeking an empty stack reads `data[-1]` in an array version (undefined behavior) or dereferences NULL in a linked one.",
+        "**Off by one on top**: starting `top` at 0 versus -1 changes whether you pre-increment or post-increment. Pick one convention and test the full and empty boundaries.",
+        "**Leaking the linked stack**: on pop you must save the old head, advance the head, then `free` the old node. Freeing first loses the next pointer.",
+        "**Returning a pointer into the stack**: after pop, the slot may be overwritten by the next push, so never keep a pointer to a popped element.",
+        "**Unbounded recursion**: recursive code uses the call stack implicitly. Missing base cases or very deep inputs cause stack overflow, which crashes the process.",
+        "**Using a stack where order matters the other way**: reversing a sequence is a stack strength, but if you need first-come-first-served you want a queue.",
+        "**Thread safety**: a plain stack is not safe to share between threads. Lock-free stacks also face the ABA problem when nodes are reused."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Call stack**: every function call pushes a frame with arguments, locals and the return address; return pops it. This is why recursion works.",
+        "**Undo and redo**: editors push each action on an undo stack; undo pops it and pushes onto a redo stack.",
+        "**Browser history**: the Back button pops the most recent page.",
+        "**Compilers and parsers**: matching brackets, evaluating postfix expressions, shunting-yard conversion, and recursive-descent parse state.",
+        "**Depth-first search and backtracking**: an explicit stack replaces recursion for graph traversal, maze solving and N-Queens style search.",
+        "**Memory management**: stack allocation of locals is a bump of the stack pointer, which is why it is much faster than `malloc`.",
+        "**Virtual machines**: the JVM, CPython and WebAssembly are stack machines whose instructions pop operands and push results."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why is a stack O(1)?** All changes happen at one end, so nothing shifts or searches.",
+        "**Stack versus queue?** LIFO versus FIFO. A stack reverses order; a queue preserves it.",
+        "**How do you check balanced brackets?** Push openers, pop and match on closers, balanced only if every match succeeds and the stack ends empty.",
+        "**Implement a min stack?** Keep an auxiliary stack of running minimums; push to it when the new value is less than or equal to its top; pop from it when the popped value equals its top.",
+        "**Implement a queue with two stacks?** Push into an in stack; when the out stack is empty, move everything over. Amortized O(1) per operation.",
+        "**Implement a stack with queues?** Push then rotate the queue so the new element is at the front: O(n) push, O(1) pop.",
+        "**Array versus linked stack?** Array: faster, cache friendly, fixed or amortized capacity. Linked: no resize spike, per-node overhead.",
+        "**Is recursion a stack?** Yes: each call is a frame on the call stack, and any recursion can be rewritten iteratively with an explicit stack."
       ]
     }
   ],
   "subtopics": [
     {
+      "title": "Array implementation details",
+      "summary": "Index conventions, capacity and growth.",
+      "sections": [
+        {
+          "body": "Two conventions exist. With `top = -1` as empty you pre-increment on push (`data[++top] = x`) and post-decrement on pop (`data[top--]`). With `top = 0` as the count of elements you store at `data[top++]` and read `data[--top]`. Both are fine; mixing them is the classic bug.\n\nTo make the stack growable, keep a `capacity` field and double it with `realloc` when full. Always assign the result of `realloc` to a temporary first, because on failure it returns NULL and you would otherwise lose (and leak) the old buffer.",
+          "code": "int push_grow(int **a, int *cap, int *top, int x) {\n    if (*top + 1 == *cap) {\n        int *n = realloc(*a, (size_t)(*cap) * 2 * sizeof **a);\n        if (!n) return -1;          /* old buffer still valid */\n        *a = n; *cap *= 2;\n    }\n    (*a)[++*top] = x;\n    return 0;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Linked-list implementation",
+      "summary": "Push and pop at the head, no capacity limit.",
+      "sections": [
+        {
+          "body": "Each node holds a value and a `next` pointer. The stack keeps only a `head` pointer, which is the top. Push allocates a node, points its `next` at the old head, and makes it the new head. Pop saves the head, moves `head` to `head->next`, frees the saved node and returns its value. Both are O(1) and neither ever copies elements.",
+          "code": "typedef struct Node { int val; struct Node *next; } Node;\n\nint push(Node **head, int x) {\n    Node *n = malloc(sizeof *n);\n    if (!n) return -1;\n    n->val = x; n->next = *head; *head = n;\n    return 0;\n}\nint pop(Node **head, int *out) {\n    if (!*head) return -1;\n    Node *t = *head;\n    *out = t->val; *head = t->next;\n    free(t);\n    return 0;\n}"
+        }
+      ]
+    },
+    {
       "title": "Balanced parentheses",
       "summary": "The canonical stack problem.",
       "sections": [
         {
-          "body": "Push each opening bracket; on a closing bracket pop and check that it matches. The string is balanced if every pop matches and the stack ends empty.",
-          "code": "for each c in s:\n  if c in '([{': push(c)\n  else: if empty or not match(pop(), c): return false\nreturn empty"
+          "body": "Scan left to right. Push every opening bracket. On a closing bracket, the stack must be non-empty and its top must be the matching opener; pop it. After the scan the stack must be empty, otherwise some opener was never closed. For `{[()]}` the stack grows to three then unwinds cleanly. For `([)]` the `)` meets a `[` on top and fails. Time O(n), space O(n) worst case. The same check also works with O(1) extra space when the input is a mutable C string: reuse the front of the string itself as the stack by writing each opener at `s[++top]` and comparing against `s[top]` on a closer, then decrementing. This is not possible in languages with immutable strings. Quick test cases: `[()()]{}` is balanced, `([{]})` is not because the `]` arrives while `{` is on top.",
+          "code": "int balanced(const char *s) {\n    char st[256]; int top = -1;\n    for (; *s; s++) {\n        char c = *s;\n        if (c == '(' || c == '[' || c == '{') {\n            if (top == 255) return 0;\n            st[++top] = c;\n        } else if (c == ')' || c == ']' || c == '}') {\n            if (top < 0) return 0;\n            char o = st[top--];\n            if ((c == ')' && o != '(') || (c == ']' && o != '[') ||\n                (c == '}' && o != '{')) return 0;\n        }\n    }\n    return top == -1;\n}"
         }
       ]
     },
     {
       "title": "Postfix evaluation",
-      "summary": "No parentheses needed.",
+      "summary": "Evaluate without parentheses using one stack.",
       "sections": [
         {
-          "body": "Scan tokens: push numbers; on an operator pop two operands, apply, push the result. `3 4 + 2 *` gives 14. Dijkstra's shunting-yard algorithm converts infix to postfix using an operator stack."
+          "body": "In postfix (reverse Polish) notation the operator follows its operands, so `3 4 + 2 *` means (3 + 4) * 2. Scan tokens: push numbers; on an operator pop the right operand first, then the left, apply, and push the result. Order matters for `-` and `/`: for `8 2 /` the first pop gives 2 (right) and the second gives 8 (left), so compute left / right. At the end the stack holds exactly one value, the answer (14 here). Time O(n). Worked example: `2 3 1 * + 9 -` pushes 2, 3, 1; `*` pops 1 and 3 and pushes 3; `+` pops 3 and 2 and pushes 5; 9 is pushed; `-` pops 9 then 5 and pushes 5 minus 9, giving -4. For `2 3 ^ 1 +` the `^` (power) gives 8 and the result is 9. Division in such exercises is often defined as floor division, which differs from C's truncation toward zero for negative results, so state which one you mean."
+        },
+        {
+          "body": "Prefix notation works the same way scanned from the right. Postfix needs no precedence rules and no parentheses, which is why compilers and calculators like it."
+        }
+      ]
+    },
+    {
+      "title": "Infix to postfix (shunting-yard)",
+      "summary": "Convert normal expressions using an operator stack.",
+      "sections": [
+        {
+          "body": "Dijkstra's shunting-yard algorithm scans infix tokens. Operands go straight to the output. For an operator, while the stack top is an operator of higher precedence (or equal precedence and the new one is left associative), pop it to the output; then push the new operator. A `(` is pushed; a `)` pops to the output until the matching `(`, which is discarded. At the end pop everything left. Example: `a + b * c` becomes `a b c * +`, because `*` binds tighter and stays above `+` until the end. Exponent `^` is right associative, so equal-precedence `^` is not popped. Time O(n). A second example: `a*(b+c)/d` becomes `abc+*d/`, because the parenthesized sum is emitted first, then `*`, and `/` (same precedence, left associative) pops the `*` before it is pushed. And `a+b*c+d` becomes `abc*+d+`. Typical precedence values are `^` 3, `*` and `/` 2, `+` and `-` 1. The mirror problems (prefix to infix, postfix to prefix, infix to prefix and so on) use the same stack mechanics."
         }
       ]
     },
     {
       "title": "Call stack and recursion",
-      "summary": "Hidden stack.",
+      "summary": "The hidden stack behind every function call.",
       "sections": [
         {
-          "body": "Every recursive call pushes a frame. Deep recursion can overflow the stack; any recursion can be converted to iteration with an explicit stack, which is how iterative DFS works."
+          "body": "Each call pushes a frame: arguments, saved registers, return address and local variables. Returning pops it. Recursion simply stacks many frames of the same function. A factorial(5) call chain holds frames for 5, 4, 3, 2 and 1 before the first return. Without a base case, or with depth in the hundreds of thousands, you hit the stack limit and the process gets SIGSEGV. Any recursion can be turned into a loop with an explicit stack, which is how iterative DFS and in-order tree traversal work and how you avoid overflow on deep inputs."
         }
       ]
     },
     {
       "title": "Monotonic stack",
-      "summary": "Next greater element in O(n).",
+      "summary": "Next greater element and stock span in O(n).",
       "sections": [
         {
-          "body": "Keep a stack of indices with decreasing values. When a larger value arrives, pop and resolve each smaller one. Each element is pushed and popped once, so total O(n)."
+          "body": "Keep a stack of indices whose values are strictly decreasing from bottom to top. When a new value arrives, pop every smaller index; the new value is the next greater element for each popped index. Each element is pushed once and popped at most once, so the loop is O(n) even though it has a nested while. The same pattern gives the stock span (count of consecutive previous days with price at most today's), daily temperatures, largest rectangle in a histogram and trapping rain water. The variant that scans right to left is equally common: for each element pop stack entries that are less than or equal to it (they can never be anyone's next greater element), then the stack top, if any, is the answer; finally push the element. For [1, 3, 2, 4] the answers are [3, 4, 4, -1], and for [6, 8, 0, 1, 3] they are [8, -1, 1, 3, -1]. The naive double loop is O(n squared) time and O(1) space; the stack version is O(n) time and O(n) space.",
+          "code": "/* next greater element, -1 if none */\nvoid nge(const int *a, int n, int *res) {\n    int st[1000], top = -1;\n    for (int i = 0; i < n; i++) {\n        while (top >= 0 && a[st[top]] < a[i])\n            res[st[top--]] = a[i];\n        st[++top] = i;\n    }\n    while (top >= 0) res[st[top--]] = -1;\n}"
         }
       ]
     },
     {
-      "title": "Deque-based implementation",
-      "summary": "Using a double-ended queue as a stack.",
+      "title": "Min stack",
+      "summary": "Constant-time minimum alongside push and pop.",
       "sections": [
         {
-          "body": "A deque (C++ `std::deque`, Python `collections.deque`) supports O(1) push and pop at one end and grows without reallocating the whole buffer, so it makes a convenient stack with no capacity limit. Array stacks are tighter in memory; linked stacks avoid resizing but add per-node overhead."
+          "body": "Maintain a second stack that records the minimum so far. On push, push the value to the main stack, and push it to the min stack if it is less than or equal to the current minimum. On pop, if the popped value equals the min stack top, pop that too. `getMin` reads the min stack top in O(1). The equality (not strict) comparison is what keeps duplicates of the minimum correct. An alternative stores a pair (value, minSoFar) in one stack, using double the space but with simpler logic."
+        }
+      ]
+    },
+    {
+      "title": "Deque-based and queue-based stacks",
+      "summary": "Building a stack from other structures.",
+      "sections": [
+        {
+          "body": "A double-ended queue gives O(1) push and pop at one end and grows in blocks, so using it as a stack avoids both fixed capacity and per-node allocation. To build a stack from a single queue, push by enqueueing the new element and then rotating the previous n elements behind it, so the newest is at the front: push is O(n), pop is O(1). Building one from two queues is the same idea with an extra buffer. These are interview exercises; in production you use the native stack type."
+        }
+      ]
+    },
+    {
+      "title": "Fixed versus dynamic stacks and library stacks",
+      "summary": "Capacity choices, language containers and the pros and cons.",
+      "sections": [
+        {
+          "body": "A fixed-size stack has a predefined capacity: pushing when full is overflow, popping when empty is underflow, and it is usually a static array. A dynamic stack grows and shrinks as needed, using a linked list or a resizable array (C++ `vector`, Java `ArrayList`, Python `list`). In practice dynamic stacks are the norm because they avoid overflow for ordinary workloads, though memory can still run out. In libraries: C++ `std::stack` adapts `deque` or `vector`; in Java, prefer `ArrayDeque` over the legacy synchronized `Stack` class; in Python use a `list` with `append` and `pop`, or `collections.deque`; JavaScript uses an `Array` with `push` and `pop`."
+        },
+        {
+          "body": "Advantages: O(1) push and pop, minimal memory because only pushed elements are stored, and a strict LIFO order that suits calls and expression evaluation. Disadvantages: only the top is accessible, so reading or changing a middle element means popping above it, and a fixed array can overflow and lose data."
+        }
+      ]
+    },
+    {
+      "title": "Stock span and previous greater element",
+      "summary": "Span equals distance to the previous greater price.",
+      "sections": [
+        {
+          "body": "The span of day i is the number of consecutive days ending at i, including i, whose price is at most today's. For prices [100, 80, 90, 120] the spans are [1, 1, 2, 4]; for [10, 4, 5, 90, 120, 80] they are [1, 1, 2, 4, 5, 1]. The naive method walks left from each day, O(n squared). The stack method observes that the walk always stops at the previous greater element, so keep a stack of indices with decreasing prices: pop while the top price is at most today's, then `span = i - stack_top` (or `i + 1` if the stack is empty), and push i. Each index is pushed and popped once, so it is O(n) time and O(n) space. The previous smaller, next smaller and next greater variants are the same loop with the comparison and scan direction changed."
+        }
+      ]
+    },
+    {
+      "title": "Classic stack problem catalogue",
+      "summary": "Problems that recur once you know the pattern.",
+      "sections": [
+        {
+          "body": "Easy: the celebrity problem, two stacks in one array, reversing a stack with recursion, converting between prefix, infix and postfix, evaluating postfix, and a data structure with O(1) push, pop and min. Medium: k stacks in one array, stack from queues, previous smaller element, buildings facing the sun, sorting a stack, deleting the middle of a stack, iterative Tower of Hanoi, checking whether a sequence is stack sortable or whether a permutation is achievable, and finding the closing bracket for a given opener. Hard: largest rectangle in a histogram, sum of maximums over all subarrays, maximum of minimums for every window size, stack with max frequency, longest valid parentheses substring, redundant brackets, and removing brackets around plus and minus operators. Most reduce to one of three patterns: matching nested pairs, evaluating or converting expressions, or a monotonic stack over an array."
         }
       ]
     }
   ],
   "takeaways": [
-    "LIFO: only the top is accessible; push/pop/peek are O(1).",
-    "Implement with an array (fast, bounded) or a linked list (unbounded).",
-    "Powers recursion, undo, parsing, and DFS.",
-    "Watch for overflow and underflow."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Stack data structure (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/stack-data-structure/"
-    }
+    "A stack is LIFO: only the top is reachable, and push, pop and peek are O(1).",
+    "Always check for empty before pop or peek, and for full before push in a fixed array.",
+    "The call stack is a real stack; recursion depth is bounded by it (about 8 MB on Linux by default).",
+    "Balanced brackets, postfix evaluation and shunting-yard are all one-pass stack algorithms.",
+    "A monotonic stack solves next-greater and span problems in O(n) because each element is pushed and popped once.",
+    "Array stacks win on speed and locality; linked stacks win on never needing to resize.",
+    "Dynamic array push is amortized O(1) by doubling, with an occasional O(n) copy."
   ],
   "practice": [
     {
@@ -102,7 +218,7 @@
       "difficulty": "Easy"
     },
     {
-      "title": "Convert infix to postfix",
+      "title": "Evaluate a postfix expression",
       "difficulty": "Easy"
     },
     {
@@ -110,7 +226,15 @@
       "difficulty": "Easy"
     },
     {
-      "title": "Next greater element",
+      "title": "Implement a min stack with O(1) getMin",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Next greater element for every array item",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Convert infix to postfix",
       "difficulty": "Medium"
     },
     {
@@ -118,7 +242,7 @@
       "difficulty": "Medium"
     },
     {
-      "title": "Tower of Hanoi",
+      "title": "Implement a queue using two stacks",
       "difficulty": "Medium"
     },
     {
@@ -126,8 +250,26 @@
       "difficulty": "Hard"
     },
     {
-      "title": "Detect redundant brackets",
+      "title": "Longest valid parentheses substring",
       "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed., chapter 10",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Reference: Stack data structure (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/stack-data-structure/"
+    },
+    {
+      "label": "Reference: Implement stack using array (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/implement-stack-using-array/"
+    },
+    {
+      "label": "Reference: Next greater element (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/dsa/next-greater-element/"
     }
   ]
 }

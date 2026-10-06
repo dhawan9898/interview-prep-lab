@@ -1,92 +1,250 @@
 {
-  "summary": "Union-find (disjoint-set union) maintains a partition of elements into groups and supports two operations: find which group an element belongs to, and union two groups. With two simple optimizations, each operation takes nearly constant amortized time.",
+  "summary": "Union-find, also called a disjoint-set union (DSU), keeps track of a collection of non-overlapping sets and supports two operations: find which set an element belongs to, and union two sets into one. With union by size and path compression, each operation costs O(alpha(n)) amortized, where the inverse Ackermann function alpha is at most 4 for any input that fits in the universe. It powers Kruskal's minimum spanning tree, connected-component counting, cycle detection in undirected graphs, and many 'are these two things connected' interview problems.",
   "sections": [
     {
-      "heading": "Representation",
-      "body": "Each set is a tree stored in a parent array. A root points to itself and acts as the set's representative. Two elements are in the same set iff they have the same root.",
-      "code": "int parent[N], rnk[N];\nvoid make_sets(int n) { for (int i = 0; i < n; i++) { parent[i] = i; rnk[i] = 0; } }"
+      "heading": "Overview",
+      "body": "Imagine n people, each initially in a group of one. Facts arrive such as 'Ana and Bo are friends'. You need to answer, quickly and repeatedly, 'are Ana and Cy in the same friend circle?'. Rescanning a graph after each fact would cost O(n) per query. Union-find answers each query in nearly constant time by storing each set as a tree and using the **root** as the set's name.\n\nIt handles only merging, never splitting. That restriction is what makes it so cheap. Variants with rollback or offline processing cover some deletion cases, and a dynamic connectivity structure is needed for general edge removal."
     },
     {
-      "heading": "Find with path compression",
-      "body": "Walk up to the root, then point every visited node directly at it, flattening the tree for future queries.",
-      "code": "int find(int x) {\n  if (parent[x] != x) parent[x] = find(parent[x]);   // path compression\n  return parent[x];\n}"
-    },
-    {
-      "heading": "Union by rank",
-      "body": "Attach the shallower tree under the deeper one so trees stay short. Without it, a bad sequence of unions can create a chain with O(n) finds.",
-      "code": "void unite(int a, int b) {\n  a = find(a); b = find(b);\n  if (a == b) return;\n  if (rnk[a] < rnk[b]) { int t = a; a = b; b = t; }\n  parent[b] = a;\n  if (rnk[a] == rnk[b]) rnk[a]++;\n}"
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Naive: find O(n) worst case.",
-        "With union by rank and path compression: amortized O(α(n)) per operation, where α is the inverse Ackermann function (below 5 for any practical n).",
-        "Space: O(n)."
+        "**Disjoint sets**: a partition of the elements; each element belongs to exactly one set.",
+        "**Representative (root)**: the element whose parent is itself. Two elements are in the same set if and only if they have the same root.",
+        "**Parent array**: `parent[i]` points one step toward the root. The structure is a forest, one tree per set.",
+        "**Find**: follow parent links from x to its root, optionally flattening the path on the way.",
+        "**Union**: link the root of one tree under the root of the other.",
+        "**Union by size or rank**: always attach the smaller (or lower) tree beneath the larger, keeping trees shallow.",
+        "**Path compression**: after a find, point every node on the path directly at the root.",
+        "**Inverse Ackermann alpha(n)**: an extremely slow-growing function; alpha(n) is at most 4 for any n you could ever store."
       ]
     },
     {
-      "heading": "What it is used for",
+      "heading": "How It Works",
+      "body": "Start with parent[i] = i for all i. Union(a, b) finds both roots; if they differ, one root becomes a child of the other. Find(x) climbs to the root.\n\nExample with 6 elements 0..5. Union(0,1): roots 0 and 1, sizes equal, so 1 goes under 0. Union(2,3): 3 goes under 2. Union(1,3): find(1)=0, find(3)=2, sizes both 2, so 2 goes under 0 and the tree for set {0,1,2,3} has root 0. Find(3) now walks 3 to 2 to 0; with path halving, 3 is re-pointed to 0 so the next find is one step. Union(4,5) gives {4,5}. The count of sets is now 2. Find(3) == Find(1) is true; Find(3) == Find(4) is false.\n\nBelow is a complete array-based implementation with path halving, a one-pass variant of compression that needs no recursion.",
+      "code": "#include <stdlib.h>\n\ntypedef struct {\n  int *parent;   /* parent[i] == i means i is a root */\n  int *size;     /* valid only at roots */\n  int count;     /* number of sets */\n} DSU;\n\nvoid dsu_init(DSU *d, int n) {\n  d->parent = malloc(n * sizeof(int));\n  d->size = malloc(n * sizeof(int));\n  d->count = n;\n  for (int i = 0; i < n; i++) { d->parent[i] = i; d->size[i] = 1; }\n}\n\nint dsu_find(DSU *d, int x) {\n  while (d->parent[x] != x) {\n    d->parent[x] = d->parent[d->parent[x]];   /* path halving */\n    x = d->parent[x];\n  }\n  return x;\n}\n\nint dsu_union(DSU *d, int a, int b) {        /* returns 1 if they were separate */\n  int ra = dsu_find(d, a), rb = dsu_find(d, b);\n  if (ra == rb) return 0;\n  if (d->size[ra] < d->size[rb]) { int t = ra; ra = rb; rb = t; }\n  d->parent[rb] = ra;                         /* attach smaller under larger */\n  d->size[ra] += d->size[rb];\n  d->count--;\n  return 1;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Cycle detection in undirected graphs (an edge joining two nodes with the same root closes a cycle).",
-        "Kruskal's minimum spanning tree.",
-        "Connected components, including dynamic ones as edges arrive.",
-        "Percolation and image segmentation, equivalence classes, grouping accounts."
+        "**Quick-find**: store the set id directly, so find is O(1) and union is O(n). Only useful when queries vastly outnumber unions.",
+        "**Quick-union**: plain parent links with no balancing. Trees can degenerate into chains, so both operations can cost O(n).",
+        "**Weighted (union by size) quick-union**: tree height is at most log2(n), so both operations are O(log n).",
+        "**Union by rank**: track an upper bound on the height instead of the size. Same asymptotics, a little less memory.",
+        "**Path compression** (full), **path halving**, **path splitting**: three ways to shorten paths during find. Halving and splitting are single-pass and iterative.",
+        "**Weighted DSU with offsets**: store a value on each link so you can answer 'what is the difference between x and y', for example for division equations or parity.",
+        "**Rollback DSU**: no path compression, record every union on a stack, and undo in reverse order. Used in offline dynamic connectivity.",
+        "**Hash-map DSU**: when elements are strings or large ids, map them to indices on the fly."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Union by size alone: O(log n) per find; the height never exceeds log2(n).",
+        "Path compression alone: O(log n) amortized per operation.",
+        "Both together: O(alpha(n)) amortized per operation (Tarjan, 1975, also proved to be optimal in the cell-probe model).",
+        "m operations on n elements cost O(m * alpha(n)), effectively linear.",
+        "Memory: two int arrays of n entries, 8 bytes per element in C. One million elements take about 8 MB.",
+        "Initialization is O(n); there is no cheaper way to make n singleton sets."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Forgetting to find roots before comparing**: `parent[a] == parent[b]` is wrong. Compare `find(a)` with `find(b)`.",
+        "**Union without finding roots first**: setting `parent[a] = b` directly links non-root nodes and corrupts both trees.",
+        "**Reading size from a non-root**: size is only meaningful at the root.",
+        "**Recursive find on long chains**: without union by size, a chain of a million nodes overflows the stack. Use the iterative form.",
+        "**Mixing up count tracking**: decrement the set count only when a union actually merges two different sets.",
+        "**Using DSU for deletion**: it cannot split sets. Reverse the timeline (process deletions as insertions backwards) or use rollback.",
+        "**Off-by-one in indexing**: problems with 1-based labels need an array of n + 1 elements."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Kruskal's algorithm**: the DSU decides whether an edge would close a cycle.",
+        "**Image processing**: connected-component labeling of pixels merges neighbouring same-colored cells.",
+        "**Percolation and Monte Carlo simulation**: a virtual top and bottom node test whether water can flow through.",
+        "**Network connectivity and clustering**: single-linkage clustering merges nearest groups until k remain.",
+        "**Compilers**: unification in type inference and Steensgaard-style alias analysis merge equivalence classes.",
+        "**Social and account merging**: merge accounts that share an email, or group users who are connected by any shared attribute."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What are the two key optimizations?** Union by rank or size, and path compression.",
+        "**Complexity with both?** O(alpha(n)) amortized per operation, nearly constant.",
+        "**How do you detect a cycle in an undirected graph?** For each edge, if both endpoints have the same root, the edge closes a cycle; otherwise union them.",
+        "**How do you count connected components?** Start with n and subtract one for each successful union.",
+        "**Why compare roots, not parents?** Parents are only one step up; only roots uniquely name a set.",
+        "**Can it support delete or split?** Not directly. Use offline reversal, a rollback DSU, or link-cut trees."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Walkthrough",
-      "summary": "Friend groups.",
+      "title": "Quick-find versus quick-union",
+      "summary": "The two naive designs and why neither is enough.",
       "sections": [
         {
-          "body": "Start with {a}, {b}, {c}, {d}. unite(a,b), unite(b,d) gives {a,b,d}, {c}. find(a) == find(d), so a and d are connected; find(a) != find(c)."
+          "body": "Quick-find keeps `id[i]` equal to the set name. Find is a single lookup, but union must rewrite every element of one set, so n unions cost about n squared / 2 operations. At n = 100,000 that is on the order of 5 billion steps. Quick-union keeps parent links, which makes union a single pointer write after two finds, but a sequence like union(0,1), union(1,2), union(2,3) and so on builds a chain of length n, so find costs O(n). Weighted quick-union and path compression combine the strengths of both and avoid both worst cases."
         }
       ]
     },
     {
-      "title": "Union by size",
-      "summary": "Alternative to rank.",
+      "title": "Union by size and by rank",
+      "summary": "Keep trees short by linking the smaller under the larger.",
       "sections": [
         {
-          "body": "Attach the smaller set to the larger and track set sizes. It gives the same bounds and lets you query the size of a component for free."
+          "body": "With union by size, a node's depth increases only when its tree is attached under a tree at least as large, so the size of its set at least doubles every time its depth grows. A set can double at most log2(n) times, so the depth is at most log2(n). Union by rank stores an upper bound on height instead. When two roots have equal rank, either becomes the parent and its rank increases by one; otherwise the lower-rank root attaches under the higher with no rank change. Size has one advantage: it gives you the set size for free, which many problems ask for."
         }
       ]
     },
     {
-      "title": "Counting components",
-      "summary": "A simple counter.",
+      "title": "Path compression, halving and splitting",
+      "summary": "Flatten the tree during find.",
       "sections": [
         {
-          "body": "Start with n components; each successful union (roots differ) reduces the count by one. At the end the counter holds the number of connected components."
+          "body": "Full path compression is easiest to write recursively: `return parent[x] = find(parent[x]);`. After the call, every node on the path points straight at the root. Path halving makes every other node on the path point to its grandparent, in one iterative pass with no extra memory. Path splitting makes every node on the path point to its grandparent. All three give the same asymptotic bound when combined with union by rank or size. Even without union by rank, compression alone gives O(log n) amortized per operation."
         }
       ]
     },
     {
-      "title": "Iterative find",
-      "summary": "Avoiding deep recursion.",
+      "title": "Inverse Ackermann bound",
+      "summary": "Why 'nearly constant' is a precise statement.",
       "sections": [
         {
-          "body": "On huge inputs the recursive find may overflow the stack. Do two loops: find the root, then walk again compressing the path.",
-          "code": "int find(int x) {\n  int r = x; while (parent[r] != r) r = parent[r];\n  while (parent[x] != r) { int nx = parent[x]; parent[x] = r; x = nx; }\n  return r;\n}"
+          "body": "The Ackermann function grows faster than any primitive recursive function, so its inverse alpha grows slower than any practical function. alpha(n) is at most 4 for any n up to a tower of exponentials far beyond the number of atoms in the universe. Tarjan proved in 1975 that the combination of union by rank and path compression takes O(m * alpha(n)) for m operations, and later work (Fredman and Saks) showed this cannot be improved, so union-find is not strictly linear, but you can treat it as constant."
         }
       ]
     },
     {
-      "title": "Limits",
-      "summary": "What it cannot do.",
+      "title": "Kruskal's algorithm and cycle detection",
+      "summary": "The canonical application.",
       "sections": [
         {
-          "body": "Standard union-find supports merging but not splitting a set. For deletions or undo you need a rollback variant (no path compression) or offline techniques."
+          "body": "Sort edges by weight, then for each edge call union on its endpoints. A returned 0 means both ends were already connected, so the edge would form a cycle and is skipped. The same loop without sorting detects whether an undirected graph has a cycle: the first edge whose union fails is on a cycle. 'Redundant connection' asks you to return that exact edge, which is the last edge in the input whose endpoints were already joined."
+        },
+        {
+          "body": "Counting components works the same way. Initialize count to n, subtract one whenever union succeeds, and the final count is the number of connected components. For a dynamic variant like 'Number of Islands II', add land cells one at a time, unite each with its four neighbours, and record the count after every addition."
+        }
+      ]
+    },
+    {
+      "title": "Weighted union-find and equations",
+      "summary": "Store a relation on each parent link.",
+      "sections": [
+        {
+          "body": "Let `w[x]` hold the ratio (or difference) from x to its parent. Find returns the root and, during compression, multiplies the ratios along the path so that `w[x]` becomes the ratio from x directly to the root. For 'evaluate division' problems, a / b = 2 is union(a, b) with ratio 2. A query a / c succeeds if the roots match, and the answer is w[a] / w[c]. The same idea with XOR instead of multiplication handles parity: a graph is bipartite if no edge connects two nodes that have the same parity relative to the root."
+        }
+      ]
+    },
+    {
+      "title": "Rollback and offline connectivity",
+      "summary": "Undo unions when you cannot compress.",
+      "sections": [
+        {
+          "body": "A rollback DSU uses union by size without path compression, so each union changes only two values: one parent link and one size. Push those on a stack, and undoing means popping and restoring. Each find is O(log n). Combined with a segment tree over time, where each edge is inserted into the O(log T) nodes covering its lifetime, this answers 'how many components after each step' when edges are added and removed offline, in O((n + m) log T log n)."
+        }
+      ]
+    },
+    {
+      "title": "Accounts, islands and grouping problems",
+      "summary": "Recognize when to reach for DSU.",
+      "sections": [
+        {
+          "body": "**Accounts merge**: assign an id to each account, map each email to the first account seen, and union an account with the earlier account whenever it shares an email; finally group emails by root. **Number of provinces**: union every connected pair in the adjacency matrix and return the count. **Longest consecutive sequence** can be done by uniting x with x + 1 when both exist. **Satisfiability of equality equations** ('a == b', 'b != c'): process all equalities first, then check that no inequality joins two nodes with the same root. A grid problem flattens (r, c) to the index r * cols + c."
+        }
+      ]
+    },
+    {
+      "title": "The friend-groups example",
+      "summary": "Ten people, six relations, four groups.",
+      "sections": [
+        {
+          "body": "Take individuals a to j. The relations are a-b, b-d, c-f, c-i, j-e and g-j. Initially every person is a set of one. Processing the relations merges them into G1 = {a, b, d}, G2 = {c, f, i}, G3 = {e, g, j} and G4 = {h}. Two people are direct or indirect friends exactly when they have the same representative. So a and d are friends (same group), while a and c are not. This is the shape of the two tasks the structure serves: add a new friendship (a union) and ask whether x and y are connected through any chain of friends (two finds and a comparison). Note that a and d were never given as a direct pair; they are linked through b, and the structure finds that without searching a graph."
+        }
+      ]
+    },
+    {
+      "title": "Array and tree representation",
+      "summary": "How a parent array encodes a forest.",
+      "sections": [
+        {
+          "body": "With N items, an integer array Parent[] has one slot per item, and the slot holds that item's parent. These links form one or more virtual trees, and each tree is one set. The topmost node, the **representative**, is the unique element with Parent[i] = i. Every other element reaches it by following parents upward. There is always exactly one representative per set, which is why comparing representatives answers the same-set question. For the example above, a possible array over the letters a..j is that b and d point to a, f and i point to c, e and g point to j, and h points to itself. Roots a, c, j and h name the four groups."
+        }
+      ]
+    },
+    {
+      "title": "The naive implementation and its worst case",
+      "summary": "Correct, but linear per operation.",
+      "sections": [
+        {
+          "body": "The simplest design has find climb parent links recursively until it reaches a root, and union find both roots and hang one under the other, with no balancing.",
+          "code": "typedef struct { int *parent; } NaiveDSU;\n\nint find_naive(NaiveDSU *d, int i) {\n  if (d->parent[i] == i) return i;          /* i is a root */\n  return find_naive(d, d->parent[i]);       /* climb one level */\n}\n\nvoid unite_naive(NaiveDSU *d, int i, int j) {\n  int irep = find_naive(d, i), jrep = find_naive(d, j);\n  d->parent[irep] = jrep;                   /* i's root hangs under j's root */\n}"
+        },
+        {
+          "body": "Check: with five elements, unite(1, 2) and unite(3, 4) leave 1 and 2 in one set and 3 and 4 in another, so find(1) == find(2) is true. The weakness is the order of operations. unite(1, 2), then unite(2, 3), then unite(3, 4) and so on hang each new root under the next element, building a chain as tall as the number of elements. A find from the bottom then costs O(n), so n operations cost O(n squared). The trees can become as skewed as a linked list, which is exactly why union by rank (or size) and path compression are added."
+        }
+      ]
+    },
+    {
+      "title": "Testing connectivity: find twice and compare",
+      "summary": "The third operation in the interface.",
+      "sections": [
+        {
+          "body": "Besides union and find, the structure answers 'are x and y in the same set?'. It does so with two finds and a comparison of the returned representatives, never by walking the whole set. The check costs two root climbs, so it is as fast as find itself. This is why problems that mix 'add a connection' with 'are these connected' are the natural territory of union-find: the cost per query stays tiny however large the groups grow, whereas rebuilding connectivity with a graph search would cost O(V + E) each time."
         }
       ]
     }
   ],
   "takeaways": [
-    "Parent-array forests: find returns the root, union links roots.",
-    "Path compression + union by rank/size give near-O(1) amortized operations.",
-    "Core tool for Kruskal's MST and connected components.",
-    "It supports merges only, not splits."
+    "Union-find maintains disjoint sets with find (which set?) and union (merge two sets).",
+    "Each set is a tree; the root is the representative, and `parent[root] == root`.",
+    "Union by size or rank plus path compression gives O(alpha(n)) amortized per operation, effectively constant.",
+    "Always compare roots (`find(a) == find(b)`), never raw parent values.",
+    "Count components by starting at n and decrementing on each successful union.",
+    "An undirected edge whose endpoints already share a root closes a cycle; Kruskal uses exactly this test.",
+    "It supports merging only; use rollback DSU or offline tricks if you need deletions."
+  ],
+  "practice": [
+    {
+      "title": "Implement find and union with path compression and union by size",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Number of provinces: count connected components from an adjacency matrix",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Redundant connection: find the edge that makes a tree into a cycle",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Number of islands II: count islands after each land addition",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Accounts merge: group accounts that share any email",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Satisfiability of equality equations",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Evaluate division using a weighted union-find",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Longest consecutive sequence using union-find",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Offline dynamic connectivity with a rollback DSU and a segment tree over time",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -100,36 +258,6 @@
     {
       "label": "Reference: Disjoint set (union-find) (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/introduction-to-disjoint-set-data-structure-or-union-find-algorithm/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Implement find and union with rank and path compression",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Count connected components",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Detect a cycle in an undirected graph",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Number of provinces",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Accounts merge",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Redundant connection",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Satisfiability of equality equations",
-      "difficulty": "Medium"
     }
   ]
 }
