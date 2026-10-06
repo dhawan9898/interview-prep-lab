@@ -91,6 +91,13 @@ app/
    ./gradlew connectedAndroidTest  # Test UI/renderer on device
    ```
 
+## Lesson notes
+
+Notes live in `app/src/main/assets/lessons/<topic-id>.json`, written from `reference-data/` in our own words. Every lesson
+follows the single format in `docs/NOTES_STYLE.md` (fixed section headings and order, 6-12 subtopics, 1,500-4,500 words),
+enforced by `LessonAssetsTest`. Large topics link child lessons through `Subtopic.topicId` / `Topic.parentId`.
+Animations exist only where a real scene is drawn; narration-only (text) animations are not used.
+
 ## Scene types & renderers
 
 | Scene | Renderer | Used by |

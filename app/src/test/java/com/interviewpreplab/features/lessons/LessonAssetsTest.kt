@@ -58,7 +58,10 @@ class LessonAssetsTest {
     fun notesFollowTheSingleFormat() {
         topicList.forEach { topic ->
             val lesson = load(topic.id)
-            val headings = lesson.sections.orEmpty().map { it.heading }
+            // A section without a heading continues the one before it (extra code samples); it cannot come first.
+            val all = lesson.sections.orEmpty().map { it.heading }
+            assertTrue(all.firstOrNull() != null, "${topic.id}: first section needs a heading")
+            val headings = all.filterNotNull()
             assertTrue(headings.all { it in headingOrder }, "${topic.id}: unknown section heading in $headings")
             val idx = headings.map { headingOrder.indexOf(it) }
             assertEquals(idx.sorted(), idx, "${topic.id}: section headings out of order: $headings")

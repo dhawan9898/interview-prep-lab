@@ -183,7 +183,7 @@ fun LessonScreen(
                     SectionCard(accent) {
                         Text("Notes", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                         Text(
-                            "Detailed notes for this lesson are not written yet.",
+                            "The notes for this lesson could not be loaded.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp)

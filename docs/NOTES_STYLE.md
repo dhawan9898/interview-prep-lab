@@ -11,7 +11,7 @@ A section is `{heading, body?, bullets?, code?}`. A subtopic is `{title, summary
 `topicId` links to a child lesson (a topic in `topicList` with `parentId` = this lesson's id).
 
 ## Sections: fixed headings, fixed order
-Omit a heading that truly does not apply; never rename it or reorder it.
+Omit a heading that truly does not apply; never rename it or reorder it. A section with no heading continues the one before it (for extra code samples); it can never come first.
 
 1. `Overview`: what it is, the problem it solves, where it sits in the bigger picture.
 2. `Core Concepts`: definitions and terminology, each as a bullet.
