@@ -29,7 +29,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import com.interviewpreplab.core.player.PlayerViewModel
 import com.interviewpreplab.features.flashcard.FlashcardScreen
 import com.interviewpreplab.features.home.HomeScreen
 import com.interviewpreplab.features.labs.LabsScreen
@@ -37,7 +36,6 @@ import com.interviewpreplab.features.profile.ProfileScreen
 import com.interviewpreplab.features.syllabus.SyllabusScreen
 import com.interviewpreplab.features.topics.Topic
 import com.interviewpreplab.features.lessons.LessonScreen
-import com.interviewpreplab.features.topics.loadTopicFrames
 import com.interviewpreplab.features.topics.topicList
 import com.interviewpreplab.ui.components.FloatingNavBar
 import com.interviewpreplab.ui.components.NavDestination
@@ -54,15 +52,13 @@ private val destinations = listOf(
 )
 
 @Composable
-fun AppNav(playerVM: PlayerViewModel, nav: NavHostController = rememberNavController()) {
+fun AppNav(nav: NavHostController = rememberNavController()) {
     fun openTopic(topic: Topic) {
-        loadTopicFrames(playerVM, topic)
         nav.navigate("topic/${topic.id}")
     }
 
     // Child lessons are pushed so Back returns to their parent. Prev/Next replaces the current lesson so Back returns to the list, not through every lesson.
     fun switchTopic(topic: Topic) {
-        loadTopicFrames(playerVM, topic)
         nav.navigate("topic/${topic.id}") { popUpTo(ROUTE_TOPIC) { inclusive = true } }
     }
 
@@ -84,11 +80,7 @@ fun AppNav(playerVM: PlayerViewModel, nav: NavHostController = rememberNavContro
         composable(ROUTE_TOPIC) { entry ->
             val topic = topicList.find { it.id == entry.arguments?.getString("id") }
             if (topic != null) {
-                // Rotation/process-death can leave the player empty; reload from the route.
-                androidx.compose.runtime.LaunchedEffect(topic.id) {
-                    if (playerVM.state.value.frames.isEmpty()) loadTopicFrames(playerVM, topic)
-                }
-                LessonScreen(topic = topic, playerVM = playerVM, onBack = { nav.popBackStack() }, onOpenTopic = { t -> if (t.parentId != null) openTopic(t) else switchTopic(t) })
+                LessonScreen(topic = topic, onBack = { nav.popBackStack() }, onOpenTopic = { t -> if (t.parentId != null) openTopic(t) else switchTopic(t) })
             }
         }
         composable(ROUTE_FLASHCARDS) { entry ->

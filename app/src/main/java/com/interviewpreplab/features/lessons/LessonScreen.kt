@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -35,7 +34,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,9 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.interviewpreplab.core.player.PlayerViewModel
-import com.interviewpreplab.core.ui.PlayerControls
-import com.interviewpreplab.core.ui.SceneRenderer
 import com.interviewpreplab.features.progress.ProgressViewModel
 import com.interviewpreplab.features.topics.Topic
 import com.interviewpreplab.features.topics.courseOf
@@ -61,18 +56,14 @@ import com.interviewpreplab.ui.theme.MonospaceFamily
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val verticalSlotTopics = setOf("stack", "heap")
-
 @Composable
 fun LessonScreen(
     topic: Topic,
-    playerVM: PlayerViewModel,
     onBack: () -> Unit,
     onOpenTopic: (Topic) -> Unit,
     progressVM: ProgressViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val player by playerVM.state.collectAsState()
     val progress by progressVM.uiState.collectAsState()
 
     val course = courseOf(topic)
@@ -89,13 +80,6 @@ fun LessonScreen(
         value = withContext(Dispatchers.IO) { LessonLoader.load(context, topic.id) }
     }
 
-    // Finishing the visualization counts as completing the lesson.
-    val lastIdx = player.frames.lastIndex
-    LaunchedEffect(topic.id, player.frameIdx, player.frames.size) {
-        if (lastIdx > 0 && player.frameIdx == lastIdx && !completed) {
-            progressVM.setCompleted(topic.id, topic.title, topic.category, true)
-        }
-    }
     DisposableEffect(topic.id) {
         val start = System.currentTimeMillis()
         onDispose {
@@ -138,43 +122,6 @@ fun LessonScreen(
                     text = lesson?.summary ?: topic.description,
                     style = MaterialTheme.typography.bodyLarge
                 )
-            }
-            if (player.frames.isNotEmpty()) {
-                item {
-                    SectionCard(accent) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "FRAME ${player.frameIdx + 1} / ${player.frames.size}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = MonospaceFamily,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Column(Modifier.fillMaxWidth().height(300.dp)) {
-                                SceneRenderer(player.frames, player.frameIdx, topic.id in verticalSlotTopics)
-                            }
-                        }
-                    }
-                }
-                player.currentFrame?.let { frame ->
-                    item {
-                        SectionCard(accent) {
-                            Text(frame.phase.replace('_', ' ').uppercase(), style = MaterialTheme.typography.labelMedium, color = accent)
-                            Text(frame.narr, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 6.dp))
-                        }
-                    }
-                }
-                item {
-                    PlayerControls(
-                        state = player,
-                        onPlay = playerVM::play,
-                        onPause = playerVM::pause,
-                        onStepBack = playerVM::stepBack,
-                        onStepForward = playerVM::stepForward,
-                        onReset = playerVM::reset,
-                        onScrub = playerVM::scrubTo,
-                        onSpeedChange = playerVM::setSpeed
-                    )
-                }
             }
 
             val sections = lesson?.sections.orEmpty()
