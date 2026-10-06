@@ -37,7 +37,7 @@ fun LabsScreen(contentPadding: PaddingValues, onFlashcards: (Topic) -> Unit) {
                 )
             }
         }
-        items(topicList, key = { it.id }) { topic ->
+        items(topicList.filter { it.parentId == null }, key = { it.id }) { topic ->
             Text(
                 topic.title,
                 style = MaterialTheme.typography.bodyLarge,

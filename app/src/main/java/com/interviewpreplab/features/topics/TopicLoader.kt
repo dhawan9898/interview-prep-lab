@@ -94,22 +94,12 @@ import com.interviewpreplab.features.networking.ARPRunner
 import com.interviewpreplab.features.networking.TCPHandshakeRunner
 import com.interviewpreplab.features.networking.EthernetRunner
 import com.interviewpreplab.features.networking.IPv4HeaderRunner
-import com.interviewpreplab.features.networking.IPv6HeaderRunner
-import com.interviewpreplab.features.networking.SubnettingRunner
-import com.interviewpreplab.features.networking.LongestPrefixMatchRunner
 import com.interviewpreplab.features.networking.ICMPTracerouteRunner
 import com.interviewpreplab.features.networking.NATRunner
-import com.interviewpreplab.features.networking.OSPFRunner
-import com.interviewpreplab.features.networking.BGPRunner
 import com.interviewpreplab.features.networking.TCPTeardownRunner
 import com.interviewpreplab.features.networking.DNSResolutionRunner
 import com.interviewpreplab.features.networking.DHCPLeaseRunner
 import com.interviewpreplab.features.networking.TLSHandshakeRunner
-import com.interviewpreplab.features.networking.MACLearningRunner
-import com.interviewpreplab.features.networking.VLANRunner
-import com.interviewpreplab.features.networking.STPRunner
-import com.interviewpreplab.features.networking.LACPRunner
-import com.interviewpreplab.features.networking.SwitchDiagnosticsRunner
 import com.interviewpreplab.features.data_structures.BSTRunner
 import com.interviewpreplab.features.progress.ProgressScreen
 import com.interviewpreplab.features.data_structures.CircularQueueRunner
@@ -252,22 +242,12 @@ fun loadTopicFrames(playerVM: PlayerViewModel, topic: Topic) {
         "ethernet" -> EthernetRunner.run()
         "arp" -> ARPRunner.run()
         "ipv4-header" -> IPv4HeaderRunner.run()
-        "ipv6-header" -> IPv6HeaderRunner.run()
-        "subnetting" -> SubnettingRunner.run()
-        "lpm" -> LongestPrefixMatchRunner.run()
         "icmp-traceroute" -> ICMPTracerouteRunner.run()
         "nat" -> NATRunner.run()
-        "ospf" -> OSPFRunner.run()
-        "bgp" -> BGPRunner.run()
         "tcp-teardown" -> TCPTeardownRunner.run()
         "dns-resolution" -> DNSResolutionRunner.run()
         "dhcp-lease" -> DHCPLeaseRunner.run()
         "tls-handshake" -> TLSHandshakeRunner.run()
-        "mac-learning" -> MACLearningRunner.run()
-        "vlan" -> VLANRunner.run()
-        "stp" -> STPRunner.run()
-        "lacp" -> LACPRunner.run()
-        "switch-diag" -> SwitchDiagnosticsRunner.run()
         "tcp-handshake" -> TCPHandshakeRunner.run()
 
         else -> emptyList()

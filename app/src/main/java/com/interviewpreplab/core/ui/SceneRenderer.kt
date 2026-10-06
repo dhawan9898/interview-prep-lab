@@ -35,6 +35,6 @@ fun SceneRenderer(
         is PacketFlowScene -> PacketFlowRenderer(scene, m)
         is PacketHeaderScene -> PacketHeaderRenderer(scene, m)
         is TopologyScene -> TopologyRenderer(scene, m)
-        TextScene -> ConceptRenderer(frames, index, m)
+        TextScene -> Unit // placeholder only; runners replace it (see withFlow) before frames are played
     }
 }

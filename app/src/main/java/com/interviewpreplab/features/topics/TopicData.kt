@@ -4,7 +4,9 @@ data class Topic(
     val id: String,
     val title: String,
     val category: String,
-    val description: String
+    val description: String,
+    // Child lessons hang off a parent lesson (via Subtopic.topicId) and are not listed in the course.
+    val parentId: String? = null
 )
 
 val topicList = listOf(
@@ -103,7 +105,7 @@ data class Course(
     val categories: List<String>,
     val accent: CourseAccent
 ) {
-    val topics: List<Topic> get() = topicList.filter { it.category in categories }
+    val topics: List<Topic> get() = topicList.filter { it.category in categories && it.parentId == null }
 }
 
 val courses = listOf(

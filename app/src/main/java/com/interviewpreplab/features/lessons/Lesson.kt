@@ -23,7 +23,9 @@ data class LessonSection(
 data class Subtopic(
     val title: String? = null,
     val summary: String? = null,
-    val sections: List<LessonSection>? = null
+    val sections: List<LessonSection>? = null,
+    // Id of a full child lesson (a Topic whose parentId is this lesson) that goes deeper than this card.
+    val topicId: String? = null
 )
 
 data class Reference(val label: String? = null, val url: String? = null)

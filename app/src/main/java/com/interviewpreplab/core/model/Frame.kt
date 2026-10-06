@@ -28,7 +28,7 @@ sealed class CodeLine {
 /** Base for all scene types. Subclasses define what to draw on Canvas. */
 sealed interface Scene
 
-/** Narration-only frame: nothing to draw, the UI shows the narration text. */
+/** Placeholder for runners that build narration first and attach a real scene afterwards (see withFlow). Never ship a lesson that plays it. */
 object TextScene : Scene
 
 data class BarsScene(

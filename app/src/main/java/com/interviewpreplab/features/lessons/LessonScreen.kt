@@ -54,6 +54,7 @@ import com.interviewpreplab.core.ui.SceneRenderer
 import com.interviewpreplab.features.progress.ProgressViewModel
 import com.interviewpreplab.features.topics.Topic
 import com.interviewpreplab.features.topics.courseOf
+import com.interviewpreplab.features.topics.topicList
 import com.interviewpreplab.ui.components.RichText
 import com.interviewpreplab.ui.components.color
 import com.interviewpreplab.ui.theme.MonospaceFamily
@@ -77,8 +78,10 @@ fun LessonScreen(
     val course = courseOf(topic)
     val siblings = course?.topics.orEmpty()
     val position = siblings.indexOfFirst { it.id == topic.id }
-    val prev = siblings.getOrNull(position - 1)
-    val next = siblings.getOrNull(position + 1)
+    // Child lessons are not part of the course order, so they only offer Back.
+    val prev = if (position < 0) null else siblings.getOrNull(position - 1)
+    val next = if (position < 0) null else siblings.getOrNull(position + 1)
+    val parent = topic.parentId?.let { id -> topicList.find { it.id == id } }
     val accent = course?.accent?.color() ?: MaterialTheme.colorScheme.primary
 
     val completed = progress.allProgress.any { it.topicId == topic.id && it.isCompleted }
@@ -111,7 +114,7 @@ fun LessonScreen(
             Column(Modifier.weight(1f)) {
                 Text(topic.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    "${course?.title ?: topic.category}  ·  ${position + 1}/${siblings.size}",
+                    if (parent != null) "Part of ${parent.title}" else "${course?.title ?: topic.category}  ·  ${position + 1}/${siblings.size}",
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = MonospaceFamily,
                     color = accent
@@ -196,7 +199,7 @@ fun LessonScreen(
             val subtopics = lesson?.subtopics.orEmpty()
             if (subtopics.isNotEmpty()) {
                 item { Text("Go deeper", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface) }
-                items(subtopics.size) { i -> SubtopicCard(subtopics[i], accent) }
+                items(subtopics.size) { i -> SubtopicCard(subtopics[i], accent, onOpenTopic) }
             }
 
             val takeaways = lesson?.takeaways.orEmpty()
@@ -288,7 +291,7 @@ private fun SectionBlock(section: LessonSection, accent: androidx.compose.ui.gra
 }
 
 @Composable
-private fun SubtopicCard(sub: Subtopic, accent: androidx.compose.ui.graphics.Color) {
+private fun SubtopicCard(sub: Subtopic, accent: androidx.compose.ui.graphics.Color, onOpenTopic: (Topic) -> Unit) {
     var expanded by rememberSaveable(sub.title) { mutableStateOf(false) }
     SectionCard(accent) {
         Row(
@@ -304,6 +307,11 @@ private fun SubtopicCard(sub: Subtopic, accent: androidx.compose.ui.graphics.Col
         if (expanded) {
             Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 sub.sections.orEmpty().forEach { SectionBlock(it, accent) }
+                sub.topicId?.let { id -> topicList.find { it.id == id } }?.let { child ->
+                    OutlinedButton(onClick = { onOpenTopic(child) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open full lesson: ${child.title} ›")
+                    }
+                }
             }
         }
     }

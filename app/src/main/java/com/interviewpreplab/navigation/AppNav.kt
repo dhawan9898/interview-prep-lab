@@ -60,7 +60,7 @@ fun AppNav(playerVM: PlayerViewModel, nav: NavHostController = rememberNavContro
         nav.navigate("topic/${topic.id}")
     }
 
-    // Prev/Next replaces the current lesson so Back returns to the list, not through every lesson.
+    // Child lessons are pushed so Back returns to their parent. Prev/Next replaces the current lesson so Back returns to the list, not through every lesson.
     fun switchTopic(topic: Topic) {
         loadTopicFrames(playerVM, topic)
         nav.navigate("topic/${topic.id}") { popUpTo(ROUTE_TOPIC) { inclusive = true } }
@@ -88,7 +88,7 @@ fun AppNav(playerVM: PlayerViewModel, nav: NavHostController = rememberNavContro
                 androidx.compose.runtime.LaunchedEffect(topic.id) {
                     if (playerVM.state.value.frames.isEmpty()) loadTopicFrames(playerVM, topic)
                 }
-                LessonScreen(topic = topic, playerVM = playerVM, onBack = { nav.popBackStack() }, onOpenTopic = ::switchTopic)
+                LessonScreen(topic = topic, playerVM = playerVM, onBack = { nav.popBackStack() }, onOpenTopic = { t -> if (t.parentId != null) openTopic(t) else switchTopic(t) })
             }
         }
         composable(ROUTE_FLASHCARDS) { entry ->
