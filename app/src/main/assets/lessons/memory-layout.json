@@ -1,126 +1,249 @@
 {
-  "summary": "A running C program's memory is split into segments: text, initialized data, BSS, heap, and stack. Knowing which variable lands where explains lifetimes, crashes, and security bugs.",
+  "summary": "When a C program runs, the operating system gives it a virtual address space divided into regions with different jobs: machine code (text), initialized globals (data), zero-initialized globals (BSS), the heap, memory-mapped libraries, and the call stack. Knowing which variable lands in which region explains lifetimes, initial values, why some writes crash with a segmentation fault, and how much memory a binary really needs. It is the mental map behind debugging, security (stack and heap exploits, ASLR) and embedded sizing.",
   "sections": [
     {
-      "heading": "The big picture",
-      "body": "From low to high addresses: text, initialized data, BSS, heap (grows up), a large gap, then the stack (grows down). When the two growing regions collide, memory is exhausted. Exact placement is randomized on modern systems (ASLR) but the ordering idea holds.",
-      "code": "low addresses\n+---------------------+\n| text (code)         |  read-only, executable\n| initialized data    |  globals/statics with values\n| BSS                 |  zero-initialized globals/statics\n| heap  ->            |  malloc / calloc / realloc\n|        ...          |\n|            <-  stack|  locals, args, return addresses\n+---------------------+\nhigh addresses"
-    },
-    {
-      "heading": "Text segment",
+      "heading": "Overview",
+      "body": "A compiled C program is a file (ELF on Linux, PE on Windows, Mach-O on macOS) made of **sections**. When you run it, the loader maps those sections into a process and adds a heap and a stack. Each region has its own permissions (read, write, execute) and its own rule for when storage is created and destroyed. The classic picture puts low addresses at the bottom and high addresses at the top: text, data, BSS, then the heap growing upward, a large gap, and the stack growing downward from the top.",
       "bullets": [
-        "Holds the compiled machine instructions.",
-        "Marked read-only so a stray write faults instead of corrupting code.",
-        "Shared between processes running the same program."
+        "**Why it matters**: the region decides initial value, lifetime, speed of allocation and what happens on a bad write.",
+        "**Virtual, not physical**: every process sees its own private address space; the kernel and MMU map pages to RAM on demand.",
+        "**Where this lesson stops**: struct layout and padding, the allocator internals and stack frames each have their own lessons; here you get the whole map."
       ]
     },
     {
-      "heading": "Initialized data segment",
+      "heading": "Core Concepts",
       "bullets": [
-        "Global and static variables that have a non-zero initial value.",
-        "Stored in the executable file and loaded at start-up.",
-        "Lives for the whole program run."
+        "**Text segment (code)**: the compiled instructions. Mapped read-only and executable, shared between processes running the same binary. Writing to it faults.",
+        "**Read-only data (`.rodata`)**: string literals, `const` globals and jump tables. Read-only; modifying a literal such as `char *s = \"hi\"; s[0] = 'H';` is undefined behaviour and normally segfaults.",
+        "**Initialized data (`.data`)**: globals and `static` variables with a non-zero initializer. The initial values are stored in the executable file and copied into memory at load. Read-write.",
+        "**BSS (`.bss`, Block Started by Symbol)**: globals and statics that are uninitialized or initialized to zero. Only the size is stored in the file; the loader supplies zero-filled pages. This keeps executables small.",
+        "**Heap**: dynamic memory from `malloc` and friends. Starts after BSS and grows upward through `brk`/`sbrk`; large blocks come from `mmap` instead.",
+        "**Memory-mapped region**: shared libraries (libc.so), `mmap` blocks and thread stacks, placed between heap and stack.",
+        "**Stack**: one frame per active function call holding locals, saved registers, arguments and the return address. Grows toward lower addresses on x86, ARM and most other ABIs.",
+        "**Kernel space**: the top part of the address space (on 64-bit Linux the upper half), not accessible from user code.",
+        "**Program break**: the current end of the heap; `sbrk(0)` returns it.",
+        "**ASLR (address space layout randomization)**: the kernel randomizes the base of stack, heap, libraries and (for PIE binaries) the executable on each run, making addresses unpredictable to attackers."
+      ]
+    },
+    {
+      "heading": "How It Works",
+      "body": "The easiest way to see the layout is to print addresses. Each line below lands in a different region, and on a typical Linux x86-64 run the numbers rise in the order text, rodata, data, bss, heap, with the stack far above.",
+      "bullets": [
+        "**Decision rule for a variable**: automatic (non-static local) goes to the stack; `static` or file-scope goes to data or BSS depending on whether the initializer is non-zero; `malloc`ed goes to the heap; literals and `const` globals go to read-only data.",
+        "A sample run prints roughly `foo 0x4011d0`, `cgvar 0x402084`, `gvar 0x404020`, `ugvar 0x404028`, a heap address like `0x119592a0` and a stack address like `0x7ffe8289c66c`. The exact values change with ASLR; the ordering does not.",
+        "Run `size a.out` to see the sizes of text, data and bss. Adding one `int` global without initializer raises bss by 4 and leaves the file almost the same size; adding `int g = 10;` raises data by 4 and bss stays.",
+        "On Linux you can inspect the live map with `cat /proc/self/maps` or `pmap <pid>`; each line shows the address range, permissions (`r-xp`, `rw-p`) and the backing file or `[heap]`/`[stack]`."
       ],
-      "code": "int g = 10;            // initialized data\nstatic int s = 20;     // initialized data"
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n\nint gvar = 66;              // .data  (initialized global)\nint ugvar;                  // .bss   (zero-initialized global)\nconst int cgvar = 1010;     // .rodata (const global)\n\nvoid foo(void) {            // .text  (code)\n    int lvar = 1;           // stack\n    printf(\"lvar   %p\\n\", (void *)&lvar);\n}\n\nint main(void) {\n    static int counter = 5; // .data  (static local, initialized)\n    static int zeroed;      // .bss   (static local, uninitialized)\n    int *hvar = malloc(sizeof *hvar);   // pointer on stack, block on heap\n    printf(\"foo    %p\\n\", (void *)&foo);\n    printf(\"cgvar  %p\\n\", (void *)&cgvar);\n    printf(\"gvar   %p\\n\", (void *)&gvar);\n    printf(\"ugvar  %p\\n\", (void *)&ugvar);\n    printf(\"heap   %p\\n\", (void *)hvar);\n    foo();\n    free(hvar);\n    return (counter + zeroed) & 0;\n}"
     },
     {
-      "heading": "BSS segment",
-      "body": "BSS holds global and static variables with no initializer (or initialized to zero). The loader zero-fills it, so the executable only records its size, not its contents, which keeps binaries small.",
-      "code": "int counter;           // BSS\nstatic char buf[4096]; // BSS"
-    },
-    {
-      "heading": "Heap",
+      "heading": "Variants & Types",
       "bullets": [
-        "Dynamic storage obtained with `malloc`, `calloc`, `realloc` and released with `free`.",
-        "Grows toward higher addresses.",
-        "Lifetime is controlled by the programmer, not by scope."
+        "**Static linking vs dynamic linking**: static binaries embed library code in text; dynamic ones map shared libraries into the mmap area and resolve symbols through the PLT/GOT.",
+        "**PIE and non-PIE executables**: position-independent executables load at a random base, so even the text addresses vary per run; non-PIE executables load at a fixed address (the `0x4011d0` style numbers).",
+        "**32-bit vs 64-bit**: a 32-bit process has a 4 GiB space (often 3 GiB user, 1 GiB kernel); x86-64 uses 48-bit virtual addresses, giving 128 TiB for user space.",
+        "**Threads**: all threads share text, data, BSS and heap, but each has its own stack (8 MiB default on Linux, set by `ulimit -s` or `pthread_attr_setstacksize`).",
+        "**Embedded targets**: code and constants live in flash, `.data` is copied from flash to RAM at startup, `.bss` is zeroed by startup code, and the stack and heap share the remaining RAM.",
+        "**Other OSes**: Windows and macOS use different executable formats and region names, yet keep the same ideas of code, data, heap and stack.",
+        "**Growth direction**: stack grows down and heap up on common platforms, but this is an ABI convention rather than a C rule; the standard never mentions it."
       ]
     },
     {
-      "heading": "Stack",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "Each function call pushes a stack frame: arguments, return address, saved registers, and locals.",
-        "Frames are popped automatically on return.",
-        "Grows toward lower addresses on common architectures.",
-        "Deep recursion or huge local arrays cause stack overflow."
+        "**Binary size**: text and data count toward the file; BSS does not. A `static char buf[1 << 20];` adds 1 MiB of runtime memory but almost nothing to the file, whereas `= {1}` as an initializer forces 1 MiB into `.data` on disk.",
+        "**Startup cost**: copying `.data` and zeroing `.bss` scales with their size (trivial on a PC, visible on microcontrollers with tens of KiB of RAM).",
+        "**Allocation cost**: stack allocation is a pointer adjustment (about one cycle); heap allocation costs tens to hundreds of cycles plus possible system calls.",
+        "**Limits**: default Linux stack is 8 MiB per thread; the heap is bounded by available virtual memory, `ulimit -v` and overcommit policy; a mapping granule is one page (4 KiB on x86).",
+        "**Demand paging**: a page is only backed by RAM when first touched, so a 100 MiB BSS array that is never written costs almost no physical memory.",
+        "**Sharing**: two processes running the same binary share the physical pages of their text segment, so the cost of text is paid once."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Modifying a string literal**: `char *s = \"abc\"; s[0] = 'x';` writes into read-only memory. Use `char s[] = \"abc\";` for a modifiable copy on the stack.",
+        "**Returning the address of a local**: the stack frame is gone after return, so the pointer dangles.",
+        "**Huge local arrays**: `int big[10000000];` is 40 MB on an 8 MiB stack and crashes at entry with a segmentation fault. Make it `static` or `malloc` it.",
+        "**Uninitialized locals**: stack memory holds leftovers from earlier calls, so reading it gives garbage; globals and statics are guaranteed zero.",
+        "**Assuming addresses**: never hard-code or compare addresses from different objects; ASLR changes them, and relational comparison of unrelated pointers is undefined.",
+        "**Stack overflow by recursion**: unbounded recursion eats the stack until the guard page triggers a fault.",
+        "**Heap vs stack collision myth**: on a modern 64-bit system they are separated by terabytes; you hit a limit long before they meet.",
+        "**Counting `static` locals as stack**: they live in data/BSS for the whole run even though their name is only visible inside the function.",
+        "**Buffer overflows**: writing past a stack array overwrites saved registers and the return address, the basis of classic exploits; stack canaries and `-fstack-protector` detect it."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Debugging**: crash addresses tell you the region: `0x0` to a few KiB means a null dereference, an address in `[stack]` suggests overflow or a dangling local, a heap address suggests use-after-free.",
+        "**Security**: ASLR, non-executable stack (NX), RELRO and stack canaries all rely on the layout; return-oriented programming defeats NX by reusing text.",
+        "**Embedded sizing**: linker scripts place `.text` in flash and `.data`/`.bss` in RAM; the `size` output decides whether firmware fits.",
+        "**Performance tuning**: moving large buffers off the stack, using static arrays to avoid allocation, and placing hot data together improve cache use.",
+        "**Tooling**: `readelf -S`, `objdump -h`, `nm`, `size`, `/proc/PID/maps`, and `ldd` all expose this layout."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is BSS and why is it separate from data?** It holds zero-initialized statics; only its size is stored, so the executable is smaller and the loader zero-fills it.",
+        "**Where does a static local live?** In `.data` if initialized with a non-zero value, otherwise in `.bss`; initialized once, kept for the whole run.",
+        "**Where are string literals stored?** In read-only data; modifying them is undefined behaviour.",
+        "**Which way does the stack grow?** Down on x86 and ARM, but that is an ABI detail.",
+        "**Stack vs heap in one line?** Stack is automatic, fast, small and scoped to calls; heap is manual, slower, large and lives until freed.",
+        "**What does `size` print?** Bytes of text, data and bss, plus decimal and hex totals.",
+        "**What is ASLR?** Randomized placement of stack, heap, libraries and PIE code to frustrate exploits."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Seeing the layout yourself",
-      "summary": "Use `size` and print addresses.",
+      "title": "Text segment and read-only data",
+      "summary": "Code and constants you cannot write.",
       "sections": [
         {
-          "body": "The `size` tool reports text, data, and bss sizes of an executable. Adding an initialized global grows `data`; adding an uninitialized one grows `bss` only. Printing the address of a function, a global, a malloc result, and a local shows the ordering.",
-          "code": "int g_init = 1; int g_bss;\nint main(void) {\n  int local; void *h = malloc(8);\n  printf(\"text %p data %p bss %p heap %p stack %p\\n\",\n         (void *)main, (void *)&g_init, (void *)&g_bss, h, (void *)&local);\n}"
+          "body": "The text segment is the machine code of every function. Function names evaluate to addresses inside it, so `&foo` is a text address. Constants such as string literals sit nearby in `.rodata`. The MMU marks these pages read-only (and text executable), so a stray write raises SIGSEGV instead of silently altering code. Because the content never changes, the kernel can share one physical copy between all processes running the program.",
+          "code": "const char *p = \"hello\";   // p is on the stack, the bytes are in .rodata\nchar a[] = \"hello\";        // a is a writable copy of the literal\n// p[0] = 'J';  -> undefined behaviour, usually SIGSEGV\na[0] = 'J';                // fine"
         }
       ]
     },
     {
-      "title": "Where do string literals and constants go?",
-      "summary": "Read-only data.",
+      "title": "Initialized data segment",
+      "summary": "Globals and statics with real initial values.",
       "sections": [
         {
-          "body": "String literals typically live in a read-only data section, so writing through `char *s = \"hi\"; s[0] = 'H';` is undefined behavior. Use `char s[] = \"hi\";` to get a modifiable copy on the stack."
+          "body": "Variables such as `int gvar = 66;` or `static int staticVar = 20;` have their starting value stored in the file. At load time the kernel maps that part of the file into read-write pages (copy-on-write). Because they exist for the whole run, a `static` local keeps its value between calls even though its name has block scope. The segment grows with each initialized variable, so large initialized tables cost file size too."
         }
       ]
     },
     {
-      "title": "Virtual memory view",
-      "summary": "Why addresses look the same in every process.",
+      "title": "BSS segment",
+      "summary": "Zero-initialized storage that costs no file space.",
       "sections": [
         {
-          "body": "Each process sees its own virtual address space; the OS and MMU map pages to physical frames. Segments are just regions of that virtual space with different permissions (r-x for text, rw- for data, heap, stack)."
+          "body": "Uninitialized and zero-initialized globals and statics go to BSS. The C standard guarantees they start as zero (numbers), null (pointers) and all-zero members (structs). The file records only the byte count and the loader provides zero pages, which the OS usually backs lazily. The `size` output from the source example makes this visible: one extra `int global;` moves bss from 8 to 12, and a static one moves it again, while data stays constant until you add an initializer.",
+          "bullets": [
+            "`int g;` and `int g = 0;` both end up in BSS with modern compilers.",
+            "`static char buf[4096];` costs 4096 bytes at run time, none on disk."
+          ]
         }
       ]
     },
     {
-      "title": "ELF sections vs runtime segments",
-      "summary": "Linker view and loader view.",
+      "title": "Heap and the program break",
+      "summary": "Grows upward via brk and mmap.",
       "sections": [
         {
-          "body": "On Linux the object file groups bytes into sections (.text, .data, .bss, .rodata). The loader maps them into segments with permissions. `readelf -S` shows sections and `readelf -l` shows segments."
+          "body": "The heap starts at the end of BSS (randomly offset under ASLR). The allocator raises the program break with `brk`/`sbrk` to obtain more room and uses `mmap` for large or page-aligned requests. The heap is shared by all code in the process, including shared libraries. Memory is only released back to the OS when the top of the heap is free or when an mmapped block is freed.",
+          "code": "void *start = sbrk(0);        // current program break (POSIX)\nchar *p = malloc(100);        // may or may not move the break\nprintf(\"%p -> %p\\n\", start, sbrk(0));"
+        }
+      ]
+    },
+    {
+      "title": "Stack segment and frames",
+      "summary": "One frame per call, freed on return.",
+      "sections": [
+        {
+          "body": "On a call, the CPU pushes the return address; the function then reserves space for locals and saved registers, forming a **stack frame** addressed through the stack pointer (and often a frame pointer). Arguments beyond what fits in registers are passed here too. On return the frame is discarded by moving the stack pointer back, so locals have no cleanup cost but also no life beyond the call. Each thread gets its own stack, 8 MiB by default on Linux, with a guard page below it to catch overflows.",
+          "code": "int sum(int n) {          // each call adds a frame: n, return address, saved regs\n    if (n == 0) return 0;\n    return n + sum(n - 1);\n}                         // sum(100000) can exhaust an 8 MiB stack"
+        }
+      ]
+    },
+    {
+      "title": "Reading the size command",
+      "summary": "Measure text, data and bss of a binary.",
+      "sections": [
+        {
+          "body": "`size memory-layout` prints columns `text data bss dec hex filename`. The example binary of an empty `main` shows text 960, data 248, bss 8 in the source run. Add `int global;` and bss rises by 4 (to 12; alignment can round it); add `static int i;` and it rises again; initialize them and the 4 bytes move to data instead. Exact numbers depend on compiler, libc and flags, so compare deltas rather than absolute values. For finer detail use `readelf -S a.out` or `objdump -h a.out` to list `.text`, `.rodata`, `.data`, `.bss` and sizes.",
+          "bullets": [
+            "`dec` is text + data + bss; `hex` is the same total in hexadecimal.",
+            "Data and BSS are what an embedded developer budgets for RAM; text and rodata go to flash."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Memory-mapped region and shared libraries",
+      "summary": "Where libc and mmap blocks live.",
+      "sections": [
+        {
+          "body": "Between heap and stack the loader maps shared libraries (for example `libc.so.6`) with their own text, data and BSS parts, and `mmap` carves out anonymous or file-backed regions. Library text is shared among every process that uses it, which is why dynamic linking saves RAM. `ldd ./a.out` lists the libraries, and `/proc/self/maps` shows each mapping with permission bits.",
+          "code": "// lines from /proc/self/maps (illustrative)\n// 55d1...-55d1...  r-xp  /home/u/a.out        text\n// 55d1...-55d1...  rw-p  /home/u/a.out        data + bss\n// 55d1...-55d1...  rw-p  [heap]\n// 7f3a...-7f3a...  r-xp  /lib/x86_64-linux-gnu/libc.so.6\n// 7ffe...-7ffe...  rw-p  [stack]"
+        }
+      ]
+    },
+    {
+      "title": "Address space randomization and layout security",
+      "summary": "Why addresses change between runs.",
+      "sections": [
+        {
+          "body": "With ASLR, rerunning the verification program prints different heap, stack and (for PIE) text addresses each time; on Linux check `/proc/sys/kernel/randomize_va_space` (2 means full randomization). Combined with NX (stack not executable), stack canaries and RELRO, it raises the bar for exploits, though info leaks can still defeat it. For reproducible debugging you can disable it with `setarch -R ./a.out`, which gdb does by default."
         }
       ]
     }
   ],
   "takeaways": [
-    "Text is code (read-only); data/BSS hold globals; heap is manual; stack is automatic.",
-    "BSS costs no file space; it is zeroed at load.",
-    "Stack grows down, heap grows up on common platforms.",
-    "String literals are read-only: do not modify them."
+    "Code lives in the read-only text segment; literals and `const` globals in read-only data; modifying them is undefined behaviour.",
+    "Initialized globals and statics go to the data segment, zero or uninitialized ones to BSS, which occupies no file space.",
+    "The heap holds `malloc` blocks and grows up via `brk`/`mmap`; the stack holds one frame per call and grows down.",
+    "Locals vanish on return and start uninitialized; globals and statics start at zero and live for the whole run.",
+    "`size` shows text, data and bss; adding a zeroed global changes only bss, adding an initialized one changes data.",
+    "ASLR randomizes stack, heap, libraries and PIE code each run, so never rely on specific addresses."
+  ],
+  "practice": [
+    {
+      "title": "Print addresses of a global, static, local, literal and malloc block and classify each region",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Use the size command to prove an initialized static moves from bss to data",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why char *s = \"hi\"; s[0] = 'H'; crashes but char s[] = \"hi\"; works",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the stack growth direction by comparing addresses of locals in nested calls",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a recursive function and find the depth where your stack overflows; then raise it with ulimit -s",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Read /proc/self/maps from a C program and label text, heap, stack and libc lines",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Fix a function that returns the address of a local array, in three different ways",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Show that BSS arrays cost no file size but do cost run-time memory using ls and size",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain how a stack buffer overflow overwrites the return address and which mitigations stop it",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
     {
       "label": "Reference: Memory layout of C programs (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/memory-layout-of-c-program/"
     },
     {
-      "label": "Linux man-pages: elf(5)",
-      "url": "https://man7.org/linux/man-pages/man5/elf.5.html"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Print the addresses of a global, static, local, and heap object and order them",
-      "difficulty": "Easy"
+      "label": "System V AMD64 ABI and ELF specification",
+      "url": "https://refspecs.linuxfoundation.org/elf/elf.pdf"
     },
     {
-      "title": "Use the size command to see how initialized vs uninitialized globals change data and bss",
-      "difficulty": "Easy"
+      "label": "proc(5) Linux manual page (/proc/PID/maps)",
+      "url": "https://man7.org/linux/man-pages/man5/proc.5.html"
     },
     {
-      "title": "Show stack growth direction with a recursive function",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Explain why writing through a string literal pointer crashes",
-      "difficulty": "Medium"
+      "label": "Bryant & O'Hallaron, Computer Systems: A Programmer's Perspective, ch. 7 and 9",
+      "url": "https://csapp.cs.cmu.edu/"
     }
   ]
 }

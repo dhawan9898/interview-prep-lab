@@ -1,110 +1,211 @@
 {
-  "summary": "An array is a fixed-size block of same-typed elements stored contiguously in memory and accessed by zero-based index. Because the layout is contiguous, indexing is O(1), and arrays are the foundation under strings, matrices, buffers, and most data structures.",
+  "summary": "An array is a fixed-size block of same-typed elements stored side by side in memory and reached by a zero-based index. Because the elements are contiguous and equally sized, the address of any element is one multiply and one add away, so access is O(1). Arrays sit under strings, matrices, buffers, hash tables, heaps and nearly every other data structure, and in C they are also the source of its most famous bugs: unchecked bounds and silent decay to pointers.",
   "sections": [
     {
-      "heading": "Declaring and initializing",
-      "body": "The size is fixed at declaration (a constant expression, or a runtime value for a C99 variable-length array). Elements not covered by an initializer list are zero-filled; arrays with static storage duration are zero-initialized by default, while automatic arrays hold garbage.",
-      "code": "int a[5];                    // uninitialized (automatic)\nint b[5] = {2, 4, 8};        // 2 4 8 0 0\nint c[] = {1, 2, 3};         // size deduced: 3\nint d[6] = {[2] = 7, [5] = 9};  // designated (C99): 0 0 7 0 0 9\nstatic int e[100];           // all zero"
+      "heading": "Overview",
+      "body": "An array gives you N variables of the same type under one name, laid out back to back with no gaps. You do not get a header, a length field or bounds checks: the array is just the elements. That bareness is the point. The hardware can fetch element i with a single address calculation, and neighbouring elements share cache lines, so a loop over an array is about as fast as memory access gets.\n\nThe cost of that simplicity is that the size is fixed when the array is created, the length is not stored anywhere you can ask, and C will happily let you read or write past either end. Almost every higher-level container (vectors, strings, stacks, queues, heaps, hash tables) is an array plus some bookkeeping about how much of it is in use."
     },
     {
-      "heading": "Indexing and bounds",
-      "body": "Valid indices run from 0 to n-1. C never checks bounds: a[n] or a[-1] is undefined behavior and can silently corrupt neighbouring variables or crash. Looping with the wrong bound is the classic off-by-one bug.",
-      "code": "for (int i = 0; i < 5; i++) b[i] *= 2;   // < 5, never <= 5"
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Element type**: every element has the same type, so every element has the same size `sizeof(T)`. That is what makes index arithmetic possible.",
+        "**Index**: a zero-based position. For an array of `n` elements the valid indices are `0` to `n - 1`. The first element is at offset 0 from the start.",
+        "**Contiguous storage**: element `i` lives at `base + i * sizeof(T)`. No element is stored elsewhere and nothing sits between elements except any padding that is part of `T` itself.",
+        "**Declaration**: `T name[N];` reserves `N` elements. `N` must be a constant expression, except for a C99 variable-length array.",
+        "**Initializer list**: `{a, b, c}` fills elements from index 0. Elements you leave out are set to zero. If you omit `N`, the compiler counts the initializers for you.",
+        "**Storage duration**: a local array holds indeterminate values until you write them. A global or `static` array is zero-initialized before `main` runs.",
+        "**Length is not stored**: the array type knows its length at compile time, but the running program has no length field. `sizeof a / sizeof a[0]` recovers it only where `a` is still a true array.",
+        "**Row-major order**: a multidimensional array stores the last index fastest, so `m[1][0]` directly follows `m[0][cols-1]`.",
+        "**Decay**: in most expressions an array name turns into a pointer to its first element, which is how arrays are passed to functions."
+      ]
     },
     {
-      "heading": "Size of an array",
-      "body": "`sizeof` on a real array yields its total byte size, so the element count is `sizeof a / sizeof a[0]`. This only works where the array itself is in scope; once passed to a function it has decayed to a pointer and sizeof gives the pointer's size.",
-      "code": "int n = sizeof b / sizeof b[0];   // 5"
+      "heading": "How It Works",
+      "body": "Declaring `int a[5]` on a typical platform reserves 5 * 4 = 20 bytes. If the array starts at address 1000, the elements live at 1000, 1004, 1008, 1012 and 1016. The expression `a[i]` is defined as `*(a + i)`: take the base address, step forward `i` elements (the compiler scales by `sizeof(int)`), then read. That is one multiply-add and one memory access regardless of how large the array is.\n\nWorked example. Take `int a[5] = {2, 4, 8, 12, 16};`. Reading `a[2]` computes 1000 + 2*4 = 1008 and loads the 4 bytes there, giving 8. Writing `a[0] = 1` stores into 1000. Reading `a[5]` would compute 1020, which is one past the end: that address belongs to something else (or to nothing), and the C standard calls the access undefined behavior. The compiler is not required to stop you, and usually does not.\n\nThe code below shows declaration, initialization, traversal, update and the length idiom together.",
+      "code": "#include <stdio.h>\n\nint main(void) {\n    int a[] = {2, 4, 8, 12, 16};            // size deduced: 5\n    size_t n = sizeof a / sizeof a[0];      // 20 / 4 = 5\n\n    for (size_t i = 0; i < n; i++)          // forward traversal\n        printf(\"%d \", a[i]);\n    printf(\"\\n\");\n\n    for (size_t i = n; i-- > 0; )           // reverse, safe for unsigned i\n        printf(\"%d \", a[i]);\n    printf(\"\\n\");\n\n    a[0] = 1;                               // update in place\n    int sum = 0;\n    for (size_t i = 0; i < n; i++) sum += a[i];\n    printf(\"sum=%d\\n\", sum);                // 1+4+8+12+16 = 41\n    return 0;\n}"
     },
     {
-      "heading": "Arrays and functions",
-      "body": "Arrays are passed by address: the name decays to a pointer to the first element, so the callee can modify the caller's elements but does not know the length. Always pass the length as a separate parameter.",
-      "code": "void fill(int *a, size_t n, int v) { for (size_t i = 0; i < n; i++) a[i] = v; }\nfill(b, 5, 0);"
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Fixed-size array**: size is a compile-time constant. The default choice, lives in the stack frame (local), the data segment (global or static) or inside a struct.",
+        "**Variable-length array (VLA)**: C99 allows `int v[n];` with `n` known only at run time. It is allocated on the stack. C11 made VLAs optional, and many style guides ban them.",
+        "**Dynamic array**: `int *p = malloc(n * sizeof *p);` gives heap storage whose size you choose at run time and can grow with `realloc`. It is a pointer, not an array type, so `sizeof p` is the pointer size.",
+        "**Multidimensional array**: `int m[R][C]` is one contiguous block of R rows. Cheap and cache friendly, but `C` must be a compile-time constant (or a VLA parameter).",
+        "**Array of pointers**: `int *rows[R]` holds R pointers, each possibly to a separately allocated row of different length (a jagged array). Rows are not contiguous with each other.",
+        "**Array inside a struct**: copied when the struct is copied. This is the only way to pass or return an array by value in C.",
+        "**Designated initializer**: C99 `int d[6] = {[2] = 7, [5] = 9};` sets chosen positions and zeros the rest.",
+        "**Character array**: an array of `char` used as a string, with a terminating zero byte. See the Strings lesson."
+      ]
     },
     {
-      "heading": "Multidimensional arrays",
-      "body": "A 2D array is an array of arrays laid out in row-major order: all of row 0, then row 1, and so on. When passing it, every dimension except the first must be given so the compiler can compute row strides.",
-      "code": "int m[2][3] = {{1,2,3},{4,5,6}};   // memory: 1 2 3 4 5 6\nvoid show(int r[][3], int rows);    // column count required\n// m[i][j] == *(*(m + i) + j)"
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Access by index**: O(1). One address computation and one load or store.",
+        "**Search, unsorted**: O(n) comparisons. Sorted array with binary search: O(log n).",
+        "**Insert or delete at the end** (spare capacity assumed): O(1). Insert or delete at the front or middle: O(n) because every later element shifts by one slot.",
+        "**Space**: exactly `n * sizeof(T)` bytes, with no per-element overhead. A pointer-based structure such as a linked list spends an extra 8 bytes per node on a 64-bit machine.",
+        "**Growing a dynamic array**: `realloc` may copy all n elements, O(n). Doubling capacity each time makes appends amortized O(1).",
+        "**Cache behavior**: a 64-byte cache line holds sixteen 4-byte ints, so a sequential scan pays roughly one cache miss per 16 elements. Walking a column of a row-major matrix strides by `C * sizeof(T)` and can miss on every access.",
+        "**Stack limit**: local arrays share the stack, commonly 8 MB on Linux and 1 MB on Windows by default. A 10 MB local array crashes before it is used."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Off-by-one**: `for (i = 0; i <= n; i++)` touches `a[n]`, which is one past the end. Use `i < n`.",
+        "**No bounds checking**: an out-of-range read returns garbage or crashes; an out-of-range write corrupts neighbouring variables, return addresses and heap metadata. This is the root of stack buffer overflows.",
+        "**sizeof on a parameter**: `void f(int a[10])` is really `void f(int *a)`. Inside `f`, `sizeof a` is 8 on a 64-bit target, not 40. Always pass the length.",
+        "**Uninitialized locals**: `int a[5];` contains whatever was on the stack. Reading it is undefined behavior. Write `int a[5] = {0};` when you need zeros.",
+        "**Arrays are not assignable**: `b = a;` is a compile error. Use `memcpy(b, a, sizeof a)` or a loop. Comparing with `==` compares addresses, not contents.",
+        "**Initializer misconception**: `int a[5] = {1};` sets element 0 to 1 and the other four to 0. It does not fill the array with 1s.",
+        "**Signed index and size_t**: `for (size_t i = n - 1; i >= 0; i--)` never ends because an unsigned value is always at least 0. Use the `i-- > 0` pattern.",
+        "**One past the end**: forming the pointer `a + n` is legal, dereferencing it is not. Forming `a + n + 1` is already undefined.",
+        "**Large stack arrays and VLAs**: an untrusted size passed to a VLA is a stack overflow waiting to happen."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Buffers**: network packet buffers, file read buffers, audio sample frames and frame buffers are arrays of bytes or samples.",
+        "**Lookup tables**: a 256-entry table indexed by a byte (CRC tables, character class tables) replaces branching with one load.",
+        "**Counting and histograms**: `int count[26]` indexed by `c - 'a'` is the standard letter-frequency trick, and counting sort is built on it.",
+        "**Underlying storage**: heaps, hash tables with open addressing, ring buffers, stacks and dynamic arrays such as C++ `std::vector` all sit on top of arrays.",
+        "**Matrices and images**: pixel data and numeric kernels use row-major arrays so that inner loops run over consecutive memory.",
+        "**Kernel code**: the Linux kernel uses `ARRAY_SIZE(x)` to compute element counts and flexible array members to place variable-length payloads after a header."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Q: Why is array access O(1)?** The address is `base + i * size`, so one multiply-add reaches any element, with no traversal.",
+        "**Q: What is `a[i]` in terms of pointers?** `*(a + i)`. Since addition commutes, `i[a]` is legal and means the same thing.",
+        "**Q: How do you get the length of an array?** `sizeof a / sizeof a[0]`, valid only on a real array and not on a pointer or parameter.",
+        "**Q: What is the difference between `a`, `&a` and `&a[0]`?** `a` decays to `int *` and `&a[0]` is the same address and type. `&a` has the same address but type `int (*)[5]`, so `&a + 1` jumps over the whole array.",
+        "**Q: How are arrays passed to functions?** By decayed pointer, so the callee can modify the original elements and does not know the length.",
+        "**Q: What are the defaults when you do not initialize?** Automatic arrays are indeterminate. Static and global arrays are zero.",
+        "**Q: Insert in the middle of an array?** O(n): shift the tail with `memmove`, then write the new element."
+      ]
     }
   ],
   "subtopics": [
     {
       "title": "Array decay",
-      "summary": "When an array becomes a pointer.",
+      "summary": "How an array name quietly becomes a pointer, and the three places it does not.",
       "sections": [
         {
-          "body": "In most expressions an array name is converted to a pointer to its first element. Exceptions: operand of sizeof, operand of &, and a string literal initializing a char array. That is why `&a` has type `int (*)[5]` while `a` decays to `int *`.",
-          "code": "int a[5];\nint *p = a;          // &a[0]\nint (*pa)[5] = &a;   // pointer to the whole array\nprintf(\"%zu %zu\\n\", sizeof a, sizeof p);  // 20 8"
-        }
-      ]
-    },
-    {
-      "title": "Variable-length arrays",
-      "summary": "C99 VLAs and their risks.",
-      "sections": [
-        {
-          "body": "`int v[n];` allocates n elements on the stack at run time. It is convenient but a large or attacker-controlled n overflows the stack, and VLAs became optional in C11. Prefer malloc for sizes you do not control."
+          "body": "In most expressions the name of an array is converted to a pointer to its first element. The conversion does not happen in three cases: as the operand of `sizeof`, as the operand of unary `&`, and when a string literal initializes a char array. That explains why `&a` and `a` print the same address but have different types, and why `sizeof` of a function parameter is only a pointer's size.",
+          "code": "int a[5];\nint *p = a;               // decay: &a[0]\nint (*pa)[5] = &a;        // pointer to the whole array\nprintf(\"%zu %zu\\n\", sizeof a, sizeof p);   // 20 8\nprintf(\"%p %p\\n\", (void *)(p + 1), (void *)(pa + 1)); // +4 versus +20 bytes"
         }
       ]
     },
     {
       "title": "Arrays versus pointers",
-      "summary": "They are not the same thing.",
+      "summary": "They convert freely in expressions, which hides the fact that they are different things.",
       "sections": [
         {
           "bullets": [
-            "An array owns storage; a pointer holds an address.",
-            "sizeof differs: whole array versus pointer size.",
-            "An array name is not assignable; a pointer is.",
-            "They convert freely in expressions, which hides the difference."
+            "An array owns its storage. A pointer holds an address and owns nothing.",
+            "`sizeof` of an array is the total byte count. `sizeof` of a pointer is 4 or 8.",
+            "An array name is not an lvalue you can assign to. `a++` is an error, `p++` is fine.",
+            "`int *p = a;` copies an address. It does not copy the elements.",
+            "A definition `int a[5]` in one file and a declaration `extern int *a;` in another is a real bug, because the linker sees an array where the code expects a pointer."
           ]
+        }
+      ]
+    },
+    {
+      "title": "Passing arrays to functions",
+      "summary": "The callee gets an address and no length, so you pass both.",
+      "sections": [
+        {
+          "body": "A parameter written as `int a[]` or `int a[10]` is adjusted to `int *a`. The callee can modify the caller's elements. If it must not, take `const int *a`. For two-dimensional arrays, all dimensions after the first are part of the type, so the callee needs the column count. C99 lets you pass it before the array so it can appear in the type.",
+          "code": "void scale(int *a, size_t n, int k) {\n    for (size_t i = 0; i < n; i++) a[i] *= k;\n}\ndouble trace(size_t n, const double m[n][n]) {   // C99 VLA parameter\n    double t = 0;\n    for (size_t i = 0; i < n; i++) t += m[i][i];\n    return t;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Multidimensional arrays",
+      "summary": "Row-major layout, strides, and how to traverse for speed.",
+      "sections": [
+        {
+          "body": "`int m[2][3] = {{1,2,3},{4,5,6}};` is one block of six ints in the order 1 2 3 4 5 6. The address of `m[i][j]` is `base + (i*3 + j) * sizeof(int)`, and `m[i][j]` equals `*(*(m + i) + j)`. Here `m + i` steps over a whole row of 3 ints. Iterate with `j` innermost so consecutive accesses are adjacent in memory. Swapping the loops makes a large matrix several times slower because every access jumps a full row.",
+          "code": "int m[2][3] = {{1, 2, 3}, {4, 5, 6}};\nfor (int i = 0; i < 2; i++)\n    for (int j = 0; j < 3; j++)\n        printf(\"%d \", m[i][j]);       // 1 2 3 4 5 6, matching memory order"
+        }
+      ]
+    },
+    {
+      "title": "Initialization rules",
+      "summary": "What each form of declaration leaves in memory.",
+      "sections": [
+        {
+          "bullets": [
+            "`int a[5];` local: indeterminate values. Static or global: all zero.",
+            "`int a[5] = {2, 4};` gives 2 4 0 0 0, because missing initializers are zero.",
+            "`int a[5] = {0};` is the idiom for all zeros.",
+            "`int a[] = {1, 2, 3};` deduces size 3. Fewer initializers than a declared size zero-fill, more is a compile error.",
+            "`int d[6] = {[2] = 7, [5] = 9};` is a C99 designated initializer: 0 0 7 0 0 9.",
+            "`char s[8] = \"hi\";` stores h, i, then six zero bytes."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Variable-length arrays and dynamic arrays",
+      "summary": "Run-time sizes: stack VLAs versus heap allocation.",
+      "sections": [
+        {
+          "body": "`int v[n];` allocates `n` ints on the stack when execution reaches the declaration and releases them at the end of the block. It is concise but a large or attacker-controlled `n` overflows the stack with no error you can catch, and VLAs are optional since C11. For sizes you do not control, use `malloc`, check for `NULL`, and `free` it. A VLA cannot be `static`, cannot have an initializer, and cannot be declared at file scope.",
+          "code": "int *v = malloc(n * sizeof *v);       // sizeof *v stays right if the type changes\nif (v == NULL) return -1;\n/* ... use v[0] to v[n-1] ... */\nfree(v);"
         }
       ]
     },
     {
       "title": "Common array algorithms",
-      "summary": "Patterns to know.",
+      "summary": "Patterns that cover most array interview questions.",
       "sections": [
         {
           "bullets": [
-            "Linear scan for sum, min, max.",
-            "Two pointers from both ends (reverse, palindrome).",
-            "In-place rotation by three reversals.",
-            "Prefix sums for fast range queries.",
-            "Sorting and binary searching."
+            "**Linear scan**: sum, min, max, count, second largest in a single pass.",
+            "**Two pointers**: one index at each end moving inward for reverse, palindrome check and two-sum on a sorted array.",
+            "**Sliding window**: maintain a running sum or count over a moving range for maximum subarray of size k.",
+            "**Prefix sums**: precompute `p[i] = a[0] + ... + a[i-1]` so any range sum is `p[r] - p[l]` in O(1).",
+            "**In-place rotation**: reverse the whole array, then reverse each of the two parts. O(n) time, O(1) space.",
+            "**Kadane's algorithm**: maximum subarray sum in O(n) by tracking the best sum ending at each index.",
+            "**Sorting and binary search**: sort in O(n log n), then search in O(log n)."
           ]
+        },
+        {
+          "heading": "Worked code",
+          "body": "Reverse in place with two pointers, the pattern behind many problems.",
+          "code": "void reverse(int *a, size_t n) {\n    if (n < 2) return;\n    for (size_t i = 0, j = n - 1; i < j; i++, j--) {\n        int t = a[i]; a[i] = a[j]; a[j] = t;\n    }\n}"
         }
       ]
     },
     {
       "title": "Advantages and limits",
-      "summary": "When to choose an array.",
+      "summary": "When an array is the right tool and when it is not.",
       "sections": [
         {
-          "body": "Strengths: O(1) random access, cache-friendly contiguous layout, no per-element overhead. Limits: fixed size, O(n) insertion and deletion in the middle, no bounds checking. For growth, use a heap block you realloc (a dynamic array)."
+          "bullets": [
+            "**Strengths**: O(1) indexing, minimal memory, best cache locality, trivial to reason about, easy to pass to hardware and system calls.",
+            "**Limit**: fixed capacity. Growth means a new allocation and a copy.",
+            "**Limit**: inserting or deleting in the middle costs O(n) element moves.",
+            "**Limit**: no safety net, since the language does no bounds checking.",
+            "**Pick something else** when you need frequent middle insertion (linked list), key-based lookup (hash table) or ordered range queries (balanced tree)."
+          ]
         }
       ]
     }
   ],
   "takeaways": [
-    "Contiguous, fixed-size, same-typed, zero-indexed.",
-    "No bounds checking: out-of-range access is undefined behavior.",
-    "Arrays decay to pointers when passed; pass the length separately.",
-    "2D arrays are row-major; callee needs all but the first dimension."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
-      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
-    },
-    {
-      "label": "Reference: Arrays in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/c/c-arrays/"
-    }
+    "`a[i]` means `*(a + i)`: base address plus `i * sizeof(element)`, which is why access is O(1).",
+    "Valid indices are 0 to n-1, and C does not check them. Out-of-range access is undefined behavior.",
+    "`sizeof a / sizeof a[0]` gives the element count only where `a` is a real array, never on a parameter or a malloc'd pointer.",
+    "An array name decays to a pointer to its first element in most expressions, except under `sizeof` and `&`.",
+    "Local arrays are uninitialized, static and global arrays are zero, and `{0}` zero-fills the whole array.",
+    "2D arrays are row-major: loop with the column index innermost for cache-friendly access.",
+    "Insertion or deletion in the middle is O(n); appends into spare capacity are O(1).",
+    "Pass the length alongside every array you give to a function, and use `const` when the callee only reads."
   ],
   "practice": [
     {
@@ -112,24 +213,54 @@
       "difficulty": "Easy"
     },
     {
-      "title": "Rotate an array right by k using three reversals",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Merge two sorted arrays into a third",
+      "title": "Reverse an array in place with two pointers",
       "difficulty": "Easy"
     },
     {
-      "title": "Transpose a matrix stored as int m[3][3]",
+      "title": "Count how many elements of an array are zero, using a pointer walk",
       "difficulty": "Easy"
     },
     {
-      "title": "Spiral-order traversal of a 2D array",
+      "title": "Rotate an array right by k positions in O(1) extra space using three reversals",
       "difficulty": "Medium"
     },
     {
-      "title": "Pass a 2D array to a function three different ways",
+      "title": "Remove duplicates from a sorted array in place and return the new length",
       "difficulty": "Medium"
+    },
+    {
+      "title": "Given an array, build a prefix-sum table and answer range sum queries in O(1)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the maximum subarray sum (Kadane)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the first missing positive integer in O(n) time and O(1) space",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why `sizeof` gives a different answer inside a function than in the caller, then fix a buggy `length(int a[])`",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Merge two sorted arrays into one without extra space when the first has spare capacity at the end",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.5.2.1 Array subscripting and 6.7.6.2 Array declarators",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed., chapter 5",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
+    },
+    {
+      "label": "Reference: Arrays in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/c-arrays/"
     }
   ]
 }

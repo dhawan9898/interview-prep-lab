@@ -1,140 +1,245 @@
 {
-  "summary": "A variable's storage class decides where it lives, how long it exists (lifetime), where it is visible (scope), and across files whether the name can be shared (linkage). The four specifiers are auto, register, static, and extern.",
+  "summary": "A storage class specifier tells the compiler three things about an identifier: how long its object lives (storage duration), where in the program its name can be used (scope) and whether other files can see it (linkage). C provides `auto`, `register`, `static`, `extern` (plus `typedef` and C11 `_Thread_local` in the same grammar slot). They govern initial values, state that persists between calls, and how multi-file programs share or hide globals, so they appear constantly in code reviews and interviews.",
   "sections": [
     {
-      "heading": "Scope, lifetime, and linkage",
+      "heading": "Overview",
+      "body": "Every variable and function you declare has a **scope** (where the name is visible), a **storage duration** (when the object exists) and a **linkage** (whether the same name in another translation unit means the same object). Without writing anything, a variable inside a function is automatic and a variable at file level is static with external linkage. The storage class keywords let you change those defaults: `static` to keep a local alive or to hide a global, `extern` to refer to an object defined elsewhere, `register` to hint at speed, and `auto` to say what is already true.",
       "bullets": [
-        "Scope: where the name is visible (block, function, file).",
-        "Storage duration: automatic (until the block ends), static (whole program run), or allocated (heap).",
-        "Linkage: external (visible to other files), internal (this file only), or none (locals)."
+        "Only one storage class specifier may appear in a declaration (except `_Thread_local`, which combines with `static` or `extern`).",
+        "Storage classes apply to objects and functions; function parameters may only use `register`."
+      ],
+      "code": "int g;                          // file scope, static duration, external linkage\nstatic int hidden;              // file scope, static duration, internal linkage\n\nvoid f(void) {\n    auto int a = 1;             // block scope, automatic (auto is redundant)\n    static int calls;           // block scope, static duration, starts at 0\n    register int i;             // block scope, automatic, hint: keep in a register\n    extern int g;               // refers to the global g above\n    calls++;\n}"
+    },
+    {
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Scope**: region where the name is visible: block, function, function prototype or file.",
+        "**Storage duration**: automatic (block entry to exit), static (whole program run), thread (whole thread), allocated (`malloc` to `free`).",
+        "**Linkage**: external (same name refers to one object across files), internal (visible only in this file, set by `static`), none (locals).",
+        "**Declaration vs definition**: a declaration says a name exists; a definition also reserves storage. `extern int x;` declares; `int x = 3;` defines.",
+        "**`auto`**: the default for locals; automatic duration, indeterminate initial value, stored in stack memory or registers.",
+        "**`register`**: automatic, with a hint that the object is heavily used; you cannot take its address with `&`.",
+        "**`static` (local)**: block scope but static duration; initialized once before the program starts (with a constant), zero by default, keeps its value between calls.",
+        "**`static` (file scope)**: gives a global or a function internal linkage so it cannot clash with the same name in another file.",
+        "**`extern`**: declares an object or function with external linkage that is defined somewhere else; it allocates nothing.",
+        "**Initial value rule**: objects with static duration are zero-initialized if you give no initializer; automatic objects are not initialized."
       ]
     },
     {
-      "heading": "auto",
-      "body": "The default for variables declared inside a block. Created on entry, destroyed on exit, uninitialized (garbage) unless you assign. The keyword is almost never written.",
-      "code": "void f(void) { auto int x = 5;  /* same as int x = 5; */ }"
-    },
-    {
-      "heading": "register",
-      "body": "A hint that a variable is heavily used and should be kept in a CPU register. Modern compilers ignore it, and you cannot take the address of a register variable.",
-      "code": "register int i;   // &i is an error"
-    },
-    {
-      "heading": "static",
-      "body": "Two meanings depending on where it appears:",
+      "heading": "How It Works",
+      "body": "The compiler places each object by its duration. Automatic objects get a slot in the stack frame (or a register); static objects get a fixed address in the data segment (non-zero initializer) or BSS (zero), decided at link time. Watch a `static` local keep its state while an `auto` local resets on every call.",
       "bullets": [
-        "Inside a function: the variable lives for the whole program but is visible only in that function, keeps its value between calls, and is initialized once to zero by default.",
-        "At file scope (global function or variable): internal linkage, so the name is private to the translation unit."
+        "A `static` local's initializer must be a constant expression, because it is applied at program start, not at the first call (that is a C++ difference).",
+        "The static local's address is fixed and valid forever, so returning `&s` is legal, unlike returning `&a`.",
+        "Every call to `counter` is not thread safe on `s`: two threads can race; protect with a mutex or use `_Thread_local` or atomics."
       ],
-      "code": "int next_id(void) {\n  static int id = 0;   // initialized once\n  return ++id;         // 1, 2, 3, ...\n}"
+      "code": "#include <stdio.h>\n\nvoid counter(void) {\n    int a = 0;            // new object each call, reset to 0\n    static int s = 0;     // one object for the whole run, initialized once\n    a++;\n    s++;\n    printf(\"a=%d s=%d\\n\", a, s);\n}\n\nint main(void) {\n    counter();            // a=1 s=1\n    counter();            // a=1 s=2\n    counter();            // a=1 s=3\n    return 0;\n}"
     },
     {
-      "heading": "extern",
-      "body": "Declares that a variable or function is defined in another translation unit; it allocates no storage. The linker resolves the reference. Put extern declarations in a header and the single definition in one .c file.",
-      "code": "/* config.h */ extern int verbose;\n/* config.c */ int verbose = 0;\n/* main.c   */ #include \"config.h\"   // uses verbose"
+      "heading": "Variants & Types",
+      "bullets": [
+        "**`auto`**: default for block-scope variables. In C23 `auto` also means type inference (`auto x = 1.5;`), like C++11, so avoid old-style `auto int` in new code.",
+        "**`register`**: compiler hint only. Modern optimizers allocate registers better than humans, so it is effectively obsolete; its one lasting effect is the ban on `&`, which can help the compiler reason about aliasing. C++17 removed it.",
+        "**`static` local**: persistent state, such as counters, one-time init flags, and lookup tables.",
+        "**`static` global and `static` function**: file-private names; the C equivalent of private members.",
+        "**`extern` variable**: share a global across translation units; defined in exactly one `.c` file, declared in a header.",
+        "**`extern` function**: functions have external linkage by default, so `extern` is optional on prototypes.",
+        "**`typedef`**: syntactically a storage class specifier but creates a type alias, not an object.",
+        "**`_Thread_local` (C11)**: one instance per thread (`errno` is the classic example), static duration per thread."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Auto**: access is a stack-pointer offset or a register; creation is free; size limited by the stack (about 8 MiB).",
+        "**Static and global**: access is a fixed address (or PC-relative); no per-call cost; `static` locals add no runtime check in C.",
+        "**Memory footprint**: static objects occupy RAM for the whole run even if used once; a 1 MiB static buffer is 1 MiB for the process lifetime.",
+        "**Zero-initialized statics**: go to BSS, take no file space; non-zero ones go to the data segment and enlarge the executable.",
+        "**Linkage and optimization**: `static` functions are visible to only one file, so the compiler can inline them and delete unused ones freely.",
+        "**Thread-local access**: a few extra instructions (through the TLS register) compared with a plain global, plus per-thread memory."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Using `auto` locals uninitialized**: contents are indeterminate; reading them is undefined behaviour.",
+        "**Taking the address of a `register` variable**: a compile-time error (`address of register variable requested`).",
+        "**Defining a global in a header**: `int counter;` in a header included by two `.c` files gives duplicate definitions (a link error, or silently merged with the old `-fcommon` behaviour). Declare `extern int counter;` in the header and define it once in a `.c` file.",
+        "**Confusing `static` meanings**: in a function it means persistent; at file scope it means private. Same keyword, two effects.",
+        "**Assuming a static local re-initializes**: `static int x = 0;` runs only once, so later changes persist.",
+        "**State hidden in statics**: functions with static buffers (`strtok`, `asctime`) are not reentrant and not thread safe; prefer `strtok_r` or caller-supplied buffers.",
+        "**`extern` with an initializer**: `extern int x = 5;` at file scope is a definition and draws a warning; keep declarations and definitions separate.",
+        "**Name clashes between files**: two non-static globals named `count` in different files are the same object (or a link error). Mark file-private ones `static`.",
+        "**Returning a `static` buffer**: fine for lifetime, but each call overwrites the previous result and threads race."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Counters and caches**: `static` locals for call counts, memoization tables, and one-time initialization flags (`static int ready; if (!ready) { init(); ready = 1; }`).",
+        "**Encapsulation**: file-scope `static` variables and functions form the private implementation of a module, while the header exposes only public declarations.",
+        "**Shared globals**: `errno`, `stdin`, `environ` and configuration objects use `extern` declarations in headers.",
+        "**Embedded**: `static` buffers avoid heap use; `volatile register`-style hints appear in legacy drivers; hardware registers are declared `extern volatile`.",
+        "**Linux kernel**: nearly all helper functions are `static` to stay file-private; `EXPORT_SYMBOL` is used deliberately for the few that are public.",
+        "**Per-thread state**: `_Thread_local` holds error codes, random generator seeds and allocator caches."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What are the storage classes?** `auto`, `register`, `static`, `extern` (and `typedef`, `_Thread_local` as specifier-grammar relatives).",
+        "**Default value of each?** auto and register: garbage; static and extern (global): zero.",
+        "**Difference between declaration and definition of a global?** `extern int x;` declares; `int x;` or `int x = 1;` defines and allocates.",
+        "**What does `static` do to a global?** Internal linkage: visible only in that file.",
+        "**Can you take the address of a register variable?** No.",
+        "**Where is a static local stored?** Data segment if initialized non-zero, else BSS; not the stack.",
+        "**Lifetime vs scope?** Lifetime is when it exists; scope is where its name is visible. A static local lives forever but is visible only in its block."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Where each lives in memory",
-      "summary": "Tie-back to the layout.",
+      "title": "auto: automatic variables",
+      "summary": "The default for locals.",
       "sections": [
         {
+          "body": "Every variable declared inside a block without another specifier is automatic: created when execution enters the block, destroyed when it leaves. Because the keyword changes nothing, almost no code writes it. Each recursive call gets its own copy, which is what makes recursion work. In C23 the meaning shifts to type inference, so `auto n = 10;` declares an `int`. Never write `auto` on a function: functions have no block-scoped storage.",
+          "code": "int sum(int n) {\n    auto int total = 0;           // identical to: int total = 0;\n    for (int i = 1; i <= n; i++)  // i is automatic too, scoped to the loop\n        total += i;\n    return total;\n}"
+        }
+      ]
+    },
+    {
+      "title": "static: persistent locals",
+      "summary": "Keep state across calls.",
+      "sections": [
+        {
+          "body": "A static local is created once and keeps its last value. The first-use pattern below runs an expensive setup only once. Remember the object is shared by all callers and all threads, so state like this is a form of global variable with a narrow name.",
+          "code": "const char *day_name(int d) {\n    static const char *names[] = {\"Sun\",\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\",\"Sat\"};\n    return names[d % 7];          // pointer stays valid after return\n}\nint next_id(void) {\n    static int id = 100;          // starts at 100 once, then 101, 102, ...\n    return ++id;\n}"
+        }
+      ]
+    },
+    {
+      "title": "static at file scope: internal linkage",
+      "summary": "Hide globals and helper functions.",
+      "sections": [
+        {
+          "body": "A top-level `static` variable or function is private to its translation unit. Two files may each have `static int helper_count` without conflict. This is how C modules hide their guts. Mark every function that is not part of the public API `static`; the compiler then warns if it is unused and can inline it.",
+          "code": "/* stack.c */\nstatic int items[100];            // private to stack.c\nstatic int top;\nstatic int is_full(void) { return top == 100; }     // private helper\nvoid push(int v) { if (!is_full()) items[top++] = v; }   // public"
+        }
+      ]
+    },
+    {
+      "title": "extern: sharing across files",
+      "summary": "Declare in a header, define once.",
+      "sections": [
+        {
+          "body": "Use `extern` to tell the compiler a variable exists in another file; the linker resolves the address. Put the declaration in a header and the single definition in one `.c` file. Compile all files together, for example `gcc main.c print_var.c -o app`; a missing definition gives `undefined reference`, two definitions give `multiple definition`.",
+          "code": "/* config.h */\nextern int verbosity;             // declaration only\nvoid log_msg(const char *m);\n\n/* config.c */\n#include \"config.h\"\nint verbosity = 1;                // the one definition\n\n/* main.c */\n#include \"config.h\"\nint main(void) { verbosity = 2; log_msg(\"hi\"); return 0; }"
+        }
+      ]
+    },
+    {
+      "title": "register: a speed hint",
+      "summary": "What it still means today.",
+      "sections": [
+        {
+          "body": "`register` asks the compiler to keep a variable in a CPU register. Optimizers ignore the hint and decide for themselves, so it has no performance value on modern compilers. What remains is the language rule: you may not apply `&` to a register object (and subscripting a `register` array is undefined behaviour in C11 because it implies taking an address). Use it only for documentation or to forbid address-taking.",
+          "code": "register int i;\nfor (i = 0; i < 1000000; i++) { /* hot loop */ }\n// int *p = &i;    // error: address of register variable requested"
+        }
+      ]
+    },
+    {
+      "title": "Scope, lifetime and linkage together",
+      "summary": "Telling the three apart.",
+      "sections": [
+        {
+          "body": "Scope concerns names, lifetime concerns objects, linkage concerns the same name across files. A static local has block scope, program lifetime and no linkage. A file-scope `static` has file scope, program lifetime and internal linkage. A plain global has file scope, program lifetime and external linkage. An automatic local has block scope, block lifetime and no linkage.",
           "bullets": [
-            "auto/register: stack (or a register).",
-            "static and extern with initializers: initialized data segment.",
-            "static and extern without initializers: BSS, zero-filled.",
-            "malloc'd memory: heap."
+            "`int x;` at top level: external linkage, visible to others via `extern`.",
+            "`static int x;` at top level: internal linkage.",
+            "`static int x;` in a function: no linkage, persistent.",
+            "`int x;` in a function: no linkage, automatic."
           ]
         }
       ]
     },
     {
-      "title": "Default initial values",
-      "summary": "A quick table.",
+      "title": "Initialization rules",
+      "summary": "What value does it start with?",
       "sections": [
         {
-          "bullets": [
-            "auto, register: indeterminate (garbage).",
-            "static, extern (and any global): zero.",
-            "malloc: indeterminate; calloc: zero."
-          ]
+          "body": "Static-duration objects (globals, statics, extern) with no initializer are set to zero (arithmetic zero, null pointers, zeroed padding and members). Their initializers must be constant expressions. Automatic objects with no initializer hold garbage, and reading that garbage is undefined. Automatic arrays and structs can be initialized with braces, and any members left out are zeroed (`int a[5] = {1};` gives 1,0,0,0,0, and `int a[5] = {0};` zeroes it all)."
         }
       ]
     },
     {
-      "title": "Static for encapsulation",
-      "summary": "Hiding helpers.",
+      "title": "_Thread_local and tentative definitions",
+      "summary": "Two less common corners.",
       "sections": [
         {
-          "body": "Marking helper functions and file globals `static` prevents name collisions across files and lets the compiler inline or drop unused ones. It is the C equivalent of 'private'."
-        }
-      ]
-    },
-    {
-      "title": "Thread storage and const",
-      "summary": "_Thread_local and const.",
-      "sections": [
-        {
-          "body": "`_Thread_local` (C11) gives each thread its own copy. A `const` global has internal linkage in C++ but external linkage in C, a classic porting difference."
-        }
-      ]
-    },
-    {
-      "title": "Pitfalls",
-      "summary": "Common mistakes.",
-      "sections": [
-        {
-          "bullets": [
-            "Returning the address of an auto variable.",
-            "Using static locals in code that must be re-entrant or thread-safe (the hidden shared state breaks it).",
-            "Defining a global in a header, creating duplicate definitions at link time.",
-            "Assuming auto variables are zero."
-          ]
+          "body": "`_Thread_local int depth;` (spelled `thread_local` with `<threads.h>`, or `__thread` in GCC) gives each thread its own copy, initialized when the thread starts. A **tentative definition** is a file-scope declaration without initializer and without `extern`, such as `int x;`. Several of those in one file, or (with legacy `-fcommon`) in several files, merge into one object; GCC 10 and later default to `-fno-common`, which turns the cross-file case into a link error."
         }
       ]
     }
   ],
   "takeaways": [
-    "auto is the default for locals; static locals persist between calls.",
-    "static at file scope means internal linkage; extern shares a name across files.",
-    "Static-duration variables are zero-initialized; automatic ones are not.",
-    "register is only a hint, and its address cannot be taken."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
-      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
-    },
-    {
-      "label": "Reference: Storage classes in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/c/storage-classes-in-c/"
-    }
+    "Storage class controls storage duration, linkage and where a variable lives; scope, lifetime and linkage are three separate ideas.",
+    "`auto` locals are the default: created per call, uninitialized, destroyed at block exit.",
+    "A `static` local is initialized once, keeps its value between calls, defaults to zero, and lives in data or BSS.",
+    "A file-scope `static` gives internal linkage, hiding a global or function from other translation units.",
+    "`extern` only declares; define each global exactly once in a `.c` file and declare it in a header.",
+    "`register` is a hint with the lasting rule that you cannot take the variable's address."
   ],
   "practice": [
     {
-      "title": "Write a function that counts how many times it has been called",
+      "title": "Predict the output of a function that increments an auto and a static counter over three calls",
       "difficulty": "Easy"
     },
     {
-      "title": "Predict the output of a program with static and auto counters",
+      "title": "State the default initial value and storage location of auto, static, extern and register variables",
       "difficulty": "Easy"
     },
     {
-      "title": "Share a variable between two .c files with extern",
+      "title": "Explain why `&i` fails when `register int i;` is declared",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Split a program into main.c and util.c sharing one global through extern",
       "difficulty": "Medium"
     },
     {
-      "title": "Make a helper function private to its file",
-      "difficulty": "Easy"
+      "title": "Fix a header that defines int counter; and causes a multiple-definition link error",
+      "difficulty": "Medium"
     },
     {
-      "title": "Explain why a header must not define a global variable",
+      "title": "Implement a function that returns successive ids using a static local and discuss thread safety",
       "difficulty": "Medium"
+    },
+    {
+      "title": "Make a module with private static helpers and a two-function public API",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Rewrite a non-reentrant function using static buffer into a reentrant one",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain tentative definitions and the effect of -fno-common on duplicate globals",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Storage classes in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/storage-classes-in-c/"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.2.2 Linkages of identifiers and 6.7.1 Storage-class specifiers",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed., chapter 4",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
     }
   ]
 }

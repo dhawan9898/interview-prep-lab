@@ -1,88 +1,265 @@
 {
-  "summary": "Endianness is the order in which the bytes of a multi-byte value are stored in memory. Little-endian puts the least significant byte first; big-endian puts the most significant byte first. It matters whenever data crosses machines, files, or networks.",
+  "summary": "Endianness is the order in which a multi-byte value's bytes are laid out in memory or on a wire: little-endian puts the least significant byte first, big-endian puts it last. It matters whenever bytes leave one machine's native representation, such as in network packets, binary files, device registers and memory dumps. x86 and most ARM and RISC-V systems are little-endian, while Internet protocols use big-endian network byte order, so correct code converts at the boundary.",
   "sections": [
     {
-      "heading": "The two orders",
-      "body": "For the 32-bit value 0x12345678 stored starting at address 0:",
-      "code": "address:        00 01 02 03\nbig-endian:     12 34 56 78   (MSB at lowest address)\nlittle-endian:  78 56 34 12   (LSB at lowest address)"
-    },
-    {
-      "heading": "Who uses which",
+      "heading": "Overview",
+      "body": "Endianness is the order in which the bytes of a multi-byte value are stored in memory or sent over a wire. A 32-bit integer such as `0x01234567` occupies four bytes, and there are two common conventions for which byte goes at the lowest address. **Little-endian** puts the least significant byte first; **big-endian** puts the most significant byte first. A single machine is always consistent with itself, so the problem only appears when bytes cross a boundary: a file, a socket, a shared device, or code that views an integer as an array of `char`.",
       "bullets": [
-        "x86, x86-64, and most ARM systems run little-endian.",
-        "Network protocols use big-endian, called network byte order.",
-        "Some older architectures (SPARC, classic PowerPC, MIPS configurations) are big-endian; some CPUs are bi-endian.",
-        "Single-byte values (char) are unaffected."
+        "**Problem it solves**: nothing intrinsically; it is a design choice that hardware families made differently. The software task is to agree on one order at every boundary.",
+        "**Where it shows up**: network protocols, binary file formats, device registers, cross-platform serialization and low-level debugging of memory dumps.",
+        "**Not about bits**: byte order is different from bit order. Within a byte the bits are not individually addressable in C, so shifts and masks behave the same on both kinds of machine."
       ]
     },
     {
-      "heading": "Detecting host endianness",
-      "code": "uint32_t x = 1;\nunsigned char *b = (unsigned char *)&x;\nputs(b[0] == 1 ? \"little-endian\" : \"big-endian\");"
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Little-endian (LE)**: least significant byte at the lowest address. `0x01234567` is stored as `67 45 23 01`. Used by x86, x86-64, and by ARM and RISC-V in their usual configurations.",
+        "**Big-endian (BE)**: most significant byte at the lowest address. The same value is stored as `01 23 45 67`, which reads naturally in a hex dump. Used by classic SPARC, s390x, older PowerPC and many network and file formats.",
+        "**Bi-endian**: hardware that can run in either mode, selected at boot or by a bit in a control register: ARM, PowerPC, MIPS, RISC-V (optional). Linux distributions pick one, such as `ppc64le`.",
+        "**Network byte order**: big-endian, defined for TCP/IP headers. **Host byte order** is whatever the CPU uses.",
+        "**MSB and LSB**: most and least significant byte (or bit), by numeric weight.",
+        "**Byte swap**: reversing the byte order of a value; converting between LE and BE for a given width.",
+        "**Byte-order mark (BOM)**: the code point U+FEFF at the start of UTF-16 or UTF-32 text; read as `FE FF` it means big-endian, `FF FE` means little-endian.",
+        "**Single bytes and arrays**: a `char` array has one order regardless of CPU. Only multi-byte scalars are affected, and floating-point values follow the integer byte order on practically all platforms."
+      ]
     },
     {
-      "heading": "Network byte order functions",
-      "body": "Convert between host and network order with these functions from `<arpa/inet.h>`. They are no-ops on big-endian hosts and byte swaps on little-endian ones.",
-      "bullets": [
-        "`htons` / `ntohs`: 16-bit host-to-network and back.",
-        "`htonl` / `ntohl`: 32-bit.",
-        "Use them for every multi-byte field you read from or write to a packet."
-      ],
-      "code": "uint16_t port = htons(8080);\nuint32_t addr = ntohl(pkt->src_ip);"
+      "heading": "How It Works",
+      "body": "Memory is an array of bytes with increasing addresses. When the CPU stores a 4-byte integer at address A, the endianness decides which byte lands at A, A+1, A+2, A+3. For `0x01234567`: little-endian writes 67 at A, 45 at A+1, 23 at A+2, 01 at A+3, while big-endian writes 01, 23, 45, 67. Reading the first byte through a `char` pointer therefore returns 0x67 on LE and 0x01 on BE. That observation gives the classic runtime test. The portable way to move a value between machines is to never depend on the host layout: write bytes out with shifts, and rebuild integers with shifts.",
+      "code": "#include <stdint.h>\n#include <stdio.h>\n#include <string.h>\n\nint is_little_endian(void) {\n    uint16_t x = 1;\n    unsigned char b;\n    memcpy(&b, &x, 1);           /* first byte in memory */\n    return b == 1;               /* 1 on LE, 0 on BE */\n}\n\n/* host-independent serialization of a 32-bit value, big-endian on the wire */\nvoid put_be32(uint8_t *p, uint32_t v) {\n    p[0] = (uint8_t)(v >> 24);\n    p[1] = (uint8_t)(v >> 16);\n    p[2] = (uint8_t)(v >> 8);\n    p[3] = (uint8_t)v;\n}\n\nuint32_t get_be32(const uint8_t *p) {\n    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |\n           ((uint32_t)p[2] << 8)  |  (uint32_t)p[3];\n}\n\nint main(void) {\n    uint32_t v = 0x01234567u;\n    unsigned char *p = (unsigned char *)&v;\n    for (int i = 0; i < 4; i++) printf(\"%02x \", p[i]);   /* 67 45 23 01 on LE */\n    printf(\"\\n%s\\n\", is_little_endian() ? \"little\" : \"big\");\n    return 0;\n}"
     },
     {
-      "heading": "Where it bites",
+      "heading": "Variants & Types",
       "bullets": [
-        "Reading binary files written on another architecture.",
-        "Parsing protocol headers by casting a byte buffer to a struct.",
-        "Hash or checksum code that assumes a byte order.",
-        "Unicode UTF-16/32 text, which uses a Byte Order Mark (BOM) to declare order."
+        "**Little-endian**: simplifies widening and incremental arithmetic (address of a value does not change with its width) and is the dominant CPU order today.",
+        "**Big-endian**: matches how people write numbers and makes memory dumps easy to read; used in IP, TCP, UDP headers, PNG, Java class files, JPEG markers and ASN.1 DER lengths.",
+        "**Mixed (middle) endian**: historical, such as the PDP-11 storing 32-bit values as two big-endian 16-bit halves each in little-endian byte order. Rare today.",
+        "**Fixed formats**: BMP, ZIP, PE/COFF, USB descriptors, PCI and Bluetooth LE use little-endian; TIFF declares its order in the first two bytes (`II` for Intel/LE, `MM` for Motorola/BE); ELF stores it in `e_ident[EI_DATA]` (1 is LE, 2 is BE).",
+        "**Conversion APIs**: `htons`, `htonl`, `ntohs`, `ntohl` in `<arpa/inet.h>` for 16 and 32 bits; `htobe64`, `be32toh`, `le16toh` and relatives in `<endian.h>` (Linux, glibc 2.9 and later); `__builtin_bswap16/32/64` in GCC and Clang; `_byteswap_ulong` in MSVC.",
+        "**Compile-time detection**: GCC and Clang define `__BYTE_ORDER__` against `__ORDER_LITTLE_ENDIAN__` and `__ORDER_BIG_ENDIAN__`; C++20 offers `std::endian`."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Byte swap**: one instruction on most CPUs (`bswap` on x86, `rev` on ARM), so a 32-bit swap is O(1) and about one cycle.",
+        "**Load with swap**: x86 has `movbe` and ARM has `ldr` plus `rev`, so reading a big-endian field costs about the same as a native read.",
+        "**Compilers recognise patterns**: the shift-and-or code in `get_be32` above compiles to one load plus `bswap` on x86 with GCC and Clang at `-O2`.",
+        "**Cost of ignoring it**: a bug, not a slowdown; a wrong swap shows up as wildly large values such as 0x01000000 for 1.",
+        "**Bulk conversion**: swapping a large array is memory-bandwidth bound, and SIMD shuffle instructions (`pshufb`) can swap 16 to 64 bytes per instruction."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Sending a struct or an `int` with `write`**: the receiver on another architecture reads garbage. Convert each field to a fixed order.",
+        "**Double conversion**: calling `htonl` on a value that is already in network order swaps it back. Keep names such as `len_be` to track which order a variable holds.",
+        "**`htons` on 64-bit values**: those functions only handle 16 and 32 bits. Use `htobe64` or `__builtin_bswap64`.",
+        "**Casting a byte buffer to `uint32_t *`**: violates alignment and strict aliasing and also bakes in the host order. Use `memcpy` or the shift form.",
+        "**Shifting a `uint8_t` by 24**: the byte is promoted to signed `int`, and `p[0] << 24` with a high bit set overflows (undefined). Cast to `uint32_t` first.",
+        "**Bit-fields and bit order**: the allocation order of bit-fields differs between ABIs and often follows byte order. Do not map wire headers with bit-fields.",
+        "**Detecting endianness with a union**: reading a union member other than the one written is allowed in C (type punning) but not in C++; `memcpy` is safe in both.",
+        "**Text encodings**: forgetting the UTF-16 BOM or assuming UTF-16 is host order produces mojibake. UTF-8 has no byte order issue."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**TCP/IP**: ports, lengths, sequence numbers and addresses are big-endian; `sockaddr_in.sin_port` must hold `htons(port)`.",
+        "**File formats and executables**: ELF and TIFF self-describe their order, and tools such as `readelf` and `file` print it. PNG chunk lengths and Java classes are BE; BMP, WAV and ZIP are LE.",
+        "**Embedded and drivers**: device registers have a fixed order; Linux uses `cpu_to_le32`, `be32_to_cpu` and `__le32` annotations checked by the `sparse` tool.",
+        "**Databases and storage**: key encodings often use big-endian so that byte-wise comparison orders integers correctly in ordered key-value stores.",
+        "**Cross-platform games and emulators**: save files and asset formats pick one order and convert on load; emulating a big-endian console on x86 needs a swap on every memory access.",
+        "**Debugging**: when a hex dump of an `int` looks backwards (`d2 04 00 00` for 1234), you are looking at little-endian."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**How do you test endianness at runtime?** Store 1 in a 16 or 32-bit integer and inspect the first byte through an `unsigned char *`; 1 means little-endian.",
+        "**What order does the network use?** Big-endian, called network byte order. Use `htons`/`htonl` before sending and `ntohs`/`ntohl` after receiving.",
+        "**Does endianness affect a `char` array or a single byte?** No.",
+        "**Which is faster?** Neither; swapping is one instruction. Pick the order the format requires.",
+        "**What is `0x12345678` in memory on x86?** `78 56 34 12` from low to high address.",
+        "**What does a struct look like on the wire?** Not like it does in memory: padding, alignment and byte order all differ, so serialize explicitly.",
+        "**Write a byte swap for 32 bits.** `((x & 0xFF) << 24) | ((x & 0xFF00) << 8) | ((x >> 8) & 0xFF00) | (x >> 24)` with `x` as `uint32_t`."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Bit order vs byte order",
-      "summary": "Not the same thing.",
+      "title": "Little and big endian side by side",
+      "summary": "Same value, two layouts.",
       "sections": [
         {
-          "body": "Endianness describes byte order in memory. Bit numbering inside a byte is a separate convention (as in packet diagrams, where the most significant bit is drawn first). Protocol specs state both."
+          "body": "For the 32-bit value `0x0A0B0C0D` at address 0x100, little-endian stores 0D at 0x100, 0C at 0x101, 0B at 0x102, 0A at 0x103. Big-endian stores 0A, 0B, 0C, 0D in that order. The address of the whole integer is the address of its first byte in both cases. On little-endian, reading the same address as a `uint8_t` or `uint16_t` gives the low part of the number (0x0D or 0x0C0D), which is why narrowing through a pointer cast silently works on x86 and silently breaks on big-endian machines.",
+          "bullets": [
+            "Address 0x100: LE 0D, BE 0A.",
+            "Address 0x101: LE 0C, BE 0B.",
+            "Address 0x102: LE 0B, BE 0C.",
+            "Address 0x103: LE 0A, BE 0D."
+          ]
+        },
+        {
+          "heading": "Portable 16-bit helpers",
+          "body": "Shifts express the byte order in the code, so these two functions behave identically on every host.",
+          "code": "static void put16(uint8_t *b, uint16_t v) { b[0] = v >> 8; b[1] = (uint8_t)v; }\nstatic uint16_t get16(const uint8_t *b) { return (uint16_t)((b[0] << 8) | b[1]); }"
         }
       ]
     },
     {
-      "title": "Safe serialization",
-      "summary": "Never rely on struct layout for wire formats.",
+      "title": "Detecting endianness",
+      "summary": "Runtime tests and compile-time macros.",
       "sections": [
         {
-          "body": "Build packets by writing each field explicitly in a fixed order, or shift and mask: `buf[0] = v >> 8; buf[1] = v & 0xff;`. This is independent of host endianness, struct padding, and alignment.",
-          "code": "static void put16(uint8_t *b, uint16_t v) { b[0] = v >> 8; b[1] = (uint8_t)v; }\nstatic uint16_t get16(const uint8_t *b) { return (b[0] << 8) | b[1]; }"
+          "body": "Runtime detection looks at the first byte of a known multi-byte value, using `memcpy` or an `unsigned char *` (which may alias anything). Compile-time detection avoids the branch: `#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__`. Prefer compile-time macros for conditional code, and prefer code that does not care at all because it uses shifts.",
+          "code": "#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__\n#  define HOST_BE 1\n#else\n#  define HOST_BE 0\n#endif"
         }
       ]
     },
     {
-      "title": "Byte swap builtins",
-      "summary": "Fast manual swaps.",
+      "title": "Network byte order and the htons family",
+      "summary": "Converting between host and network order.",
       "sections": [
         {
-          "body": "GCC and Clang provide `__builtin_bswap16/32/64`, and Linux has `le32toh`, `be32toh`, and friends in `<endian.h>` for explicit conversions to and from a named order."
+          "body": "`htons` and `htonl` convert 16 and 32-bit host values to network order; `ntohs` and `ntohl` convert back. On a big-endian host they are no-ops, on little-endian they swap bytes. Apply them to every multi-byte header field you read or write. Typical use: `addr.sin_port = htons(8080);`. IPv4 addresses held as `uint32_t` in `in_addr` are already stored in network order, so you do not swap them when passing them to `inet_ntop`.",
+          "code": "struct sockaddr_in a = {0};\na.sin_family = AF_INET;\na.sin_port   = htons(8080);          /* 0x1F90 -> bytes 1F 90 */\na.sin_addr.s_addr = htonl(INADDR_LOOPBACK);"
         }
       ]
     },
     {
-      "title": "Why both orders exist",
-      "summary": "History and trade-offs.",
+      "title": "Portable serialization with shifts",
+      "summary": "Write and read integers independent of the host.",
       "sections": [
         {
-          "body": "Big-endian reads naturally left to right and makes comparison of byte strings match numeric order. Little-endian lets a CPU read the low part of a value first and simplifies casting to a narrower type. Neither is faster in general; compatibility is the real cost."
+          "body": "The shift-and-mask pattern treats the integer as a number, not as memory, so it gives the same bytes on every CPU. Decide the wire order once (big-endian is conventional for protocols, little-endian for many file formats), write helper functions, and use them for every field. Always cast operands to the wide unsigned type before shifting. Compilers turn the pattern into a single load and `bswap` when the host order differs.",
+          "code": "static inline uint16_t get_le16(const uint8_t *p) {\n    return (uint16_t)(p[0] | (p[1] << 8));\n}\nstatic inline void put_le16(uint8_t *p, uint16_t v) {\n    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);\n}"
+        },
+        {
+          "body": "Typical trouble spots to remember: reading binary files written on another architecture, parsing protocol headers by casting a byte buffer to a struct, hash or checksum code that silently assumes a byte order, and UTF-16 or UTF-32 text without a BOM. In each case the fix is the same: decide the order explicitly and convert at the boundary, never rely on how the host lays out an integer."
+        }
+      ]
+    },
+    {
+      "title": "Byte swapping implementations",
+      "summary": "Manual, builtin and library routines.",
+      "sections": [
+        {
+          "body": "Manual swap uses masks and shifts as in the interview note. `__builtin_bswap32` in GCC and Clang, `_byteswap_ulong` in MSVC, and `bswap_32` in `<byteswap.h>` produce the single instruction. Glibc's `<endian.h>` gives `htobe32`, `htole32`, `be32toh`, `le32toh`, which are no-ops when the host already matches. Use these named conversions instead of `htonl` for little-endian formats so the intent is obvious."
+        },
+        {
+          "heading": "16-bit swap",
+          "code": "static inline uint16_t swap16(uint16_t x) { return (uint16_t)((x << 8) | (x >> 8)); }"
+        }
+      ]
+    },
+    {
+      "title": "Endianness in floats, structs and bit-fields",
+      "summary": "Where byte order interacts with other layout rules.",
+      "sections": [
+        {
+          "body": "IEEE 754 floats and doubles have the same bit layout everywhere, but their bytes are stored in the host integer order on nearly all platforms, so floats cross-machine need the same swap as integers: copy the bits into a `uint32_t` with `memcpy`, swap, and send. Struct padding adds a separate problem, covered in the struct padding lesson. Bit-fields are worse: whether the first declared field occupies the most or least significant bits of its unit depends on the ABI, and often changes with byte order, so wire formats should use masks and shifts."
+        }
+      ]
+    },
+    {
+      "title": "Endianness in file formats and text",
+      "summary": "Self-describing and fixed-order formats.",
+      "sections": [
+        {
+          "body": "Formats solve the problem in three ways: fix the order (PNG and Java class files are big-endian, BMP and ZIP little-endian), record it in a header (ELF `EI_DATA`, TIFF `II` or `MM`), or use a marker (the UTF-16 BOM U+FEFF). A reader must honour whatever the file says rather than assume the host order. UTF-8 is a byte stream with no multi-byte units, so it avoids the issue entirely, one reason it is the default text encoding."
+        }
+      ]
+    },
+    {
+      "title": "History and the name",
+      "summary": "Why the terms exist.",
+      "sections": [
+        {
+          "body": "The words come from Jonathan Swift's Gulliver's Travels, where two factions fight over which end of an egg to crack. Danny Cohen borrowed them in his 1980 note \"On Holy Wars and a Plea for Peace\" to describe the byte-order argument in networking. The Internet protocols chose big-endian, so it became network order, even though the dominant desktop and server CPUs later became little-endian, which is why every network program still calls `htons`."
+        }
+      ]
+    },
+    {
+      "title": "Reading 0x12345678 byte by byte",
+      "summary": "The canonical example, with most-significant-byte reasoning.",
+      "sections": [
+        {
+          "body": "Store 0x12345678 starting at address 00. A big-endian machine writes 12 34 56 78 at addresses 00 to 03, with the big end (the most significant byte, 0x12) first. A little-endian machine writes 78 56 34 12, with the little end (0x78) first. The significance of a byte is its place value, as with decimal digits: in 2,984 changing the 4 to 5 adds 1, but changing the 2 to 3 adds 1,000. So big-endian stores the most significant byte first and little-endian stores it last. Each machine is consistent with itself; trouble starts when two machines exchange raw bytes.",
+          "code": "address:        00 01 02 03\nbig-endian:     12 34 56 78\nlittle-endian:  78 56 34 12"
+        }
+      ]
+    },
+    {
+      "title": "Bit order versus byte order",
+      "summary": "Two separate conventions.",
+      "sections": [
+        {
+          "body": "Endianness only describes the order of whole bytes in memory. How individual bits are numbered or drawn is a different convention: packet diagrams in protocol documents draw the most significant bit first, and hardware manuals may number bit 0 as either end. Within a byte, C shifts and masks work on values, not on storage positions, so they behave identically on both kinds of CPU. Specifications therefore state byte order and bit order separately."
+        }
+      ]
+    },
+    {
+      "title": "Where endianness becomes an issue",
+      "summary": "Unicode, languages, networks and processors.",
+      "sections": [
+        {
+          "body": "Four areas appear again and again. Unicode text: the BOM tells the reader that the stream is Unicode, which encoding is in use, and the byte order. Programming languages: some require or let you choose a byte order explicitly, for example Swift offers big-endian and little-endian views of integers. Networking: protocols settled on big-endian network order while most PCs are little-endian, so every endpoint must convert. Processor design: CPUs may be little-endian, big-endian or bi-endian, and market history decided which looks normal. Higher-level languages often hide the issue, but it returns the moment you do low-level, networking or file-format work."
+        }
+      ]
+    },
+    {
+      "title": "Trade-offs between the two orders",
+      "summary": "Why neither disappeared.",
+      "sections": [
+        {
+          "body": "Big-endian matches how people write numbers, makes hex dumps readable, and makes byte-wise comparison (memcmp) agree with numeric order for unsigned integers of equal length. Little-endian puts the low-order byte at the address of the value, so a wider integer can be read as a narrower one without adjusting the pointer, and multi-word arithmetic can start from the first byte. Neither is generally faster; the real cost is conversion at interfaces, so the practical rule is to pick the order the format requires and convert at the boundary."
         }
       ]
     }
   ],
   "takeaways": [
-    "Endianness is byte order in memory: 0x12345678 is 12 34 56 78 (big) or 78 56 34 12 (little).",
-    "Network byte order is big-endian; use htons/htonl and ntohs/ntohl.",
-    "Serialize fields explicitly rather than casting buffers to structs.",
-    "Single bytes are unaffected; only multi-byte values care."
+    "Endianness is byte order: little-endian stores the least significant byte at the lowest address, big-endian the most significant.",
+    "`0x01234567` appears as `67 45 23 01` on x86 and `01 23 45 67` on a big-endian machine.",
+    "Network byte order is big-endian; use `htons`/`htonl` on send and `ntohs`/`ntohl` on receive.",
+    "Single bytes and `char` arrays have no byte order; only multi-byte scalars do.",
+    "Serialize with shifts and masks to be host independent; never `write` a raw struct or cast a buffer to `uint32_t *`.",
+    "Byte swap compiles to one instruction (`bswap`, `rev`), so correctness, not speed, drives the choice.",
+    "Formats declare their order by fixing it, storing a marker (ELF, TIFF) or using a BOM (UTF-16)."
+  ],
+  "practice": [
+    {
+      "title": "Write a function that reports whether the host is little-endian",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Print the bytes of 0x12345678 in memory order and explain the output",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Convert a port number to network order and back with htons and ntohs",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement swap32 with shifts and compare with __builtin_bswap32",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write get_be32 and put_be32 that work on any host and any alignment",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Parse the first 4 bytes of an ELF file and report class and endianness",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Read a TIFF header, detect II or MM, and decode the first IFD offset on either host",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a binary record format with version, length and checksum fields that round trips between LE and BE machines",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
@@ -90,30 +267,12 @@
       "url": "https://www.geeksforgeeks.org/little-and-big-endian-mystery/"
     },
     {
-      "label": "RFC 791 Appendix B: data transmission order",
+      "label": "RFC 791: Internet Protocol",
       "url": "https://www.rfc-editor.org/rfc/rfc791"
     },
     {
-      "label": "Linux man-pages: byteorder(3)",
-      "url": "https://man7.org/linux/man-pages/man3/byteorder.3.html"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Detect host endianness",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Write a 32-bit byte swap without builtins",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Parse an Ethernet and IP header from a byte buffer portably",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Convert a file of 16-bit big-endian samples to host order",
-      "difficulty": "Medium"
+      "label": "byteorder(3) / endian(3) Linux manual pages",
+      "url": "https://man7.org/linux/man-pages/man3/endian.3.html"
     }
   ]
 }

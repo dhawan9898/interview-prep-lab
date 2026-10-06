@@ -1,105 +1,259 @@
 {
-  "summary": "A struct groups values of different types under one name, with each member in its own storage. A union overlays its members in the same storage so only one is meaningful at a time. An enum names a set of integer constants. Together they let you model records, variants, and states.",
+  "summary": "A struct groups values of different types under one name, giving each member its own storage; a union overlays its members in the same bytes so only one is meaningful at a time; an enum names a set of integer constants. Together they model records, variants and states, and they are the building blocks of linked lists, trees, protocol headers, device registers and interpreters. Knowing how they are laid out, copied, initialized and combined (tagged unions) is core C interview material.",
   "sections": [
     {
-      "heading": "Structures",
-      "body": "Define a struct type, create variables, and access members with `.` (or `->` through a pointer). Initialize with a list or designated initializers; uninitialized automatic members hold garbage.",
-      "code": "struct Student { char name[32]; int age; float gpa; };\nstruct Student s = {\"Vikas\", 20, 3.7f};\nstruct Student t = { .age = 18, .name = \"Anu\" };\nstruct Student *p = &s;\nprintf(\"%s %d\\n\", p->name, (*p).age);"
-    },
-    {
-      "heading": "typedef, nesting, and self-reference",
+      "heading": "Overview",
+      "body": "Arrays hold many values of one type. Real data is heterogeneous: a student has a name, an age and a grade; a network packet has fields of several widths; a token is either a number or a string. C answers with three user-defined types. A **struct** puts members side by side. A **union** puts them on top of each other. An **enum** gives readable names to small integers. They are declared with a tag (`struct Student`) and usually shortened with `typedef`.",
       "bullets": [
-        "`typedef struct {...} Student;` removes the need to write `struct` each time.",
-        "Nested structs: `emp.addr.city`.",
-        "A struct can hold a pointer to its own type, which is how linked lists and trees are built.",
-        "Struct assignment copies all members (a shallow copy: pointers are copied, not what they point to)."
+        "**Struct**: all members exist at once; size is at least the sum of the member sizes.",
+        "**Union**: one member active at a time; size equals the largest member (plus padding).",
+        "**Enum**: a type whose values are named integer constants; the compiler just substitutes numbers."
       ],
-      "code": "typedef struct Node { int val; struct Node *next; } Node;"
+      "code": "#include <stdio.h>\n\nstruct Student { char name[32]; int age; float gpa; };\n\nint main(void) {\n    struct Student s = {\"Vikas\", 20, 3.7f};\n    struct Student *p = &s;\n    printf(\"%s %d %.1f\\n\", p->name, (*p).age, s.gpa);   // Vikas 20 3.7\n    return 0;\n}"
     },
     {
-      "heading": "Passing and returning structs",
-      "body": "Structs are passed by value, copying every byte, so pass a `const struct *` for large ones. Returning small structs by value is fine and common."
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Member**: a named field inside a struct or union. Members may be scalars, arrays, pointers or other aggregates.",
+        "**Tag**: the name after `struct`, `union` or `enum`. `struct Point` is the full type name; the tag lives in a separate namespace from variables.",
+        "**Dot operator `.`**: selects a member of a struct value. **Arrow operator `->`**: selects a member through a pointer; `p->x` means `(*p).x`.",
+        "**Initializer list**: `{a, b, c}` assigns members in declaration order. **Designated initializer** (C99): `{.age = 18, .name = \"Anu\"}` in any order; omitted members become zero.",
+        "**Default state**: an automatic struct with no initializer holds garbage; one with any initializer has every unmentioned member zeroed; static structs are zeroed.",
+        "**Struct assignment**: `b = a;` copies every member byte for byte (a shallow copy: pointers are copied, not their targets).",
+        "**Padding**: unused bytes inserted so each member sits at an address that suits its alignment, so `sizeof(struct)` can exceed the sum of members.",
+        "**Self-referential struct**: contains a pointer to its own type, the foundation of lists and trees.",
+        "**Union**: members share one address; writing one overwrites the others.",
+        "**Tagged union**: a struct holding an enum that says which union member is valid.",
+        "**Enumeration constant**: an identifier such as `RUNNING` with type `int` and a fixed value; it is a compile-time constant usable in `case` labels and array sizes."
+      ]
     },
     {
-      "heading": "Unions",
-      "body": "All members share one block whose size is the size of the largest member (plus any alignment padding). Writing one member overwrites the others. Reading a different member than was last written reinterprets the bytes (allowed for type punning in C, implementation-defined result).",
-      "code": "union Value { int i; float f; unsigned char b[4]; };\nunion Value v; v.f = 1.0f;\nprintf(\"%08x\\n\", (unsigned)v.i);   // bit pattern of 1.0f: 3f800000"
+      "heading": "How It Works",
+      "body": "A struct variable occupies one contiguous block. Each member sits at a fixed offset from the start, in declaration order, so the compiler turns `s.age` into 'base address plus offset'. The program below shows initialization, pointer access, copying and passing by value versus by pointer.",
+      "bullets": [
+        "**Layout example**: `struct { char c; int n; }` places `c` at offset 0, three padding bytes, then `n` at offset 4, so `sizeof` is 8, not 5.",
+        "**Union write and read**: after `union U { int i; float f; } u; u.f = 1.0f;` reading `u.i` returns `0x3f800000` (1065353216), the IEEE-754 bit pattern of 1.0f.",
+        "**Pass by value copies everything**: a 4 KiB struct passed by value copies 4 KiB per call, while a pointer costs 8 bytes.",
+        "**Enum numbering**: `enum State { IDLE, RUNNING = 5, STOPPED };` gives IDLE = 0, RUNNING = 5, STOPPED = 6; unassigned names continue from the previous value plus one."
+      ],
+      "code": "#include <stdio.h>\n\nstruct Point { int x, y; };\n\nvoid bump_val(struct Point p)  { p.x++; }     // changes only the copy\nvoid bump_ptr(struct Point *p) { p->x++; }    // changes the caller's struct\n\nint main(void) {\n    struct Point a = {10, 20};\n    struct Point b = a;          // member-wise copy\n    bump_val(a);\n    bump_ptr(&a);\n    printf(\"a.x=%d b.x=%d\\n\", a.x, b.x);       // a.x=11 b.x=10\n    printf(\"size=%zu\\n\", sizeof(struct Point)); // 8\n    return 0;\n}"
     },
     {
-      "heading": "Enumerations",
-      "body": "An enum defines named integer constants starting at 0 unless assigned. Use them in place of magic numbers, especially for states and error codes.",
-      "code": "enum State { IDLE, RUNNING = 5, STOPPED };   // 0, 5, 6\nenum State st = RUNNING;"
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Plain struct**: `struct Student { ... };` used as `struct Student s;`.",
+        "**typedef struct**: `typedef struct { int a; } str1;` allows `str1 v;`; for self-reference you still need a tag: `typedef struct Node { int v; struct Node *next; } Node;`.",
+        "**Nested struct**: embed another struct as a member (`emp.addr.city`), either declared inside the parent or separately.",
+        "**Anonymous struct/union (C11)**: members promoted into the parent's namespace, so `v.i` works without an inner name.",
+        "**Flexible array member (C99)**: a last member `T data[];` sized at allocation time: `malloc(sizeof(struct Buf) + n)`.",
+        "**Bit-field**: `unsigned ready : 1;` packs flags into bits; layout is implementation-defined.",
+        "**Union**: overlaps members; used for type punning, memory saving and variants.",
+        "**Tagged union**: union plus enum discriminator, the C version of a sum type.",
+        "**Enum**: plain integer constants; use `typedef enum {...} Color;` for a type name.",
+        "**Packed struct**: `__attribute__((packed))` or `#pragma pack(1)` removes padding at the cost of slower or unaligned access; used for wire formats."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Member access**: O(1), one load at a constant offset; `p->x` is the same cost as `a[i]`.",
+        "**Copy and pass by value**: O(sizeof(struct)); copying a 64-byte struct is cheap, a 4 KiB one on every call is not.",
+        "**Size**: struct size is the sum of members plus padding, rounded up to a multiple of the largest member alignment. Example: `struct {char a; double b; char c;}` is 24 bytes; reordering to `{double b; char a; char c;}` gives 16.",
+        "**Union size**: the largest member rounded to the strictest alignment; `union {int arr[10]; char c;}` is 40 bytes, `union {int x; char y;}` is 4.",
+        "**Cache**: members accessed together should sit together (a hot/cold split into two structs can halve cache misses); arrays of structs stream well, structs of arrays suit SIMD.",
+        "**Enum cost**: zero; they compile to integer constants. The enum type's size is implementation-defined (usually 4 bytes, since constants are `int`).",
+        "**Comparison**: C has no `==` for structs; `memcmp` is O(size) but compares padding bytes, so it can give wrong answers."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Shallow copy**: `b = a;` with a `char *name` member makes both structs point at the same string. Freeing one leaves the other dangling; write a clone function that allocates and copies.",
+        "**Forgetting `struct`**: in C, `Student s;` is an error unless you used `typedef`.",
+        "**Initializing in the definition**: `struct A { int x = 5; };` is illegal in C; initialize at the variable.",
+        "**Assigning arrays**: `s.name = \"Bob\";` is an error; use `strcpy`/`snprintf`, or assign the whole struct from a compound literal.",
+        "**Comparing with `memcmp` or `==`**: `==` does not compile; `memcmp` may see differing padding bytes, so compare field by field.",
+        "**`sizeof` assumptions**: do not hard-code struct sizes or offsets; use `sizeof` and `offsetof`.",
+        "**Reading the wrong union member**: after writing `i`, reading `f` reinterprets bits. It is allowed in C (not in C++) but gives a representation-dependent value, and reading a trap representation or a larger member than was written is unspecified.",
+        "**Untagged union use**: forgetting which member is active; always pair with a tag.",
+        "**Bit-field portability**: order, alignment and signedness of plain `int` fields vary, so avoid bit-fields for wire formats or hardware registers across compilers; use masks and shifts instead.",
+        "**Enum surprises**: enum constants are `int`, not scoped, and any `int` can be assigned to an enum variable without warning; two enums can silently mix. Duplicate names across enums in one scope clash.",
+        "**Passing big structs by value** to recursive functions or in hot loops; pass `const struct *`.",
+        "**Self-reference without a pointer**: `struct Node { struct Node next; };` is an infinite-size type and does not compile."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Data structures**: every linked list, tree, graph and hash table node is a struct with pointers (`struct Node { int val; struct Node *next; }`).",
+        "**Linux kernel**: `struct task_struct`, `struct file`, `struct list_head` embedded in other structs with `container_of`; unions in `struct page`; enums for states and error classes.",
+        "**Networking**: packet headers modeled as structs (`struct iphdr`, `struct tcphdr`) with bit-fields or explicit shifts, and unions such as `struct sockaddr_in` overlaid via `sockaddr`.",
+        "**Interpreters and parsers**: tagged unions represent AST nodes and values (`struct Value { enum Kind kind; union { long i; double d; char *s; } u; }`).",
+        "**Hardware**: unions let you view a register as a 32-bit word or as bytes; embedded code maps peripheral registers with a struct of `volatile` members.",
+        "**APIs**: `struct stat`, `struct timespec`, `struct tm`, `FILE`; opaque structs hide implementation behind a pointer and a header."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Struct vs union?** Struct members have separate storage and all hold values; union members share storage and only the last written is valid; union size is the largest member.",
+        "**Why can sizeof(struct) exceed the sum of members?** Alignment padding between members and at the end.",
+        "**How do you reduce struct size?** Order members from largest to smallest alignment, or pack (with a speed and portability cost).",
+        "**Dot vs arrow?** `.` on a struct value; `->` on a pointer to a struct.",
+        "**Can you assign one struct to another?** Yes, member-wise and shallow; arrays inside are copied, pointers are not deep-copied.",
+        "**What is a tagged union?** A union plus an enum that records the active member.",
+        "**Default enum values?** Start at 0 and increase by 1 unless assigned.",
+        "**Can a struct contain itself?** Only through a pointer."
+      ]
     }
   ],
   "subtopics": [
+    {
+      "title": "Defining, initializing and accessing structs",
+      "summary": "Member selection, initializer lists and designated initializers.",
+      "sections": [
+        {
+          "body": "Declare the type once, then create variables. An initializer list fills members in order; designated initializers (C99, not valid in older C++) name them so order does not matter, and everything left out becomes zero. You cannot give default values inside the struct definition itself.",
+          "code": "struct Student { char name[50]; int age; float grade; };\nstruct Student s1 = {\"Rahul\", 20, 18.5f};\nstruct Student s2 = {.age = 18, .name = \"Vikas\", .grade = 22};\nstruct Student s3 = {0};                  // all members zero\nstruct Student s4 = (struct Student){.age = 30};   // compound literal (C99)\nprintf(\"%s %d\\n\", s1.name, s2.age);"
+        }
+      ]
+    },
+    {
+      "title": "Copying structs and shallow vs deep copy",
+      "summary": "What assignment really does.",
+      "sections": [
+        {
+          "body": "`s2 = s1;` copies the bytes of every member, including arrays declared inline. A pointer member is copied as a pointer, so both structs now share the target. When the struct owns heap data you need a deep copy function, and a matching destroy function.",
+          "code": "struct Person { char *name; int age; };\nstruct Person clone(const struct Person *p) {\n    struct Person c = *p;                    // copies age and the pointer\n    c.name = malloc(strlen(p->name) + 1);    // new buffer\n    if (c.name) strcpy(c.name, p->name);     // deep copy of the string\n    return c;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Passing and returning structs",
+      "summary": "By value, by pointer, by const pointer.",
+      "sections": [
+        {
+          "body": "Structs are passed by value, so the callee gets its own copy and cannot change the caller's. For anything bigger than a couple of machine words, pass `const struct T *` to read and `struct T *` to modify. Returning a small struct by value is idiomatic (`struct Point make(int x, int y)`) and the compiler usually builds it directly in the caller's storage (return value optimization via a hidden pointer). Never return a pointer to a local struct.",
+          "code": "struct Point make(int x, int y) { return (struct Point){x, y}; }\ndouble dist2(const struct Point *a, const struct Point *b) {\n    double dx = a->x - b->x, dy = a->y - b->y;\n    return dx * dx + dy * dy;\n}"
+        }
+      ]
+    },
+    {
+      "title": "typedef, nesting and self-referential structs",
+      "summary": "Naming types and building linked structures.",
+      "sections": [
+        {
+          "body": "`typedef` removes the repeated `struct` keyword. A self-referential struct needs its tag inside the definition because the typedef name is not visible yet. Nested access chains dots: `p.b.c`. The nested type may be defined inside or outside the parent; defining it separately is easier to reuse.",
+          "code": "typedef struct Node {\n    int val;\n    struct Node *next;            // must use the tag, Node is not yet defined\n} Node;\n\ntypedef struct { char city[20]; int zip; } Addr;\ntypedef struct { char name[20]; Addr home; } Employee;\nEmployee e = {\"Asha\", {\"Pune\", 411001}};\nprintf(\"%s\\n\", e.home.city);     // Pune"
+        }
+      ]
+    },
+    {
+      "title": "Size, padding and offsetof",
+      "summary": "Why the numbers do not add up.",
+      "sections": [
+        {
+          "body": "Each member must start at a multiple of its alignment, and the total size is rounded up to the largest member alignment. On common 64-bit ABIs `char` aligns to 1, `short` to 2, `int` and `float` to 4, `double`, `long` and pointers to 8. `offsetof(struct T, member)` from `<stddef.h>` reports the offset portably. Reordering members from largest to smallest usually minimizes padding. The struct-padding lesson covers packing and its trade-offs.",
+          "code": "struct A { char c; int n; char d; };      // offsets 0, 4, 8 -> size 12\nstruct B { int n; char c; char d; };      // offsets 0, 4, 5 -> size 8\nprintf(\"%zu %zu %zu\\n\", sizeof(struct A), sizeof(struct B),\n       offsetof(struct A, n));            // 12 8 4"
+        }
+      ]
+    },
+    {
+      "title": "Unions",
+      "summary": "Overlapping members and type punning.",
+      "sections": [
+        {
+          "body": "A union's members all start at offset 0. Its size is the size of the largest member (rounded for alignment). Assigning to one member makes the others hold reinterpreted bytes. In C this punning is permitted; in C++ it is undefined (use `memcpy` or `std::bit_cast`). Declaration syntax mirrors a struct, and unions can be nested or anonymous.",
+          "code": "union Data { int i; float f; unsigned char b[4]; };\nunion Data d;\nd.f = 1.0f;\nprintf(\"%08x\\n\", (unsigned)d.i);          // 3f800000\nprintf(\"%02x %02x\\n\", d.b[0], d.b[3]);    // 00 3f on little-endian\nprintf(\"%zu\\n\", sizeof d);                // 4"
+        },
+        {
+          "body": "Using the byte view reveals endianness: on a little-endian CPU the least significant byte of the int comes first in memory."
+        }
+      ]
+    },
     {
       "title": "Tagged unions",
       "summary": "A safe variant type.",
       "sections": [
         {
-          "body": "Pair a union with an enum tag that records which member is active, and switch on the tag before reading. This is how interpreters, protocol parsers, and many C APIs represent 'one of several types'.",
-          "code": "struct Val { enum { INT, FLT } kind; union { int i; float f; } u; };\nvoid print(struct Val v) { if (v.kind == INT) printf(\"%d\", v.u.i); else printf(\"%f\", v.u.f); }"
+          "body": "Store an enum next to the union and always check it before reading. This is the pattern behind JSON values, interpreter objects, event structs and AST nodes. Keep creation and access in helper functions so the tag and payload cannot drift apart.",
+          "code": "typedef enum { V_INT, V_DBL, V_STR } Kind;\ntypedef struct {\n    Kind kind;\n    union { long i; double d; const char *s; };   // anonymous union (C11)\n} Value;\n\nvoid print(Value v) {\n    switch (v.kind) {\n    case V_INT: printf(\"%ld\\n\", v.i); break;\n    case V_DBL: printf(\"%g\\n\", v.d); break;\n    case V_STR: printf(\"%s\\n\", v.s); break;\n    }\n}"
         }
       ]
     },
     {
-      "title": "Struct versus union",
-      "summary": "Quick comparison.",
+      "title": "Enums",
+      "summary": "Named integer constants.",
       "sections": [
         {
-          "bullets": [
-            "Struct: size is at least the sum of members (plus padding); all members valid at once.",
-            "Union: size is the largest member; only one valid at once.",
-            "Both can be nested in each other.",
-            "Anonymous unions (C11) expose members without a union name."
-          ]
+          "body": "An enum numbers its constants from 0 unless you assign values; each unassigned name is the previous plus one. Constants have type `int` and share the surrounding scope, so prefix names (`COLOR_RED`) to avoid clashes. Compared with `#define` they appear in the debugger and obey scope. They are ideal for states, error codes, and flag bits.",
+          "code": "typedef enum { PERM_R = 1, PERM_W = 2, PERM_X = 4 } Perm;   // bit flags\nunsigned mode = PERM_R | PERM_W;\nif (mode & PERM_W) puts(\"writable\");\nenum Color { RED, GREEN = 5, BLUE };     // 0, 5, 6\nenum { BUF = 256 };                      // anonymous enum as a constant\nchar buf[BUF];"
         }
       ]
     },
     {
-      "title": "Flexible array members",
-      "summary": "Variable-size structs (C99).",
+      "title": "Flexible array members and bit-fields",
+      "summary": "Variable-length tails and sub-byte fields.",
       "sections": [
         {
-          "body": "A struct may end with an array of unspecified length, allocated together with its header, as used for packets and strings with a length prefix.",
-          "code": "struct Buf { size_t len; char data[]; };\nstruct Buf *b = malloc(sizeof *b + 100);\nb->len = 100;"
-        }
-      ]
-    },
-    {
-      "title": "Bit-fields",
-      "summary": "Packing flags in bits.",
-      "sections": [
-        {
-          "body": "`unsigned ready : 1;` allocates one bit. Layout and ordering are implementation-defined, so bit-fields are fine for compact in-memory flags but unreliable for wire formats or hardware registers across compilers."
-        }
-      ]
-    },
-    {
-      "title": "Deep versus shallow copy",
-      "summary": "Pointers inside structs.",
-      "sections": [
-        {
-          "body": "Copying a struct that contains a `char *name` duplicates only the pointer, so both copies refer to the same string and freeing one invalidates the other. Write a clone function that allocates and copies pointed-to data when you need independence."
+          "body": "A flexible array member (C99) is a final array with no size; allocate the header and the payload in one block so a length-prefixed buffer needs a single `malloc` and `free`. `sizeof` excludes the tail. A bit-field declares a width in bits; use it for in-memory flags, but write explicit masks for external formats because bit order and straddling rules differ across compilers.",
+          "code": "struct Buf { size_t len; char data[]; };\nstruct Buf *b = malloc(sizeof *b + 100);\nif (b) { b->len = 100; memset(b->data, 0, b->len); }\n\nstruct Flags { unsigned ready : 1; unsigned mode : 3; unsigned : 0; };\nfree(b);"
         }
       ]
     }
   ],
   "takeaways": [
-    "Struct members have separate storage; union members overlap.",
-    "Use . for values and -> for pointers; pass big structs by const pointer.",
-    "Combine a union with an enum tag to build safe variants.",
-    "Struct copy is shallow; layout and padding follow alignment rules."
+    "Struct members have separate storage and a combined size that includes alignment padding; union members overlap and the size is the largest member.",
+    "Use `.` on values and `->` on pointers; pass large structs by `const struct *` instead of copying them.",
+    "Struct assignment is a shallow copy; deep-copy any pointed-to data yourself and never compare structs with `==` or `memcmp`.",
+    "A tagged union (enum plus union) is the safe way to hold one of several types.",
+    "Enum constants are `int` values starting at 0 and are unscoped; use prefixes and explicit values for flags.",
+    "Order members from largest to smallest alignment to cut padding, and use `offsetof` instead of hard-coded offsets.",
+    "Bit-fields and packed structs are implementation-specific, so avoid them for portable wire or register formats."
+  ],
+  "practice": [
+    {
+      "title": "Define a Student struct, read five records and print the one with the highest GPA",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Predict sizeof for struct {char; int; char;} and for the same members reordered",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Show the output of a union holding int and float after assigning 1.0f",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Sort an array of structs by a field with qsort and a comparator",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a tagged-union calculator value supporting int, double and string",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write clone and destroy functions for a struct that owns a heap string",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Define an enum of bit flags and write set, clear and test helpers",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Build a length-prefixed buffer with a flexible array member and grow it with realloc",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Use a union to detect endianness and print the bytes of a uint32_t, then explain why memcpy is safer in C++",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why memcmp on two structs can fail even when all members are equal and show a fix",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
-      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
-    },
     {
       "label": "Reference: Structures in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/structures-c/"
@@ -107,32 +261,14 @@
     {
       "label": "Reference: Union in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/union-c/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Define a Student struct and sort an array by GPA",
-      "difficulty": "Easy"
     },
     {
-      "title": "Implement a tagged union calculator value",
-      "difficulty": "Medium"
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.7.2.1 Structure and union specifiers",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
     },
     {
-      "title": "Print the bytes of a float using a union",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Build a linked list of structs",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Write a deep-copy function for a struct containing a string",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Use a flexible array member for a length-prefixed message",
-      "difficulty": "Hard"
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed., chapter 6",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
     }
   ]
 }

@@ -1,132 +1,240 @@
 {
-  "summary": "A memory leak is heap memory that is no longer reachable by the program but was never freed. It cannot be reused, so long-running programs slowly consume all available memory.",
+  "summary": "A memory leak is heap memory that a program no longer needs or can no longer reach but never returns to the allocator. A single leak is harmless, but one inside a loop or request handler grows without bound until the process slows, gets killed by the out-of-memory killer, or takes down the machine. Leaks matter most in long-running servers, daemons and embedded devices, and finding and preventing them is a standard C interview topic.",
   "sections": [
     {
-      "heading": "What a leak is",
-      "body": "You allocate with `malloc`, lose every pointer to the block (or forget `free`), and the allocator still considers it in use. The block stays reserved until the process exits.",
-      "code": "int *p = malloc(5 * sizeof *p);\np[0] = 10;\nreturn 0;   // missing free(p)"
+      "heading": "Overview",
+      "body": "Every `malloc`, `calloc` or `realloc` creates an obligation: someone must call `free` exactly once. A leak is a broken obligation. The block stays allocated, counted against your process, and unavailable for reuse. The operating system reclaims everything when the process exits, so a short-lived command-line tool can get away with leaks. A web server that leaks 200 bytes per request and handles 1,000 requests per second leaks about 17 GB per day. This lesson covers how leaks arise, how to classify them, how to find them with tools, and the coding patterns that prevent them."
     },
     {
-      "heading": "Common causes",
+      "heading": "Core Concepts",
       "bullets": [
-        "Forgetting `free` on some path, especially early returns and error paths.",
-        "Overwriting the only pointer: `p = malloc(...)` twice without freeing the first.",
-        "Losing the pointer when it goes out of scope.",
-        "Freeing a container but not the elements it owns."
+        "**Memory leak**: an allocated heap block with no remaining plan to free it, typically because every pointer to it is gone.",
+        "**Reachable block**: memory still referenced by a live pointer when the program ends. Often intentional (global caches, singletons) and usually harmless.",
+        "**Definitely lost**: no pointer to the block exists anywhere. A real leak. Valgrind's term.",
+        "**Indirectly lost**: blocks reachable only through a lost block, for example the nodes of a list whose head pointer was lost.",
+        "**Possibly lost**: only interior pointers (into the middle of the block) remain, so the tool cannot be sure.",
+        "**Growth leak (logical leak)**: memory is still reachable, for example in a map that never evicts entries, but grows without bound. Tools that look at reachability cannot catch it.",
+        "**Resident set size (RSS)**: the physical memory a process currently uses. A steadily rising RSS under steady load is the classic leak signature.",
+        "**OOM killer**: the Linux kernel component that kills a process when the system is out of memory.",
+        "**Allocation site**: the call stack of the `malloc` that produced a block. Leak reports group by it.",
+        "**Fragmentation**: free memory split into pieces too small to use. It looks like a leak (RSS grows) but memory is actually freed."
       ]
     },
     {
-      "heading": "Consequences",
+      "heading": "How It Works",
+      "body": "Memory leaks happen because the pointer is the only handle to a block. If the last pointer is overwritten, goes out of scope, or is returned and ignored, the block cannot be freed. The allocator does not know the block is unused, because it only tracks what was allocated and what was freed.",
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\nchar *make_label(int id) {\n    char *s = malloc(32);\n    if (!s) return NULL;\n    snprintf(s, 32, \"item-%d\", id);\n    return s;                          /* caller now owns it */\n}\n\nint main(void) {\n    for (int i = 0; i < 1000000; i++) {\n        char *label = make_label(i);\n        puts(label);\n        /* missing free(label): 32 bytes lost every iteration */\n    }\n    return 0;\n}"
+    },
+    {
+      "body": "Each iteration loses the only pointer when `label` is reassigned on the next pass. After a million iterations the process holds about 32 MB of unreachable blocks (plus allocator overhead of 8 to 16 bytes each, so roughly 48 MB on 64-bit glibc). Run it under `valgrind --leak-check=full` and the summary reads `definitely lost: 32,000,000 bytes in 1,000,000 blocks`. The fix is one line: `free(label);` after use. The general rule is that whoever receives an owned pointer (from a `make_` or `create_` function) must free it or hand it on."
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Gradual growth in memory use.",
-        "Slowdown from paging and cache pressure.",
-        "Out-of-memory failures; the OOM killer may terminate the process.",
-        "Worst in servers and daemons that run for weeks."
+        "**Simple forgetting**: the allocation has no matching `free` on the normal path.",
+        "**Early return leak**: an error path returns before reaching the cleanup code, abandoning blocks allocated earlier in the function.",
+        "**Pointer overwrite**: `p = malloc(10); p = malloc(20);` loses the first block. Also `p = realloc(p, n)`, which leaks the original block when `realloc` fails and returns NULL.",
+        "**Lost list head**: freeing or advancing the head of a linked list without freeing the nodes behind it.",
+        "**Container leak**: freeing a struct but not the heap fields inside it (name, buffers, child nodes). Free from the inside out.",
+        "**Cache or map growth**: entries added and never removed. Still reachable, so leak checkers stay quiet, but memory climbs.",
+        "**Leaks of other resources**: file descriptors, sockets, mutexes, `mmap` regions, database handles. Same pattern, different limits (about 1024 descriptors per process by default).",
+        "**Reference cycles**: in reference-counted designs, two objects pointing at each other never reach count zero.",
+        "**Thread-local or per-thread allocations** never freed when threads exit."
       ]
     },
     {
-      "heading": "Prevention",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "Pair every allocation with exactly one free in a clear owner.",
-        "Use a single cleanup label (`goto cleanup`) so every error path frees resources.",
-        "Do not overwrite a pointer before freeing it.",
-        "Wrap resources in create/destroy function pairs."
-      ],
-      "code": "int run(void) {\n  char *a = NULL, *b = NULL; int rc = -1;\n  a = malloc(100); if (!a) goto out;\n  b = malloc(200); if (!b) goto out;\n  /* work */ rc = 0;\nout:\n  free(b); free(a);\n  return rc;\n}"
+        "Per-leak cost is the block size plus allocator overhead. glibc `malloc` on 64-bit keeps an 8-byte header and rounds chunks to a multiple of 16, with a 32-byte minimum chunk, so even `malloc(1)` occupies 32 bytes and `malloc(32)` occupies 48.",
+        "A leak that is O(1) per request grows as O(requests). With a 100 byte leak at 500 requests per second the process gains 50 KB per second, 4.3 GB per day.",
+        "Valgrind memcheck slows programs about 10x to 30x. LeakSanitizer, part of AddressSanitizer on Linux, adds almost nothing during the run and does its scan once at exit (about 2x total with ASan).",
+        "Heap profilers such as `heaptrack`, `jemalloc` profiling and `tcmalloc` heap profiler cost a few percent and show which allocation sites hold memory over time, which finds growth leaks.",
+        "Leaks also hurt speed: more resident pages mean more page faults, more swap, worse cache behavior and longer garbage-collection-like scans in the allocator.",
+        "Arena allocation turns thousands of `free` calls into one, cutting both leak risk and time: freeing a 1 GB arena is one `munmap`."
+      ]
     },
     {
-      "heading": "Finding leaks",
+      "heading": "Common Pitfalls & Gotchas",
       "bullets": [
-        "Valgrind: `valgrind --leak-check=full ./prog` lists lost blocks with allocation stacks.",
-        "AddressSanitizer's LeakSanitizer: `-fsanitize=address` reports leaks at exit.",
-        "Static analysis (clang-tidy, cppcheck) flags obvious missing frees."
+        "**`p = realloc(p, n)`**: if `realloc` returns NULL, the old pointer is overwritten and the block leaked. Assign to a temporary first.",
+        "**Error paths**: the common leak. Every `return` after an allocation must free it. Use a single `cleanup:` label.",
+        "**Freeing the container only**: `free(list)` without freeing `list->items` or each element.",
+        "**Mismatched deallocation in C++**: `new[]` must pair with `delete[]`, and `malloc` with `free`. Mixing them is undefined behavior.",
+        "**Believing the OS cleanup excuses it**: fine for a one-shot tool, deadly for a daemon, a library used by others, or a test that loops.",
+        "**Silencing the tool**: suppressing leak reports with a blanket suppression file hides real bugs. Suppress only known third-party noise.",
+        "**Static buffers returned by functions** hide leaks, but they introduce reentrancy bugs instead.",
+        "**Returning ownership without saying so**: APIs that return a `malloc`'d pointer need a documented owner. Names such as `create`, `dup` and `new` signal it. `strdup` and `getline`'s buffer both have to be freed.",
+        "**Library calls that allocate**: `strdup`, `asprintf`, `getline`, `fopen` (the `FILE`), `opendir`, `regcomp` all hold resources until you release them with `free`, `fclose`, `closedir`, `regfree`.",
+        "**Assuming `calloc` or `memset` zeroing helps**: zeroing does not release anything.",
+        "**Counting `reachable` as zero-risk**: still-reachable blocks at exit are usually fine, but a still-reachable list that keeps growing is a leak."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Servers and daemons** (nginx, Redis, PostgreSQL) run for months, so leaks are tracked with RSS graphs and fixed or contained. Nginx and Apache use per-request memory pools: allocate during the request, free the whole pool at the end.",
+        "**Linux kernel**: `kmemleak` scans for unreferenced kernel allocations the way a conservative garbage collector would. Drivers use device-managed (`devm_`) allocations that are released automatically when the device goes away.",
+        "**Mobile and embedded**: apps are killed when memory use climbs. Embedded targets often forbid `malloc` after startup to eliminate leaks and fragmentation.",
+        "**CI pipelines** run tests under LeakSanitizer (`ASAN_OPTIONS=detect_leaks=1`) so any new leak fails the build.",
+        "**Languages that avoid manual leaks**: garbage collectors (Java, Go), reference counting (Python, Swift ARC), RAII and smart pointers (C++), ownership (Rust). They still leak through unbounded caches and cycles."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is a memory leak?** Heap memory that is allocated and never freed, and often unreachable. Reduces available memory over time.",
+        "**How do you detect one?** Valgrind (`--leak-check=full`), LeakSanitizer, heap profilers, or watching RSS grow. In code review, count allocations versus frees on each path.",
+        "**Does a leak matter after the program exits?** The OS reclaims the memory. It matters for long-running processes.",
+        "**Leak versus dangling pointer?** A leak: memory not freed, no pointer left. Dangling pointer: memory freed, pointer still used. Opposite failures.",
+        "**What does `p = realloc(p, n)` risk?** A leak when `realloc` fails, because it returns NULL and the original block is still allocated.",
+        "**How do you avoid leaks in C?** Define ownership, pair every allocation with one free, use a single cleanup path, arenas or pools, and run sanitizers in tests.",
+        "**How does C++ solve it?** RAII: smart pointers (`unique_ptr`, `shared_ptr`) and containers free their memory in destructors."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Leak categories",
-      "summary": "Definitely, indirectly, possibly lost.",
+      "title": "Leak categories in Valgrind and LeakSanitizer",
+      "summary": "Definitely, indirectly and possibly lost versus still reachable.",
       "sections": [
         {
-          "body": "Valgrind distinguishes 'definitely lost' (no pointer remains), 'indirectly lost' (reachable only through a leaked block), 'possibly lost' (only interior pointers remain), and 'still reachable' (pointer exists at exit, often intentional globals)."
+          "body": "Leak checkers scan memory at exit from the roots (globals, stacks, registers) looking for pointers into each block. A block with no pointer at all is definitely lost. A block whose only referrers are themselves lost blocks is indirectly lost, so fixing the root loss fixes them. A block referenced only by a pointer into its middle is possibly lost. A block still referenced from a global or the stack at exit is still reachable. Prioritize definite losses and any category that grows between two points of the program.",
+          "code": "$ valgrind --leak-check=full --show-leak-kinds=all ./a.out\n==101== HEAP SUMMARY:\n==101==     in use at exit: 32,000,000 bytes in 1,000,000 blocks\n==101== 32,000,000 bytes in 1,000,000 blocks are definitely lost\n==101==    at 0x4C2FB0F: malloc (vg_replace_malloc.c:299)\n==101==    by 0x40058E: make_label (leak.c:7)\n==101==    by 0x4005C1: main (leak.c:16)\n==101== LEAK SUMMARY: definitely lost: 32,000,000 bytes in 1,000,000 blocks"
         }
       ]
     },
     {
-      "title": "Leaks vs dangling pointers",
-      "summary": "Opposite mistakes.",
+      "title": "Leaks versus dangling pointers",
+      "summary": "They are mirror-image ownership errors, and fixing one carelessly causes the other.",
       "sections": [
         {
-          "body": "A leak is forgetting to free; a dangling pointer is using memory after freeing. Over-correcting one tends to cause the other, so ownership rules matter more than reflexes."
+          "body": "A leak means the block lives and the pointer is gone. A dangling pointer means the pointer lives and the block is gone. Over-eager fixes create the opposite bug: adding a `free` in the wrong place to stop a leak can free memory that another alias still uses (use-after-free), while avoiding all `free` calls to be safe guarantees leaks. The cure for both is explicit ownership: one owner frees, everyone else borrows for a shorter time than the owner lives."
+        }
+      ]
+    },
+    {
+      "title": "Error-path cleanup with a single exit",
+      "summary": "Structure the function so every failure funnels through one release section.",
+      "sections": [
+        {
+          "body": "Allocate in order, free in reverse order, and initialize every pointer to NULL so that the cleanup label can call `free` unconditionally (`free(NULL)` is a no-op). This avoids both the early-return leak and the double free from partial manual cleanups.",
+          "code": "int load(const char *path, char **out_text, size_t *out_len) {\n    int rc = -1;\n    FILE *fp = NULL;\n    char *buf = NULL;\n\n    fp = fopen(path, \"rb\");\n    if (!fp) goto cleanup;\n    if (fseek(fp, 0, SEEK_END) != 0) goto cleanup;\n    long n = ftell(fp);\n    if (n < 0 || fseek(fp, 0, SEEK_SET) != 0) goto cleanup;\n    buf = malloc((size_t)n + 1);\n    if (!buf) goto cleanup;\n    if (fread(buf, 1, (size_t)n, fp) != (size_t)n) goto cleanup;\n    buf[n] = '\\0';\n    *out_text = buf; *out_len = (size_t)n;\n    buf = NULL;                 /* ownership moved to the caller */\n    rc = 0;\ncleanup:\n    free(buf);\n    if (fp) fclose(fp);\n    return rc;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Safe realloc and growth patterns",
+      "summary": "Use a temporary pointer so that a failed realloc does not leak the block.",
+      "sections": [
+        {
+          "body": "`realloc(p, n)` returns NULL on failure and leaves `p` valid. Writing `p = realloc(p, n)` throws away the only reference to that valid block. Grow geometrically (double the capacity) so that appends are amortized O(1) and `realloc` is called O(log n) times.",
+          "code": "int push(int **arr, size_t *len, size_t *cap, int value) {\n    if (*len == *cap) {\n        size_t ncap = *cap ? *cap * 2 : 8;\n        if (ncap > SIZE_MAX / sizeof **arr) return -1;     /* overflow guard */\n        int *tmp = realloc(*arr, ncap * sizeof **arr);\n        if (!tmp) return -1;           /* *arr is still valid and still owned */\n        *arr = tmp; *cap = ncap;\n    }\n    (*arr)[(*len)++] = value;\n    return 0;\n}"
         }
       ]
     },
     {
       "title": "Arena (region) allocation",
-      "summary": "Free in bulk.",
+      "summary": "Allocate many objects from one region and free them all with one call.",
       "sections": [
         {
-          "body": "Allocate many short-lived objects from one arena and release the whole arena at once. It removes per-object lifetime tracking, eliminates most leaks, and is fast. Compilers and request handlers commonly use it."
+          "body": "An arena grabs a big block and hands out pieces by bumping an offset. Individual objects are never freed; the whole arena is released at once, for example at the end of a request or a compiler pass. That removes per-object leaks and double frees and makes allocation a few instructions. The trade-off is that nothing in the arena can outlive it, and memory for dead objects is not reused until the reset.",
+          "code": "typedef struct { char *base; size_t used, cap; } Arena;\n\nvoid *arena_alloc(Arena *a, size_t n) {\n    n = (n + 15) & ~(size_t)15;                 /* keep 16-byte alignment */\n    if (a->used + n > a->cap) return NULL;\n    void *p = a->base + a->used;\n    a->used += n;\n    return p;\n}\nvoid arena_reset(Arena *a) { a->used = 0; }      /* frees everything at once */\nvoid arena_destroy(Arena *a) { free(a->base); a->base = NULL; }"
         }
       ]
     },
     {
       "title": "Resource leaks beyond memory",
-      "summary": "File descriptors and locks.",
+      "summary": "File descriptors, sockets and locks leak the same way and run out much sooner.",
       "sections": [
         {
-          "body": "The same discipline applies to `fopen`/`fclose`, sockets, and mutexes. Leaking descriptors hits the per-process limit long before RAM runs out."
+          "body": "A process typically has a soft limit of 1024 open descriptors (`ulimit -n`), so a descriptor leak shows up as `EMFILE: Too many open files` after about a thousand requests, long before memory is exhausted. Treat each open resource like an allocation: pair `fopen` with `fclose`, `open` with `close`, `socket` with `close`, `pthread_mutex_lock` with unlock, and `mmap` with `munmap`. Check with `ls /proc/<pid>/fd | wc -l` and `lsof -p <pid>`. GCC and Clang support `__attribute__((cleanup(fn)))` to run a function when a variable leaves scope, a poor man's RAII in C.",
+          "code": "static void close_fp(FILE **fp) { if (*fp) fclose(*fp); }\n\nvoid demo(const char *path) {\n    __attribute__((cleanup(close_fp))) FILE *fp = fopen(path, \"r\");\n    if (!fp) return;\n    /* ... any return path closes fp automatically ... */\n}"
         }
       ]
     },
     {
-      "title": "Smart pointers in C++",
-      "summary": "Automatic cleanup with RAII.",
+      "title": "Finding growth leaks with profilers",
+      "summary": "Reachability checkers miss caches that keep growing; compare snapshots over time.",
       "sections": [
         {
-          "body": "`std::unique_ptr` owns one object and frees it when it goes out of scope; `std::shared_ptr` reference-counts shared ownership; `std::weak_ptr` observes without owning and breaks reference cycles. Using them removes most manual delete calls and therefore most leaks.",
-          "code": "auto p = std::make_unique<Widget>();   // freed automatically"
+          "body": "If RSS rises but LeakSanitizer reports nothing, the memory is still referenced, for example an ever-growing hash table. Tools: `valgrind --tool=massif` plots heap use by allocation site over time; `heaptrack` records every allocation and reports the top growers; `jemalloc` with `prof:true` and `jeprof` or glibc `malloc_stats()` and `mallinfo2()` give totals. Take two snapshots under the same load, a few minutes apart, and diff them. Also check the loop counters: a map keyed by request ID needs an eviction policy (LRU, time-to-live, size cap)."
+        }
+      ]
+    },
+    {
+      "title": "Smart pointers and RAII in C++",
+      "summary": "Let destructors free memory so leaks cannot happen on any exit path.",
+      "sections": [
+        {
+          "body": "`std::unique_ptr<T>` owns one object and deletes it in its destructor, even when an exception unwinds the stack. `std::shared_ptr<T>` counts owners and deletes when the last one goes away. `std::weak_ptr<T>` observes without owning and breaks cycles. Prefer `std::make_unique` and `std::make_shared` over raw `new`, and containers (`std::vector`, `std::string`) over raw arrays. The same idea in C is a create/destroy pair plus the `cleanup` attribute.",
+          "code": "#include <memory>\n#include <vector>\n\nvoid work() {\n    auto p = std::make_unique<int[]>(1024);   // freed on every exit path\n    std::vector<int> v(1024);                 // also freed automatically\n    // no delete needed\n}"
         }
       ]
     }
   ],
   "takeaways": [
-    "Leak = allocated, unreachable, never freed.",
-    "Check every exit path, especially error returns.",
-    "Use Valgrind or ASan/LSan in testing.",
-    "Consider arenas or clear ownership to simplify cleanup."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: Memory leak in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/what-is-memory-leak-how-can-we-avoid/"
-    },
-    {
-      "label": "Valgrind manual: Memcheck",
-      "url": "https://valgrind.org/docs/manual/mc-manual.html"
-    }
+    "A leak is an allocation whose last pointer is lost (or never released) before `free`; the OS reclaims it at exit, but long-running programs run out of memory.",
+    "Valgrind reports definitely, indirectly and possibly lost plus still-reachable; fix definite losses first and look for growth in reachable memory.",
+    "`p = realloc(p, n)` leaks the original block when `realloc` fails; use a temporary pointer.",
+    "Funnel every error path through one cleanup label, with pointers initialized to NULL so `free` is always safe.",
+    "Free a struct from the inside out: nested heap fields before the container.",
+    "Arenas, pools and reference counting reduce the number of individual frees and therefore the chances to get one wrong.",
+    "File descriptors, sockets and locks leak like memory and hit lower limits (about 1024 descriptors) much sooner."
   ],
   "practice": [
     {
-      "title": "Find a leak with valgrind --leak-check=full",
+      "title": "Spot the leak in a loop that mallocs a buffer and breaks out early on error",
       "difficulty": "Easy"
     },
     {
-      "title": "Fix leaks on every error path using a goto cleanup block",
+      "title": "Difference between a memory leak and a dangling pointer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why `p = realloc(p, n)` can leak and write the safe form",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Free a linked list of structs that own heap strings, with no leaks and no double free",
       "difficulty": "Medium"
     },
     {
-      "title": "Free a nested structure (list of strings) correctly",
+      "title": "Rewrite a function with five allocations and several early returns using a cleanup label",
       "difficulty": "Medium"
     },
     {
-      "title": "Write a malloc/free tracking wrapper that reports leaks at exit",
+      "title": "Interpret a Valgrind report with definitely, indirectly and possibly lost blocks",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a bump-pointer arena and explain what it cannot do",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Your server's RSS grows 50 MB per hour but LeakSanitizer is clean; how do you find it?",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Design a reference-counted object API in C and explain how cycles leak",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "GeeksforGeeks: Memory Leak in C",
+      "url": "https://www.geeksforgeeks.org/what-is-memory-leak-how-can-we-avoid/"
+    },
+    {
+      "label": "Valgrind Memcheck manual",
+      "url": "https://valgrind.org/docs/manual/mc-manual.html"
+    },
+    {
+      "label": "LeakSanitizer documentation",
+      "url": "https://clang.llvm.org/docs/LeakSanitizer.html"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, section 7.22.3",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
     }
   ]
 }

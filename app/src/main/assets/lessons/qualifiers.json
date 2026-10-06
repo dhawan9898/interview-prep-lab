@@ -1,130 +1,290 @@
 {
-  "summary": "Type qualifiers add promises about how an object may be used. const says the program will not modify it, volatile says its value can change outside the program's control, and restrict says a pointer is the only way to reach the object. They help both the compiler and other programmers.",
+  "summary": "Type qualifiers add a property to a type without changing its representation: `const` marks data read-only, `volatile` forces every access to be performed, `restrict` promises no aliasing, and `_Atomic` makes accesses indivisible. They catch bugs at compile time, express interface contracts, and control what the optimizer may assume. You meet them in the standard library prototypes, embedded register access, signal handlers and performance-critical numeric code.",
   "sections": [
     {
-      "heading": "const",
-      "body": "A const object cannot be modified through its name; trying to is a compile error. For objects defined const, modifying them through a cast pointer is undefined behavior. const improves safety, documents intent, and lets the compiler place data in read-only memory.",
-      "code": "const int max = 100;\n// max = 200;          // error\nconst double pi = 3.14159;"
-    },
-    {
-      "heading": "const and pointers",
-      "body": "Read declarations right to left. Three forms:",
+      "heading": "Overview",
+      "body": "A **type qualifier** adds a property to a type without changing how its values are represented. C has four: `const`, `volatile`, `restrict` (C99) and `_Atomic` (C11). Each one is a message to the compiler, the reader or both. `const` says you will not modify an object through this name. `volatile` says every access is observable and must not be removed or reordered with respect to other volatile accesses. `restrict` says that, for the lifetime of the pointer, the object it points to is accessed only through that pointer or values derived from it. Qualifiers make interfaces self-documenting, catch bugs at compile time, and let the optimizer generate better code, but each has precise rules and common misuses.",
       "bullets": [
-        "`const int *p` (pointer to const int): cannot modify *p; can re-point p.",
-        "`int *const p` (const pointer): can modify *p; cannot re-point p.",
-        "`const int *const p`: neither."
-      ],
-      "code": "int x = 1, y = 2;\nconst int *a = &x;  a = &y;   /* *a = 5; error */\nint *const b = &x;  *b = 5;    /* b = &y; error */"
+        "**`const`**: read-only view. Enforced by the compiler for direct writes, and placing the object in read-only memory may make writes fault at run time.",
+        "**`volatile`**: forces real loads and stores for memory-mapped I/O, signal handlers and similar. It is not a threading tool.",
+        "**`restrict`**: a promise from you to the compiler about aliasing. Breaking it is undefined behaviour.",
+        "**Where qualifiers go**: on object declarations, on pointed-to types, and on the pointer itself."
+      ]
     },
     {
-      "heading": "const correctness in APIs",
-      "body": "Mark parameters you do not modify as pointer-to-const. It documents the contract, lets callers pass const data, and prevents accidents. The standard library does this: `size_t strlen(const char *s)`.",
-      "code": "size_t count(const int *a, size_t n);   // promises not to write"
-    },
-    {
-      "heading": "volatile",
-      "body": "Tells the compiler the object may change unexpectedly or that accesses have side effects, so every read and write in the source must really happen, in order. Without it the compiler may cache the value in a register or delete a loop that polls it.",
+      "heading": "Core Concepts",
       "bullets": [
-        "Memory-mapped hardware registers.",
-        "Variables changed by a signal handler (use `volatile sig_atomic_t`).",
-        "Objects shared with setjmp/longjmp code."
-      ],
-      "code": "volatile int ready = 0;\nwhile (!ready) { /* wait: re-read each time */ }"
+        "**Top-level versus pointee qualifier**: in `const int *p` the `const` qualifies the int that p points to; in `int *const p` it qualifies the pointer p itself.",
+        "**Reading rule**: read declarations right to left. `int const *p` is p, a pointer to const int. `int *const p` is p, a const pointer to int. `const int *const p` is a const pointer to const int.",
+        "**Pointer to const**: `const int *p;` you may repoint p, but you may not write `*p`.",
+        "**Const pointer**: `int *const p = &x;` you may write `*p`, but may not repoint p, and it must be initialized.",
+        "**Const-correctness**: declare parameters `const` when the function does not modify the pointee, so callers can pass both const and non-const data.",
+        "**Qualified conversion**: adding a qualifier to the pointee is implicit and safe (`int *` to `const int *`). Removing it needs a cast and is dangerous.",
+        "**Volatile access**: a read or write of a volatile object is a side effect; the compiler must perform each exactly as written in the abstract machine.",
+        "**Restrict**: valid only on pointers. It lets the compiler assume no overlap with other pointers accessing the same object when at least one of them modifies it.",
+        "**Atomic**: `_Atomic int n;` makes accesses indivisible and defines memory ordering; this, not `volatile`, is the tool for threads."
+      ]
     },
     {
-      "heading": "restrict (C99)",
-      "body": "A promise that, for the lifetime of the pointer, the object it points to is accessed only through that pointer (or pointers derived from it). It lets the compiler optimize aggressively, as in `memcpy`, whose arguments must not overlap. Breaking the promise is undefined behavior.",
-      "code": "void *memcpy(void *restrict dst, const void *restrict src, size_t n);"
+      "heading": "How It Works",
+      "body": "The compiler tracks qualifiers as part of the type. Assigning to an lvalue whose type is const-qualified is a constraint violation, so the compiler must diagnose it. Beyond diagnostics, qualifiers drive optimization. A `const` global with a constant initializer usually lands in the read-only data section (`.rodata`), and writing it through a cast pointer is undefined behaviour and typically a segmentation fault. For `volatile`, the compiler emits a load or store instruction at every access instead of caching the value in a register. For `restrict`, the optimizer may keep values in registers across stores, reorder loads and stores, and vectorize loops it otherwise could not prove independent.",
+      "code": "#include <stdio.h>\n#include <string.h>\n\nint main(void) {\n    int a = 1, b = 2;\n\n    const int *pc = &a;        /* pointer to const int */\n    /* *pc = 5;                   error: assignment of read-only location */\n    pc = &b;                   /* ok: repoint */\n\n    int *const cp = &a;        /* const pointer to int */\n    *cp = 5;                   /* ok: a is now 5 */\n    /* cp = &b;                   error: assignment of read-only variable */\n\n    const int *const cc = &a;  /* neither can change through cc */\n    (void)cc;\n\n    const int k = 10;          /* may live in .rodata */\n    int *evil = (int *)&k;     /* cast away const */\n    /* *evil = 7;                 undefined behaviour: may crash or be ignored */\n    (void)evil;\n\n    printf(\"%d %d %zu\\n\", a, *pc, strlen(\"hi\"));\n    return 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**`const T`**: read-only object. `const int max = 100;`. In C this is not a constant expression, so it cannot size a static array (C++ differs).",
+        "**`const T *` and `T const *`**: identical, pointer to read-only T.",
+        "**`T *const`**: read-only pointer to writable T.",
+        "**`const T *const`**: read-only pointer to read-only T.",
+        "**`volatile T`**: every access is real. Typical forms: `volatile uint32_t *reg = (volatile uint32_t *)0x40021000;` and `volatile sig_atomic_t flag;`.",
+        "**`const volatile T`**: a read-only status register that hardware changes, such as a timer counter. The program must not write it, yet each read must really happen.",
+        "**`restrict`**: `void add(int *restrict dst, const int *restrict a, const int *restrict b, size_t n);`. `memcpy` has restrict parameters, `memmove` does not.",
+        "**`_Atomic`**: `_Atomic int counter;` or `atomic_int` from `<stdatomic.h>`. Operations are indivisible and sequentially consistent by default.",
+        "**Qualified arrays**: `void f(const char s[])` is `const char *s`. C99 also allows `void f(int a[static 10])`, meaning at least 10 elements,. Qualifiers may also appear inside parameter array brackets, as in `int a[restrict]`."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Run time of `const`**: zero; it is compile-time information. It may enable constant folding and moving data to `.rodata`, which pages can be shared between processes (one physical copy for all instances of a program).",
+        "**`volatile` cost**: disables caching in registers and many reorderings, so a loop that polls a volatile flag does one load per iteration. A volatile loop counter can be several times slower than a register one, because every increment is a load and store.",
+        "**`restrict` gain**: can enable SIMD vectorization of loops. Speedups of 2 to 4 times on simple array kernels are common, and none is guaranteed.",
+        "**`_Atomic` cost**: an atomic increment compiles to `lock xadd` on x86 (about 10 to 20 cycles uncontended, far more under contention); sequentially consistent stores add a fence or use `xchg`.",
+        "**Space**: qualifiers never change `sizeof`. `sizeof(const int)` equals `sizeof(int)`."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Casting away const and writing**: writing to an object that was defined `const` is undefined behaviour. Casting away const is only legal when the underlying object is actually modifiable.",
+        "**String literals**: `char *s = \"abc\"; s[0] = 'x';` is undefined behaviour because literals are read-only. Declare `const char *s` or `char s[] = \"abc\";`. Compile with `-Wwrite-strings`.",
+        "**`const` in `const int *` versus `int *const`**: mixing them up is the single most common error. Use right-to-left reading.",
+        "**`int **` to `const int **`**: not implicitly convertible in C, because it would allow storing a const pointer into a non-const slot. `char **` to `const char *const *` is also rejected in C (accepted in C++).",
+        "**`volatile` is not synchronization**: it gives no atomicity and no inter-thread ordering. A volatile `counter++` is still a data race. Use `_Atomic` or a mutex.",
+        "**`volatile` and signal handlers**: only `volatile sig_atomic_t` (or lock-free atomics) is safe to write from a handler and read in the main program.",
+        "**`restrict` violation**: passing overlapping buffers to restrict parameters (for example `add(x, x + 1, x, n)`) is undefined behaviour and may silently miscompute under optimization. Use `memmove`-like code when overlap is possible.",
+        "**Dropping qualifiers in return values**: `strchr(const char *, int)` returns `char *`, which loses const. It is a known wart; wrap it in a const-correct helper.",
+        "**Const on return values**: `const int f(void)` has no effect on scalars. Const return matters for pointers (`const char *name(void)`).",
+        "**Const arrays of pointers**: `const char *names[]` is an array of pointers to const char; the pointers can change. For fully read-only use `const char *const names[]`."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Standard library**: `strlen(const char *)`, `strcpy(char *restrict, const char *restrict)`, `memcpy(void *restrict, const void *restrict, size_t)`, `printf(const char *restrict, ...)`.",
+        "**Embedded**: peripheral registers are `volatile`; read-only look-up tables are `static const` so they stay in flash instead of RAM, which matters when RAM is a few kilobytes.",
+        "**Operating systems**: Linux's `READ_ONCE` and `WRITE_ONCE` are volatile accesses for lock-free code, with `__ro_after_init` and `const` ops structs placed in read-only pages for hardening.",
+        "**Signal handling**: `volatile sig_atomic_t got_signal = 0;` set in the handler and polled in the main loop.",
+        "**Numerical libraries**: BLAS-style and image-processing kernels use `restrict` so compilers can vectorize.",
+        "**API design**: `const` parameters communicate that a function only reads its input, and callers can then pass string literals and const buffers without casts."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Difference between `const int *p`, `int *const p`, `const int *const p`?** Pointee read-only; pointer read-only; both read-only.",
+        "**Can a variable be both `const` and `volatile`?** Yes. The program cannot write it, but it may change outside the program, like a hardware status register.",
+        "**Is `volatile` enough for thread safety?** No. It has no atomicity or ordering guarantees; use `_Atomic` or locks.",
+        "**What does `restrict` do?** It promises the compiler that the pointer is the only way to access that object in its scope, enabling more optimization. Violating it is undefined.",
+        "**Can you modify a `const` variable through a pointer?** The cast compiles, but modifying an object defined const is undefined behaviour.",
+        "**Where is a `const` global stored?** Usually `.rodata`, read-only memory; a `const` local lives on the stack and is merely compiler-enforced.",
+        "**Why is `strcpy`'s destination `restrict`?** Overlapping source and destination makes copying undefined; `restrict` documents and exploits that.",
+        "**Does `const` make a value a compile-time constant in C?** No; use `#define`, `enum` or `constexpr` (C23)."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "const is not thread safety or immutability",
-      "summary": "Common misconceptions.",
+      "title": "const with pointers: the four combinations",
+      "summary": "Which thing is read-only?",
       "sections": [
         {
-          "body": "A `const` view of data does not stop another pointer from modifying it, so it is not a synchronization tool. volatile is likewise not an atomic type: use `_Atomic` or mutexes for threads."
+          "body": "Four declarations cover every case. Non-const pointer to non-const data: `int *p`. Pointer to const data: `const int *p`; you can change where p points but not the data. Const pointer to non-const data: `int *const p`; you can change the data but not where p points. Const pointer to const data: `const int *const p`; neither changes. Place the `const` to the left of the `*` to protect the pointee and to the right to protect the pointer. Read right to left to verify.",
+          "code": "int x = 1, y = 2;\nconst int *a = &x;        /* *a read-only, a repointable */\nint *const b = &x;        /* *b writable,  b fixed       */\nconst int *const c = &x;  /* both fixed                  */\na = &y;  *b = 9;          /* legal                       */"
         }
       ]
     },
     {
-      "title": "Casting away const",
-      "summary": "Why not to.",
+      "title": "const-correct function interfaces",
+      "summary": "Declare what a function will not modify.",
       "sections": [
         {
-          "body": "Casting const away and writing to a genuinely const object is undefined behavior. It is acceptable only when you know the underlying object was not defined const, such as the return type of `strchr(const char *, int)` returning `char *`."
+          "body": "Mark pointer parameters `const` when the function only reads through them. This tells callers the data is safe, allows passing both const and non-const arguments, and lets the compiler flag accidental writes. Propagate const consistently: a function that calls another with a `const` argument must itself take const, or the compiler warns. Const-correctness should start at the lowest-level function and flow upward; retrofitting it later is painful.",
+          "code": "size_t count_char(const char *s, char c) {\n    size_t n = 0;\n    for (; *s; s++) n += (*s == c);\n    return n;\n}\nconst char *lit = \"banana\";   /* literal passes without a cast */\nsize_t k = count_char(lit, 'a');"
         }
       ]
     },
     {
-      "title": "Combining qualifiers",
-      "summary": "const volatile.",
+      "title": "const objects, literals and memory placement",
+      "summary": "Where read-only data lives.",
       "sections": [
         {
-          "body": "A read-only hardware status register is `const volatile uint32_t *`: your code must not write it, yet its value changes by itself.",
-          "code": "const volatile uint32_t *status = (const volatile uint32_t *)0x40000000;"
+          "body": "A file-scope `const` with a constant initializer is typically placed in `.rodata`, which the loader maps read-only; a write faults with SIGSEGV. String literals are also in read-only storage, and modifying them is undefined behaviour even though their type is `char[]` in C. A `const` local is stored on the stack like any local and the compiler only enforces the rule at compile time. A `const` object is also not a constant expression in C, so `const int N = 10; int a[N];` at file scope is an error (and a VLA inside a function). Use an `enum { N = 10 };` or `#define` for array sizes."
         }
       ]
     },
     {
-      "title": "Where const data lives",
-      "summary": "Storage.",
+      "title": "volatile and memory-mapped I/O",
+      "summary": "Why the compiler must not optimize these accesses.",
       "sections": [
         {
-          "body": "String literals and file-scope const data usually go in a read-only section (.rodata), shared between processes and protected by the MMU. Local const variables still live on the stack and can be changed by buggy code."
+          "body": "Hardware registers can change on their own, and writing them may have side effects. Without `volatile`, the compiler may hoist a read out of a polling loop or drop a write it considers dead. With a volatile pointer, each source-level access becomes one machine access, in program order relative to other volatile accesses. Volatile does not order accesses relative to ordinary memory or other CPUs, so drivers add barriers where needed. Declare read-only status registers as `const volatile`.",
+          "code": "#define UART_STATUS (*(const volatile uint32_t *)0x40011000u)\n#define UART_DATA   (*(volatile uint32_t *)0x40011004u)\nwhile (!(UART_STATUS & 0x80)) { }   /* poll until TX ready */\nUART_DATA = ch;"
         }
       ]
     },
     {
-      "title": "Compiler warnings to enable",
-      "summary": "Catch qualifier misuse.",
+      "title": "volatile in signal handlers, setjmp and threads",
+      "summary": "Legitimate and illegitimate uses.",
       "sections": [
         {
-          "body": "`-Wall -Wextra -Wcast-qual -Wdiscarded-qualifiers` flag casts and assignments that drop const, protecting API contracts."
+          "body": "Legitimate: a flag set by a signal handler and read in the main loop must be `volatile sig_atomic_t`; locals modified between `setjmp` and `longjmp` and read afterward must be volatile to have defined values. Illegitimate: using `volatile int counter` shared across threads. A volatile increment is a separate load, add, store, so two threads lose updates, and volatile gives no ordering to other data. Since C11 use `_Atomic` or `<stdatomic.h>` (and pthread mutexes) for threads.",
+          "code": "static volatile sig_atomic_t stop;\nstatic void on_int(int sig) { (void)sig; stop = 1; }\n/* main: signal(SIGINT, on_int); while (!stop) work(); */"
+        }
+      ]
+    },
+    {
+      "title": "restrict and aliasing",
+      "summary": "Promising the compiler that pointers do not overlap.",
+      "sections": [
+        {
+          "body": "Two pointers alias when they may refer to the same object. In `void add(int *dst, int *a, int n)` the compiler must reload `a[i]` after each store to `dst[i]` because they might overlap. Marking pointers `restrict` removes that obligation: the compiler can keep values in registers, unroll and vectorize. The promise is yours; if a restrict-qualified object is modified through one pointer and accessed through another, behaviour is undefined. That is why `memcpy` (restrict) must not be called on overlapping regions, while `memmove` can.",
+          "code": "void saxpy(float *restrict y, const float *restrict x, float a, int n) {\n    for (int i = 0; i < n; i++) y[i] += a * x[i];   /* vectorizable */\n}"
+        }
+      ]
+    },
+    {
+      "title": "Casting away qualifiers and const-laundering",
+      "summary": "When it is legal and when it is a bug.",
+      "sections": [
+        {
+          "body": "A cast like `(char *)p` where p is `const char *` compiles but does not make the object writable. It is legal only if the original object was not defined const, as with C library functions that take `const char *` and return `char *` into the caller's modifiable buffer (`strchr`, `strstr`). Writing through such a pointer when the object is defined const is undefined. Enable `-Wcast-qual` to find these casts, and wrap necessary ones in one small, commented helper."
+        }
+      ]
+    },
+    {
+      "title": "_Atomic and qualifier overview",
+      "summary": "How the four qualifiers fit together.",
+      "sections": [
+        {
+          "body": "C11 added `_Atomic` as a fourth qualifier. It differs from `volatile` in what it promises: atomic operations are indivisible and carry memory-ordering semantics (`memory_order_seq_cst` by default, `relaxed`, `acquire`, `release` on request). Qualifiers can combine: `const volatile`, `volatile _Atomic`, `restrict` plus `const`. Summary: `const` protects against your own mistakes, `volatile` protects accesses from being optimized away, `restrict` lets the optimizer assume no overlap, `_Atomic` makes concurrent access defined.",
+          "code": "#include <stdatomic.h>\natomic_int hits;\nvoid record(void) { atomic_fetch_add(&hits, 1); }   /* thread safe */"
+        },
+        {
+          "body": "A const view does not stop another non-const pointer or another thread from changing the object, so a const-qualified reference is not a synchronization tool and does not guarantee the value stays fixed. Likewise `volatile` is not atomic. Use `_Atomic` or a mutex for concurrent access, and treat `const` as a promise about this name only."
+        }
+      ]
+    },
+    {
+      "title": "The four pointer-const forms summarized",
+      "summary": "Which assignment is legal for each declaration.",
+      "sections": [
+        {
+          "body": "The result for each declaration, writing through the pointer (`*ptr = 100`) and repointing it (`ptr = &a`):",
+          "bullets": [
+            "**`int *ptr`**: both allowed.",
+            "**`const int *ptr` or `int const *ptr`**: writing `*ptr` is an error, repointing is allowed. The pointer lives in read-write storage; the object it points to may be in read-only or read-write storage.",
+            "**`int *const ptr`**: writing `*ptr` is allowed, repointing is an error, and it must be initialized at its declaration.",
+            "**`const int *const ptr`**: both are errors."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Down-qualification",
+      "summary": "Assigning a const object's address to a non-const pointer.",
+      "sections": [
+        {
+          "body": "Down-qualification means a qualified type flows into an unqualified one, such as `int *ptr = &j;` where j is `const int`. In C the compiler usually only warns (GCC: `-Wdiscarded-qualifiers`, \"assignment discards const qualifier from pointer target type\") and the program compiles; C++ rejects it. After the warning you can write through `ptr` and trigger undefined behaviour if j really is a const object. Treat this warning as an error in real projects, for example with `-Werror=discarded-qualifiers`."
+        },
+        {
+          "body": "Compile with `-Wall -Wextra -Wcast-qual -Wdiscarded-qualifiers -Wwrite-strings` (GCC and Clang) so casts and assignments that drop const are flagged. `-Wwrite-strings` types string literals as `const char[]`, catching writes to them. Combine with `-Werror` in continuous integration so qualifier mistakes cannot reach production."
+        }
+      ]
+    },
+    {
+      "title": "Why use const: the advantages",
+      "summary": "Benefits listed and qualified.",
+      "sections": [
+        {
+          "body": "Readability: a const mark tells readers the value is not meant to change. Type safety: accidental writes become compile errors. Optimization: the compiler can assume the value is stable, fold it, and place it in read-only memory. Compatibility: const-qualified parameters accept both const and non-const arguments, so your code works with libraries that use const. Reliability: fewer ways for values to be modified unexpectedly. One claim often made, that const saves memory by avoiding copies, is only partly true: passing a `const T *` instead of a struct by value avoids the copy, but the saving comes from the pointer, not from const itself."
+        }
+      ]
+    },
+    {
+      "title": "A const declaration without a type",
+      "summary": "An old habit that modern C rejects.",
+      "sections": [
+        {
+          "body": "Writing `const a = 10;` relies on implicit int, which was removed in C99, so GCC warns with `-Wimplicit-int` (and C23 and recent compilers reject it). Always spell the type: `const int a = 10;`. Assigning to `a` afterwards is the error \"assignment of read-only variable\". Note that the C standard says modifying an object defined const is undefined behaviour; it is not merely implementation-defined, even though some tutorials describe it that way, and with a pointer cast it may seem to work, crash, or be ignored by the optimizer."
         }
       ]
     }
   ],
   "takeaways": [
-    "const forbids modification; read pointer declarations right to left.",
-    "Use pointer-to-const for read-only parameters.",
-    "volatile forces real memory accesses for hardware, signals, and setjmp.",
-    "restrict promises no aliasing and enables optimization; violating it is UB."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: const qualifier in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/c/const-qualifier-in-c/"
-    },
-    {
-      "label": "cppreference: Type qualifiers (C)",
-      "url": "https://en.cppreference.com/w/c/language/declarations"
-    }
+    "`const int *p` protects the pointee, `int *const p` protects the pointer; read declarations right to left.",
+    "Writing to an object defined `const` is undefined behaviour even if you cast the const away.",
+    "A C `const` is not a compile-time constant: use `enum` or `#define` for array sizes.",
+    "`volatile` forces every access to hit memory, which suits hardware registers and signal flags, but it is not a threading primitive.",
+    "`restrict` is a promise of no aliasing that enables vectorization; breaking it is undefined, which is why `memcpy` differs from `memmove`.",
+    "Use `const` on read-only pointer parameters so callers can pass string literals and const data.",
+    "Qualifiers cost nothing in `sizeof`; `volatile` and `_Atomic` cost run-time performance, `const` and `restrict` save it."
   ],
   "practice": [
     {
-      "title": "Explain the difference between three pointer-const declarations",
+      "title": "Write the declarations for pointer to const, const pointer, and const pointer to const, and say which assignments fail",
       "difficulty": "Easy"
     },
     {
-      "title": "Add const correctness to a small string library",
+      "title": "Explain why char *s = \"hi\"; s[0] = 'x'; is undefined and how to fix it",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Make a string-processing function const-correct",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Show how a missing volatile turns a polling loop into an infinite loop at -O2",
       "difficulty": "Medium"
     },
     {
-      "title": "Explain why a polling loop needs volatile",
+      "title": "Write a signal handler that sets a flag safely and a main loop that uses it",
       "difficulty": "Medium"
     },
     {
-      "title": "Declare a read-only memory-mapped status register",
+      "title": "Explain why volatile int counter is not thread safe and fix it with _Atomic",
       "difficulty": "Medium"
     },
     {
-      "title": "Why must memcpy arguments use restrict and not overlap?",
+      "title": "Define a status register as const volatile and read it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a restrict-qualified kernel and demonstrate undefined behaviour when buffers overlap",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why int ** cannot convert to const int ** with a counterexample",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Compare memcpy and memmove declarations and implement memmove for overlapping regions",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Const qualifier in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/const-qualifier-in-c/"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.7.3 Type qualifiers",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "cppreference: C type qualifiers",
+      "url": "https://en.cppreference.com/w/c/language/const"
     }
   ]
 }

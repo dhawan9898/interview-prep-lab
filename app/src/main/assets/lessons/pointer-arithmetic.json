@@ -1,115 +1,255 @@
 {
-  "summary": "Pointer arithmetic moves a pointer by whole elements, not bytes. The compiler multiplies by the pointed-to type's size, which is what makes array traversal with pointers work.",
+  "summary": "Pointer arithmetic is the small set of operations C allows on addresses: add or subtract an integer, subtract two pointers, increment or decrement, and compare. Every step is scaled by the size of the pointed-to type, so `p + 1` moves to the next element rather than the next byte. This is the mechanism behind array indexing, string walking, buffer parsing and generic memory routines, and it is only defined while the pointer stays inside one array or one past its end.",
   "sections": [
     {
-      "heading": "The scaling rule",
-      "body": "Adding `n` to a pointer advances it by `n * sizeof(*p)` bytes. For an `int *` at address 1000 with 4-byte ints, `p + 1` is 1004 and `p - 1` is 996.",
-      "code": "new_address = old_address ± (n × sizeof(type))"
+      "heading": "Overview",
+      "body": "A pointer holds an address, and arrays are runs of equally sized elements, so moving through an array is just changing an address by a multiple of the element size. C hides that multiplication: you write `p + 1` and the compiler emits `p + sizeof(*p)`. The result is that the same source code, `p++`, advances 1 byte over a `char *`, 4 bytes over an `int *` and 24 bytes over a `struct` of size 24.\n\nThe operations are deliberately limited. You can add or subtract an integer, subtract one pointer from another of the same type, increment and decrement, and compare. You cannot add two pointers, multiply or divide them, or do arithmetic on `void *` in standard C. These limits are not arbitrary: only the allowed operations have a meaning for addresses inside an array, and anything else would not produce a valid location."
     },
     {
-      "heading": "Valid operations",
+      "heading": "Core Concepts",
       "bullets": [
-        "Increment/decrement: `p++`, `p--`.",
-        "Add or subtract an integer: `p + n`, `p - n`.",
-        "Subtract two pointers of the same type into the same array: gives the element count (type `ptrdiff_t`).",
-        "Compare pointers: `<`, `<=`, `>`, `>=`, `==`, `!=`.",
-        "Compare to NULL."
+        "**Scaling rule**: `p + n` yields `(char *)p + n * sizeof(*p)`. The integer counts elements, not bytes.",
+        "**Increment and decrement**: `p++` and `p--` move by exactly one element. Prefix and postfix differ only in when the new value is visible.",
+        "**Pointer plus integer**: `p + n` and `n + p` are the same, and so are `p - n` for subtraction.",
+        "**Pointer difference**: `q - p` for two pointers into the same array gives the number of elements between them, as a signed `ptrdiff_t`, not a byte count.",
+        "**Comparison**: `<`, `<=`, `>`, `>=`, `==`, `!=` between pointers into the same array order them by position. `==` and `!=` are also valid for any two pointers and for `NULL`.",
+        "**One-past-the-end**: for an array of `n` elements, the pointer `a + n` is valid to form, compare and subtract, but not to dereference.",
+        "**Array subscript equivalence**: `p[i]` is defined as `*(p + i)`, so subscripting is pointer arithmetic plus dereference.",
+        "**Disallowed operations**: adding two pointers, multiplying or dividing a pointer, bitwise operators on pointers, and arithmetic on `void *` or function pointers in standard C.",
+        "**`ptrdiff_t`**: the signed type from `<stddef.h>` that holds a pointer difference. Print with `%td`.",
+        "**`uintptr_t`**: an unsigned integer type big enough to hold a pointer, used when you must treat an address as a number."
       ]
     },
     {
-      "heading": "Invalid operations",
+      "heading": "How It Works",
+      "body": "Suppose `int a[5] = {10, 20, 30, 40, 50}` starts at address 1000 and `int *p = a;`. With 4-byte ints: `p + 1` is 1004, `p + 2` is 1008, `p - 1` would be 996 (outside the array, so not valid to use). After `p++`, `p` holds 1004 and `*p` is 20. `*(p + 3)` reads address 1004 + 12 = 1016, giving 50. If `q = &a[4]` (address 1016) and `p = &a[1]` (1004), then `q - p` is (1016 - 1004) / 4 = 3.\n\nThe pointers must have the same type for subtraction. The compiler divides the byte difference by `sizeof(int)`, which is why the result is 3 and not 12. The program below traverses the array three equivalent ways and counts even numbers with a moving pointer.",
+      "code": "#include <stdio.h>\n#include <stddef.h>\n\nint main(void) {\n    int a[] = {10, 20, 30, 40, 50};\n    size_t n = sizeof a / sizeof a[0];\n\n    for (size_t i = 0; i < n; i++)          // index form\n        printf(\"%d \", a[i]);\n    for (int *p = a; p < a + n; p++)        // walking pointer, end = a + n\n        printf(\"%d \", *p);\n    for (size_t i = 0; i < n; i++)          // explicit arithmetic\n        printf(\"%d \", *(a + i));\n    printf(\"\\n\");\n\n    int *first = &a[1], *last = &a[4];\n    ptrdiff_t gap = last - first;           // 3 elements\n    printf(\"gap=%td, bytes=%td\\n\", gap, (char *)last - (char *)first); // 3, 12\n    return 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Adding two pointers has no meaning and does not compile.",
-        "Multiplying or dividing pointers.",
-        "Arithmetic on `void *` (unknown element size; GCC allows it as an extension, standard C does not).",
-        "Arithmetic on function pointers."
+        "**Over `char *`**: step is 1 byte, so `char *` arithmetic is how you walk raw byte buffers and strings.",
+        "**Over `int *` and `double *`**: step is 4 and 8 bytes on common platforms. The step is always `sizeof` the pointee.",
+        "**Over struct pointers**: `p + 1` skips a whole struct including padding, so you can walk an array of records.",
+        "**Over pointer to array**: for `int (*pa)[5]`, `pa + 1` skips 5 ints (20 bytes), the basis of 2D array indexing.",
+        "**Over `void *`**: not allowed in standard C because the pointee has no size. GCC and Clang treat it as `char *` as an extension, which is non-portable. Cast to `char *` or `unsigned char *` for byte steps.",
+        "**Over pointers to pointers**: for `char **argv`, `argv + 1` advances by `sizeof(char *)`, 8 bytes on 64-bit.",
+        "**Byte-level arithmetic**: `(char *)p + off` computes an address at a byte offset, used by `offsetof`, allocators and serialization.",
+        "**Integer arithmetic via `uintptr_t`**: used to align addresses, as in `(addr + 15) & ~(uintptr_t)15`, and then converting back."
       ]
     },
     {
-      "heading": "Walking an array",
-      "code": "int a[] = {1, 2, 3, 4, 5};\nint *p = a;\nfor (int i = 0; i < 5; i++) {\n  printf(\"%d \", *p);\n  p++;               // moves 4 bytes each step\n}\n// 1 2 3 4 5"
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Each operation is O(1)**: one add of a precomputed constant. When `sizeof` is a power of two, the multiply becomes a shift, so `int *` arithmetic costs a left shift by 2.",
+        "**Pointer walk versus index loop**: a modern optimizing compiler produces essentially the same machine code for both, so choose the one that reads better. Pointer form can save one register on simple compilers.",
+        "**Addressing modes**: x86 can fold `base + index*scale` into one instruction for scales 1, 2, 4 and 8, so `a[i]` for 1/2/4/8-byte elements is a single load.",
+        "**Strided access**: stepping by `k` elements touches a new cache line when `k * sizeof(T)` is at least 64 bytes. A column walk of a 1024-int-wide matrix strides by 4096 bytes and can miss on every access.",
+        "**Space**: no extra memory; arithmetic produces temporaries in registers.",
+        "**Vectorization**: simple pointer loops over contiguous data with `restrict` can be turned into SIMD instructions that handle 4 to 16 elements per instruction."
+      ]
     },
     {
-      "heading": "Subtracting pointers",
-      "body": "The result is a count of elements, not bytes.",
-      "code": "int a[10];\nint *p = &a[2], *q = &a[7];\nptrdiff_t n = q - p;   // 5"
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Leaving the array**: forming a pointer more than one element before or after an array is undefined behavior even if you never dereference it. Only `a + n` (one past the end) is allowed.",
+        "**Dereferencing the end pointer**: `*(a + n)` reads outside the array, an off-by-one error.",
+        "**Subtracting pointers into different objects**: `&x - &y` for two unrelated variables is undefined, so the result of the GFG-style example printing `1` is not guaranteed.",
+        "**Adding a byte count to a typed pointer**: `p + sizeof(int)` on an `int *` moves 16 bytes, not 4. Use `p + 1`, or cast to `char *` when you really mean bytes.",
+        "**Incrementing an array name**: `a++` is a compile error because an array is not a modifiable lvalue. Use a pointer copy.",
+        "**Mixing types**: `(char *)p + 1` advances 1 byte, `(int *)p + 1` advances 4. Casting before the addition matters.",
+        "**Pointer comparison across arrays**: `<` on pointers into different arrays is undefined. Test equality only, or compare via `uintptr_t` if you accept the platform dependence.",
+        "**Unsigned wrap in loop bounds**: `p < end` is safe, but `p + n` can overflow the address space with a huge `n`, producing a pointer that appears smaller than `p`.",
+        "**Alignment**: casting a `char *` buffer to `int *` and stepping through it can fault on strict-alignment CPUs and violates strict aliasing. Use `memcpy` to read multibyte values.",
+        "**Precedence of `*p++`**: it parses as `*(p++)`, reading before advancing, while `(*p)++` increments the data."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**String and buffer scanning**: parsers advance a `const char *` and stop at a delimiter or at an `end` pointer, as in HTTP and JSON parsers.",
+        "**Standard library**: `memcpy`, `strlen`, `strchr` and `qsort` are written with pointer walking and `char *` arithmetic.",
+        "**Iterators**: C++ `std::vector::iterator` and `std::copy` over raw arrays are pointer ranges `[begin, end)`.",
+        "**Network packet parsing**: advancing a cursor past the Ethernet header (14 bytes) and IP header (`ihl * 4` bytes) to reach TCP.",
+        "**Memory allocators**: `malloc` implementations compute the header address as `(char *)user - sizeof(header)`.",
+        "**Linux kernel**: `container_of` subtracts `offsetof(type, member)` bytes from a member pointer to recover the enclosing struct, and `for_each` macros iterate arrays with pointer ranges.",
+        "**Image and audio processing**: per-row pointer plus stride in bytes to handle padded scanlines."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Q: What does `p + 1` do for `int *p`?** Adds `sizeof(int)`, typically 4 bytes, so it points to the next int.",
+        "**Q: What does `q - p` return?** The number of elements between them as `ptrdiff_t`, not bytes. Both must point into the same array.",
+        "**Q: Can you add two pointers?** No, the sum of two addresses has no meaning. You can add an integer or subtract two pointers.",
+        "**Q: Relationship between `a[i]` and `*(a + i)`?** They are defined to be identical, so `i[a]` is also valid.",
+        "**Q: Is `p + 2` valid for a pointer to a 1-element array?** No. Only `p` and `p + 1` are valid to form.",
+        "**Q: Arithmetic on `void *`?** Not in standard C. GCC allows it treating the size as 1.",
+        "**Q: Why is `sizeof(a)/sizeof(a[0])` not `end - begin`?** Both give the element count, but the pointer form works on any range defined by two pointers, while the `sizeof` form only works on a true array.",
+        "**Q: What is the value of `&a + 1` for `int a[5]`?** The address 20 bytes after `a`, one past the end of the whole array."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Array indexing is pointer arithmetic",
-      "summary": "`a[i]` equals `*(a + i)`.",
+      "title": "Increment and decrement",
+      "summary": "p++ and p-- step by one element, with a char, int and double comparison.",
       "sections": [
         {
-          "body": "Because addition is commutative, `i[a]` is even legal, though you should never write it. Indexing and pointer walking compile to the same machine code in most cases."
+          "body": "Incrementing a pointer adds `sizeof` of its pointee. A `char *` goes up by 1, an `int *` by 4, a `double *` by 8. Decrementing subtracts the same amount. Values are restored by the opposite operation. Printing addresses in decimal with `%u` is unreliable on 64-bit, so cast to `(void *)` and use `%p`, or to `uintptr_t` and `%lu`.",
+          "code": "int i = 0; double d = 0; char c = 0;\nint *pi = &i; double *pd = &d; char *pc = &c;\nuintptr_t a = (uintptr_t)pi, b = (uintptr_t)pd, e = (uintptr_t)pc;\npi++; pd++; pc++;\nprintf(\"%lu %lu %lu\\n\", (unsigned long)((uintptr_t)pi - a),\n       (unsigned long)((uintptr_t)pd - b), (unsigned long)((uintptr_t)pc - e));\n// prints 4 8 1"
         }
       ]
     },
     {
-      "title": "Staying inside bounds",
-      "summary": "What the standard allows.",
+      "title": "Adding and subtracting integers",
+      "summary": "Moving by n elements, forward and backward.",
       "sections": [
         {
-          "body": "Forming a pointer is only defined within an array object or one element past its end. Dereferencing the one-past-end pointer, or going further, is undefined behavior even if it appears to work."
+          "body": "`p + n` is `n` elements ahead and `p - n` is `n` elements behind. For `int *p` at address 1000, `p + 5` is 1020 and `p - 5` is 980. Both results are only usable if they land inside the same array or one past its end. Subtracting from a pointer to the first element is out of bounds. A common safe idiom is a backward loop that stops at the start.",
+          "code": "int a[5] = {1, 2, 3, 4, 5};\nfor (int *p = a + 5; p != a; )   // start one past the end\n    printf(\"%d \", *--p);          // 5 4 3 2 1"
         }
       ]
     },
     {
-      "title": "char* vs int* stepping",
-      "summary": "Why byte pointers are special.",
+      "title": "Subtracting two pointers",
+      "summary": "Counting elements between two positions.",
       "sections": [
         {
-          "body": "`unsigned char *` moves one byte at a time, so it is used to inspect raw object representation. Casting `int *` to `char *` lets you view each byte of an int.",
-          "code": "int x = 0x01020304;\nunsigned char *b = (unsigned char *)&x;\nfor (int i = 0; i < 4; i++) printf(\"%02x \", b[i]);"
+          "body": "For pointers of the same type into the same array, the difference is the element distance, signed. `&a[4] - &a[1]` is 3. It is how you turn a pointer returned by `strchr` or `strstr` into an index: `pos = found - s`. The result has type `ptrdiff_t`, so print it with `%td`. If the pointers are in different arrays the result is undefined, even if it happens to print a number on your machine.",
+          "code": "const char *s = \"key=value\";\nconst char *eq = strchr(s, '=');\nptrdiff_t klen = eq - s;               // 3: length of the key\nprintf(\"%.*s\\n\", (int)klen, s);        // key"
         }
       ]
     },
     {
-      "title": "Pointers and 2D arrays",
-      "summary": "Row stride is part of the type.",
+      "title": "Comparing pointers",
+      "summary": "Ordering, equality and the end-pointer loop.",
       "sections": [
         {
-          "body": "For `int m[3][4]`, `m + 1` skips a whole row (16 bytes) because its type is `int (*)[4]`. This is why multidimensional array parameters need the inner dimensions."
+          "body": "Relational comparisons work between pointers into the same array and let you write `for (p = a; p < a + n; p++)`. Equality works for any pair of compatible pointers and for `NULL`. Two pointers compare equal when they refer to the same object, or when one is one past the end of an array and the other points at the start of the next object. Prefer the half-open range `[begin, end)` because empty ranges need no special case."
+        }
+      ]
+    },
+    {
+      "title": "Pointer arithmetic on arrays",
+      "summary": "How indexing, decay and pointer walks connect.",
+      "sections": [
+        {
+          "body": "`a[i]` expands to `*(a + i)`. A pointer to the first element can be incremented, but the array name cannot. `&a[0]`, `a` and `&a` have the same address, yet `a + 1` and `&a + 1` differ: the first skips one element, the second skips the whole array. Multidimensional arrays follow the same scaling: for `int m[3][4]`, `m + 1` skips a row of 16 bytes, and `*(m + i) + j` is the address of `m[i][j]`.",
+          "code": "int m[3][4] = {{0}};\nint *e = &m[0][0] + 1 * 4 + 2;    // &m[1][2]\nprintf(\"%d\\n\", e == &m[1][2]);    // 1\nprintf(\"%td\\n\", (char *)(m + 1) - (char *)m);   // 16"
+        }
+      ]
+    },
+    {
+      "title": "Walking strings and buffers",
+      "summary": "Cursor-style parsing with a pointer and an end marker.",
+      "sections": [
+        {
+          "body": "For strings, loop until the NUL character. For binary buffers, track an end pointer and check remaining length before each read. A parser that reads a 2-byte length then that many bytes must verify `end - cur >= 2` and then `end - cur >= len`, because ignoring this is how out-of-bounds reads happen.",
+          "code": "int read_u16(const unsigned char **cur, const unsigned char *end, unsigned *out) {\n    if (end - *cur < 2) return -1;            // not enough bytes left\n    *out = ((*cur)[0] << 8) | (*cur)[1];      // big-endian\n    *cur += 2;                                // advance the cursor\n    return 0;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Byte-level arithmetic and offsetof",
+      "summary": "Casting to char * to move by bytes.",
+      "sections": [
+        {
+          "body": "Cast to `unsigned char *` to compute addresses in byte units. `offsetof(struct S, f)` from `<stddef.h>` gives the byte offset of member `f`. Subtracting it from a member's address recovers the struct, which is how `container_of` works. Never move a typed pointer by a byte count without the cast.",
+          "code": "struct rec { int id; char tag; double score; };\nstruct rec r = {1, 'x', 2.5};\ndouble *sp = &r.score;\nstruct rec *back = (struct rec *)((char *)sp - offsetof(struct rec, score));\nprintf(\"%d\\n\", back == &r);      // 1"
+        }
+      ]
+    },
+    {
+      "title": "Illegal and undefined operations",
+      "summary": "What the compiler rejects and what it silently allows.",
+      "sections": [
+        {
+          "bullets": [
+            "`p + q`, `p * 2`, `p / 2`, `p & mask`, `p << 1`: rejected by the compiler for pointer operands.",
+            "`void *` arithmetic: rejected under `-pedantic`, accepted by GCC as a size-1 extension.",
+            "Out-of-array pointers more than one past the end, null plus nonzero offset, and subtraction across objects: compile cleanly but have undefined behavior.",
+            "Comparing function pointers with `<`: undefined.",
+            "Casting between pointer and integer types of different widths: implementation-defined, use `uintptr_t`."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Overflow and safe bounds checks",
+      "summary": "Writing checks that do not themselves invoke undefined behavior.",
+      "sections": [
+        {
+          "body": "A check like `if (p + len > end)` forms a pointer that may be beyond one-past-the-end and may wrap, so it is itself undefined. Compare lengths instead: `if (len > (size_t)(end - p))`. The subtraction `end - p` is always valid because both are in the same buffer, and it holds the remaining space.",
+          "code": "int can_read(const unsigned char *p, const unsigned char *end, size_t len) {\n    return len <= (size_t)(end - p);    // never forms an out-of-range pointer\n}"
         }
       ]
     }
   ],
   "takeaways": [
-    "Arithmetic is scaled by the element size.",
-    "Pointer minus pointer yields elements, not bytes.",
-    "Stay within an array (or one past its end).",
-    "Never add two pointers."
+    "`p + n` moves `n * sizeof(*p)` bytes; the integer counts elements, not bytes.",
+    "`a[i]` is defined as `*(a + i)`, so subscripting is pointer arithmetic plus a dereference.",
+    "Subtracting two pointers into the same array gives the element count as `ptrdiff_t`; adding two pointers is illegal.",
+    "Pointers may point only inside an array or one past its end; going anywhere else is undefined even without a dereference.",
+    "For `int a[5]`, `a + 1` skips 4 bytes but `&a + 1` skips 20 bytes: the pointee type sets the step.",
+    "Standard C forbids arithmetic on `void *`; cast to `char *` for byte steps.",
+    "Check bounds with remaining length (`len <= end - p`), never by forming `p + len`.",
+    "An array name cannot be incremented, but a pointer copy of it can."
+  ],
+  "practice": [
+    {
+      "title": "Compute the addresses of p+1, p+2 and p-1 for an int pointer at 1000 and a char pointer at 1000",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Print an array in reverse using only a pointer and no index variable",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Count even and odd values in an array using a walking pointer",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement strlen using pointer subtraction",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why p + sizeof(int) on an int pointer is a bug and fix it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reverse an array in place using two pointers and the p < q loop condition",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the position of the first occurrence of a character with strchr and convert it to an index",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a bounds-checked reader that parses length-prefixed records from a byte buffer without undefined behavior",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why `a + 1` and `&a + 1` differ for int a[5], and give the byte distance of each",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement container_of and use it to recover a struct from a pointer to an embedded member",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.5.6 Additive operators",
       "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed., sections 5.3 and 5.4",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
     },
     {
       "label": "Reference: Pointer arithmetic in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/pointer-arithmetics-in-c-with-examples/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Sum an array by walking a pointer",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Reverse a string in place with two pointers",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Compute the distance between two pointers into one array",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement memmove handling overlapping regions",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Index a 2D array using only pointer arithmetic",
-      "difficulty": "Medium"
     }
   ]
 }

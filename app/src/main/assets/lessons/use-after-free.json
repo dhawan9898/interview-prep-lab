@@ -1,116 +1,251 @@
 {
-  "summary": "A use-after-free bug reads or writes memory through a pointer after that memory has been released. The pointer is dangling: it still holds the old address, but the storage may now belong to something else.",
+  "summary": "A use-after-free bug happens when a program keeps using a pointer after the memory it points to has been released. The pointer is now dangling: the allocator may hand the block to someone else, so reads return foreign data and writes corrupt it. It is one of the most common memory-safety vulnerabilities in browsers, kernels and servers, and C interviews often ask you to tell dangling, wild, NULL and void pointers apart and to explain double free.",
   "sections": [
     {
-      "heading": "How a pointer dangles",
+      "heading": "Overview",
+      "body": "In C you manage dynamic memory by hand. `malloc` gives you a block, `free` returns it. Nothing about `free(p)` changes `p` itself: the pointer variable still holds the old address, but the object it referred to no longer exists. Any later read, write or second `free` through that address is undefined behavior. Because freed blocks are recycled quickly, the bug often seems harmless in testing and becomes a security hole in production, when an attacker arranges for the recycled block to contain data they control. The same family includes returning the address of a local variable and keeping a pointer past the end of its block's scope."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Heap block freed while another pointer still references it.",
-        "A function returns the address of a local variable.",
-        "A pointer outlives the block-scoped variable it points to."
+        "**Dangling pointer**: a pointer whose target has been deallocated or has gone out of scope. The address is stale.",
+        "**Use-after-free (UAF)**: reading or writing through a dangling pointer to a freed heap block.",
+        "**Double free**: calling `free` twice on the same pointer. Undefined behavior that can corrupt allocator data structures.",
+        "**Use-after-return** (or use-after-scope): using the address of a stack variable after its function or block ends.",
+        "**Wild pointer**: a pointer that was never initialized, so it holds an arbitrary address.",
+        "**NULL pointer**: a pointer set to the null constant, guaranteed not to point to any object. Dereferencing it is undefined behavior, but `free(NULL)` is defined and does nothing.",
+        "**Void pointer** (`void *`): a generic pointer that can hold any object address. It must be cast before dereferencing and has no arithmetic in standard C.",
+        "**Lifetime**: the part of execution during which an object exists. Heap objects live from `malloc` to `free`, automatic objects until their block ends, static objects for the whole program.",
+        "**Ownership**: the rule saying which part of the code is responsible for freeing a block. UAF and double free are ownership failures.",
+        "**Alias**: another pointer to the same block. Freeing through one alias leaves all others dangling."
       ]
     },
     {
-      "heading": "Heap example",
-      "code": "int *p = malloc(sizeof *p);\n*p = 10;\nfree(p);        // p is now dangling\n*p = 20;        // use-after-free: undefined behavior\n\nfree(p);\np = NULL;       // defensive: later checks and double free are safe"
+      "heading": "How It Works",
+      "body": "Consider two pointers to one block. Freeing through the first looks correct, but the second now dangles. The allocator typically puts the freed block on a free list and may write its own bookkeeping pointers into the first bytes. If the program later allocates a same-sized block, it often gets the same address back, and then old and new users share memory.",
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\nint main(void) {\n    char *a = malloc(16);\n    strcpy(a, \"secret\");\n    char *alias = a;\n\n    free(a);                      /* block goes back to the allocator */\n    char *b = malloc(16);         /* often the very same address */\n    strcpy(b, \"attacker-data\");\n\n    printf(\"%s\\n\", alias);        /* UB: usually prints attacker-data */\n    free(b);\n    free(alias);                  /* double free of the same block */\n    return 0;\n}"
     },
     {
-      "heading": "Stack examples",
-      "code": "int *f(void) {\n  int x = 5;\n  return &x;        // x dies at return\n}\n\nint *p;\n{ int a = 10; p = &a; }   // a out of scope\nprintf(\"%d\", *p);         // undefined"
+      "body": "The program above has two bugs. Reading `alias` is a use-after-free: it now observes data written through `b`. In real code `alias` might be a pointer inside a session object, and the attacker controls `b`'s content, so the program trusts what it reads. Writing through `alias` would instead corrupt `b`'s data, or, if the block is freed and holds allocator metadata, the allocator's own list pointers. The final `free(alias)` frees `b`'s block a second time, which glibc usually detects with `free(): double free detected in tcache 2` and aborts, though other allocators do not."
     },
     {
-      "heading": "Why it is dangerous",
-      "body": "The allocator may hand the freed block to a new allocation, so the stale pointer now aliases unrelated data. Attackers exploit this by getting a controlled object placed in the freed slot, turning a dangling write into corruption or code execution."
-    },
-    {
-      "heading": "How to avoid it",
+      "heading": "Variants & Types",
       "bullets": [
-        "Set pointers to NULL immediately after `free`.",
-        "Never return the address of a local; use `static`, heap memory, or an out-parameter.",
-        "Give each allocation a single clear owner responsible for freeing.",
-        "Test with AddressSanitizer, which poisons freed memory and reports the access."
+        "**Heap UAF**: use after `free`. The block may be unmapped, reused, or poisoned depending on the allocator.",
+        "**Double free**: second `free` of the same address. In older allocators it let attackers get the same block allocated twice, giving two owners.",
+        "**Use-after-return**: `return &local;` or storing a pointer to a stack buffer in a global. The stack slot is reused by the next call.",
+        "**Use-after-scope**: a pointer to a variable declared in an inner block used after the block ends. Compilers may reuse that stack slot for other variables.",
+        "**Wild pointer**: uninitialized `int *p;` then `*p = 5`. The address is whatever was in that stack slot before.",
+        "**Stale pointer after `realloc`**: `realloc` may move the block, leaving old pointers (and iterators, `strchr` results) dangling.",
+        "**Dangling pointer into a container**: pointer to an array element that is freed or moved when the array grows.",
+        "**Type confusion after reuse**: the freed block is reallocated as a different object type, so old pointer reads fields at the wrong offsets. Attacker-controlled data lands in a function pointer slot.",
+        "**Void pointer misuse**: casting `void *` to the wrong type or doing arithmetic on it is a different bug, but is often seen in the same code paths as ownership errors."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "The bug itself costs nothing at run time; the cost is in detection. AddressSanitizer quarantines freed blocks (256 MB by default, `quarantine_size_mb`) so reuse is delayed and UAF is caught for a long window, at roughly 2x slowdown and 2x to 3x memory.",
+        "Valgrind memcheck tracks freed blocks too, with about 10x to 30x slowdown.",
+        "Setting a pointer to NULL after `free` is a single store, essentially free, but only protects that one alias.",
+        "Hardened allocators (Scudo, `GWP-ASan`, MTE-backed allocators) detect UAF with 1% to few-percent overhead by sampling or tagging memory. ARM MTE uses a 4-bit tag per 16-byte granule, so a stale pointer matches a retagged block with a 1 in 16 chance.",
+        "Typical exploit success rates improve sharply with reuse timing: LIFO free lists (glibc tcache, up to 7 entries per size class by default) hand back the most recently freed chunk, so the attacker needs just one allocation of the same size.",
+        "Garbage-collected or reference-counted designs trade a pointer-sized count (and atomic updates for threads) per object for the guarantee that a live reference keeps the object alive."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Assuming the data is gone**: after `free(p)` the bytes are often still readable, so a UAF seems to work. That is luck, not safety.",
+        "**Setting only one alias to NULL**: `free(p); p = NULL;` helps, but `q = p` earlier still dangles.",
+        "**Freeing in a helper function**: `void destroy(Node *n) { free(n); n = NULL; }` nulls only the local copy. Pass `Node **` to clear the caller's pointer.",
+        "**Returning a pointer to a local array**: `char *name(void) { char s[32]; ...; return s; }`. Compilers warn (`-Wreturn-local-addr`), but only in obvious cases.",
+        "**`realloc` misuse**: `p = realloc(p, n)` loses the old block if it fails (returns NULL). Use a temporary. Also, anything pointing into the old block is stale after success.",
+        "**Freeing twice on error paths**: a cleanup label that frees fields already freed by an inner function.",
+        "**Freeing memory that was not from `malloc`**: stack arrays, string literals, or pointers into the middle of a block are undefined behavior.",
+        "**Reading a node after unlinking and freeing**: in a linked-list loop, `free(cur); cur = cur->next;` reads freed memory. Save `next` first.",
+        "**Callbacks and threads**: one thread frees an object while another still holds a pointer, with no lock or reference count.",
+        "**Dereferencing NULL is not a security boundary**: on some embedded systems address 0 is valid memory, and large offsets from a NULL base can land in mapped pages.",
+        "**Assuming `free(NULL)` is a bug**: it is defined and a no-op, which makes `free(p); p = NULL; free(p);` harmless."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Browsers**: Chrome and Firefox have repeatedly reported UAF among the largest classes of exploitable bugs in their C++ engines. Chrome's MiraclePtr and PartitionAlloc quarantine freed objects, and the V8 and Blink teams use sandboxing to limit damage.",
+        "**Linux kernel**: UAF in networking and filesystem code is a recurring source of CVEs, found by KASAN (kernel AddressSanitizer), KFENCE and syzkaller fuzzing.",
+        "**Servers and parsers**: libraries such as image decoders and TLS stacks have UAF bugs when error paths free structures that other callbacks still reference.",
+        "**Defensive coding styles**: poison on free (`memset` to 0xDD, as debug heaps do), arena allocation (free everything at once), reference counting (`retain`/`release`), and handle tables where an index plus a generation number replaces a raw pointer.",
+        "**Languages that prevent it**: Rust's borrow checker rejects the code at compile time, and garbage-collected languages keep objects alive while reachable."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is a dangling pointer?** A pointer to memory that is no longer valid, because it was freed or went out of scope.",
+        "**Dangling versus wild versus NULL?** Dangling: was valid, now stale. Wild: never initialized. NULL: deliberately points nowhere, safe to test and to pass to `free`.",
+        "**What is use-after-free?** Accessing heap memory after `free`. Undefined behavior, exploitable when the block is reused.",
+        "**How do you prevent it?** Null the pointer after free, own each block in one place, avoid aliases, use sanitizers, or switch to RAII or reference counting in C++.",
+        "**What happens on a double free?** Undefined behavior. glibc usually aborts, others may corrupt free lists so that `malloc` later returns the same block twice.",
+        "**Why can't you dereference a `void *`?** It has no pointee type, so the compiler does not know the size or layout. Cast first.",
+        "**Is `free(NULL)` safe?** Yes, the standard defines it as doing nothing."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Double free",
-      "summary": "Freeing the same block twice.",
+      "title": "Dangling pointers from free",
+      "summary": "After `free` the pointer variable is unchanged but its target is gone.",
       "sections": [
         {
-          "body": "A second `free` on the same pointer corrupts allocator bookkeeping and is exploitable. Nulling after free turns it into the harmless `free(NULL)`."
+          "body": "The simplest dangling pointer comes straight from `free`. The standard says the value of a pointer becomes indeterminate once the object it points to reaches the end of its lifetime, so even comparing it is formally problematic. A simple discipline reduces risk: free through a macro or helper that also nulls the pointer, so a later use becomes a deterministic NULL dereference (crash at a known place) instead of silent corruption.",
+          "code": "#define SAFE_FREE(p) do { free(p); (p) = NULL; } while (0)\n\nint *p = malloc(sizeof *p);\n*p = 42;\nSAFE_FREE(p);\nif (p) printf(\"%d\\n\", *p);   /* skipped: p is NULL */\nSAFE_FREE(p);                 /* harmless: free(NULL) */"
         }
       ]
     },
     {
-      "title": "Wild, dangling, null, void recap",
-      "summary": "Four pointer states to tell apart.",
+      "title": "Returning pointers to locals",
+      "summary": "A local variable dies when its function returns, so its address must not escape.",
+      "sections": [
+        {
+          "body": "Automatic variables live in the function's stack frame. After the return the same bytes are reused by the next call, so the dangling pointer shows garbage that changes from run to run (the source article prints 0 or 2355224 for the same reason). Three safe alternatives: return a `static` object (not reentrant or thread-safe), have the caller supply the buffer, or allocate with `malloc` and document that the caller must free.",
+          "code": "int *bad(void)  { int x = 5; return &x; }              /* dangling */\nint *stat(void) { static int x = 5; return &x; }       /* valid, shared */\nint *heap(void) { int *p = malloc(sizeof *p); if (p) *p = 5; return p; }\nvoid fill(int *out) { *out = 5; }                      /* caller owns storage */"
+        },
+        {
+          "body": "The scope variant is the same bug in a block: `{ int a = 10; ptr = &a; }` followed by `*ptr` after the closing brace. Compilers may reuse the slot of `a` immediately, and AddressSanitizer can detect it with `-fsanitize-address-use-after-scope` (on by default in recent versions)."
+        }
+      ]
+    },
+    {
+      "title": "Wild, NULL and void pointers",
+      "summary": "Three more pointer states: uninitialized, empty and typeless.",
       "sections": [
         {
           "bullets": [
-            "Wild: never initialized.",
-            "Dangling: initialized, then target released.",
-            "NULL: intentionally empty.",
-            "void*: generic type, not a state."
-          ]
+            "**Wild**: `int *p;` inside a function holds garbage. Writing `*p = 1` hits a random address (crash or corruption). Always initialize: `int *p = NULL;` or to a real object. Compilers warn with `-Wuninitialized`.",
+            "**NULL**: `#define NULL ((void *)0)` in C (or `0` in C++98). A null pointer compares unequal to every valid object address. Dereferencing is undefined behavior, typically a segfault on user-space systems. Use it as the 'no object' sentinel and test before use.",
+            "**Void**: `void *p = &x;` stores any object pointer. Convert back to the original type before use. `malloc` returns `void *`, which converts implicitly in C (no cast needed, and the cast hides a missing `#include <stdlib.h>`).",
+            "**Arithmetic**: not allowed on `void *` in standard C because `sizeof(void)` is undefined. GCC allows it as an extension treating the size as 1."
+          ],
+          "code": "int x = 4; float y = 5.5f;\nvoid *vp = &x;\nprintf(\"%d\\n\", *(int *)vp);       /* cast, then dereference */\nvp = &y;\nprintf(\"%.1f\\n\", *(float *)vp);\n\nint *wild;            /* indeterminate: do not use */\nint *safe = NULL;     /* well-defined empty pointer */\nif (safe == NULL) puts(\"no object\");"
         }
       ]
     },
     {
-      "title": "Ownership patterns",
-      "summary": "Prevent aliasing bugs by design.",
+      "title": "Double free and invalid free",
+      "summary": "Releasing a block twice, or releasing something that is not a block start.",
       "sections": [
         {
-          "body": "Document who owns each pointer. Prefer APIs where the callee takes ownership or the caller keeps it, never both. Reference counting or arenas (free everything at once) reduce per-object lifetime errors."
+          "body": "The C standard says `free` is undefined if the argument does not match a pointer from `malloc`, `calloc` or `realloc`, or if the block was already freed. Real allocators keep free lists inside the freed blocks. A double free can make the list contain the same block twice, so two later `malloc` calls return the same address: two owners writing into one object. Modern glibc checks the most recent entries (tcache key, fastbin top) and aborts with `free(): double free detected`, but only catches the easy cases.",
+          "code": "char *p = malloc(32);\nfree(p);\nfree(p);                 /* UB: abort in glibc, silent corruption elsewhere */\n\nchar buf[32];\nfree(buf);               /* UB: not heap memory */\nchar *q = malloc(32);\nfree(q + 8);             /* UB: not the start of the block */"
         }
       ]
     },
     {
-      "title": "Detecting with ASan and Valgrind",
-      "summary": "See the bug, not just the crash.",
+      "title": "Ownership patterns that prevent UAF",
+      "summary": "Decide who frees, and make the rest of the code unable to forget.",
       "sections": [
         {
-          "body": "Compile with `-fsanitize=address -g` and run; the report shows the free site, the bad access, and the allocation site. Valgrind's memcheck gives similar traces without recompiling.",
-          "code": "gcc -g -fsanitize=address uaf.c && ./a.out"
+          "bullets": [
+            "**Single owner**: exactly one pointer frees the block. Others are borrowed and never outlive the owner. Document it in function comments (`takes ownership` or `borrows`).",
+            "**Create/destroy pairs**: `thing_new` and `thing_free`, where `thing_free(Thing **pp)` frees and nulls the caller's pointer.",
+            "**Reference counting**: `retain` increments, `release` decrements, and the last release frees. Use atomic operations if threads share the object. Cycles still leak.",
+            "**Arena allocation**: allocate many objects from one region and free the region at once. No individual frees, so no double free; but nothing may outlive the arena.",
+            "**Handles with generation counters**: store `{index, generation}` instead of a pointer. Freed slots bump the generation, so a stale handle is detected on lookup.",
+            "**Cleanup via single exit**: use `goto cleanup` and free each resource once, in reverse order."
+          ],
+          "code": "typedef struct Thing Thing;\nvoid thing_free(Thing **pp) {\n    if (!pp || !*pp) return;\n    free((*pp)->name);\n    free(*pp);\n    *pp = NULL;           /* caller's pointer cleared, double free harmless */\n}"
+        }
+      ]
+    },
+    {
+      "title": "Linked list and iteration traps",
+      "summary": "Freeing while walking is the classic UAF in interview code.",
+      "sections": [
+        {
+          "body": "A loop that frees the current node and then reads `cur->next` reads freed memory. Save the next pointer first. Similar traps: removing from a list while iterating with an iterator that points to the removed node, and keeping a pointer to an element of a dynamic array across an `append` that triggers `realloc`.",
+          "code": "/* wrong */\nfor (Node *cur = head; cur; cur = cur->next)\n    free(cur);                     /* reads cur->next after free */\n\n/* right */\nfor (Node *cur = head, *next; cur; cur = next) {\n    next = cur->next;\n    free(cur);\n}\nhead = NULL;\n\n/* realloc trap */\nint *first = &v[0];\nv = realloc(v, bigger);            /* may move the array */\n*first = 1;                        /* dangling if it moved */"
+        }
+      ]
+    },
+    {
+      "title": "Detecting UAF with ASan and Valgrind",
+      "summary": "Tools make a silent bug fail loudly with a stack trace of the free and the use.",
+      "sections": [
+        {
+          "body": "AddressSanitizer replaces `malloc` and `free`, keeps freed blocks in a quarantine and marks them as poisoned in shadow memory. Any access to poisoned memory aborts with the stack of the bad access, the stack of the `free`, and the stack of the original allocation. Valgrind does the same without recompiling. For production, sampled tools like GWP-ASan and tag-based hardware (ARM MTE) catch a fraction of bugs cheaply.",
+          "code": "$ gcc -g -fsanitize=address uaf.c -o uaf && ./uaf\n==4242==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010\nREAD of size 1 at 0x602000000010 thread T0\n    #0 0x... in main uaf.c:12\nfreed by thread T0 here:\n    #0 0x... in free\n    #1 0x... in main uaf.c:9\npreviously allocated by thread T0 here:\n    #0 0x... in malloc\n    #1 0x... in main uaf.c:7\n\n$ valgrind --leak-check=full ./a.out     # Invalid read of size 1 ... Address is\n                                         # 0 bytes inside a block of size 16 free'd"
         }
       ]
     }
   ],
   "takeaways": [
-    "A dangling pointer outlives its target; using it is undefined behavior.",
-    "Null pointers after free; never return addresses of locals.",
-    "Freed memory can be reused, so bugs can be silent and exploitable.",
-    "Use sanitizers to catch these early."
+    "`free(p)` does not change `p`; every remaining pointer to the block is dangling and using it is undefined behavior.",
+    "UAF is exploitable because the allocator reuses blocks quickly, so a stale pointer can read or write attacker-controlled data.",
+    "Dangling = was valid and is now stale; wild = never initialized; NULL = deliberately empty; void = typeless and needs a cast.",
+    "Never return the address of a local variable; use a caller-supplied buffer, a static, or heap memory with a clear owner.",
+    "Save `next` before freeing a list node, and treat any pointer into a block as invalid after `realloc`.",
+    "`free(NULL)` is a safe no-op; nulling a pointer after free turns many UAF and double frees into harmless or at least deterministic failures.",
+    "Test with AddressSanitizer or Valgrind, and prefer a single-owner design, reference counting or arenas."
+  ],
+  "practice": [
+    {
+      "title": "Name the pointer type in each case: freed block, uninitialized, NULL, void*",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Why does `free(p); p = NULL;` inside a helper not clear the caller's pointer?",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find three bugs in a function that returns a pointer to a local array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Fix the linked-list destroy loop that reads cur->next after free",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Show how realloc can invalidate pointers into an array and write a safe grow routine",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write thing_free(Thing **pp) so that calling it twice is harmless",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain how a double free can make malloc return the same block twice",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Describe how an attacker turns a UAF on a struct with a function pointer into code execution",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a handle table with generation counters that detects stale references",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: Dangling, void, null and wild pointers (GeeksforGeeks)",
+      "label": "GeeksforGeeks: Dangling, Void, Null and Wild Pointers",
       "url": "https://www.geeksforgeeks.org/c/dangling-void-null-wild-pointers/"
     },
     {
       "label": "CWE-416: Use After Free",
       "url": "https://cwe.mitre.org/data/definitions/416.html"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Fix a function that returns a dangling pointer",
-      "difficulty": "Easy"
     },
     {
-      "title": "Reproduce a double free and read the error",
-      "difficulty": "Easy"
+      "label": "CWE-415: Double Free",
+      "url": "https://cwe.mitre.org/data/definitions/415.html"
     },
     {
-      "title": "Find the use-after-free in a linked-list deletion loop",
-      "difficulty": "Medium"
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, section 7.22.3",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
     },
     {
-      "title": "Use ASan to read the allocation, free, and use stacks",
-      "difficulty": "Medium"
+      "label": "AddressSanitizer documentation",
+      "url": "https://clang.llvm.org/docs/AddressSanitizer.html"
     }
   ]
 }

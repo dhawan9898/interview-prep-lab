@@ -1,121 +1,243 @@
 {
-  "summary": "Stack memory is automatic, fast, and tied to function scope. Heap memory is manual, larger, and lives until you free it. Choosing correctly decides performance and bug surface.",
+  "summary": "The stack and the heap are the two places a running program keeps its data. The stack holds one frame per active function call and is managed automatically with last-in-first-out discipline; the heap holds blocks you request explicitly and keep until you release them. Choosing between them decides speed, lifetime, size limits and which bugs you can have: stack overflow and dangling locals on one side, leaks, use-after-free and fragmentation on the other. Recursion depth, large buffers, linked structures and returning data from functions all hinge on this choice.",
   "sections": [
     {
-      "heading": "Stack allocation",
+      "heading": "Overview",
+      "body": "Every object in a C program has a storage duration. **Automatic** objects (ordinary locals and parameters) live on the stack and disappear when their block ends. **Allocated** objects come from `malloc` and live on the heap until you call `free`. A third group, static storage, lives in the data segment for the entire run. This lesson compares the first two because you choose between them whenever you write a function.",
       "bullets": [
-        "Locals and parameters are placed in a frame created on call and destroyed on return.",
-        "Allocation is just moving the stack pointer, so it is very fast.",
-        "Size is limited (often 8 MB on Linux by default).",
-        "Data cannot outlive the function that created it."
+        "In the example `x` and the pointer `y` are stack objects; the 4-byte int that `y` points to is a heap object.",
+        "The word heap here means the memory region, not the tree-shaped heap data structure used by priority queues."
       ],
-      "code": "void f(void) {\n  int x = 5;        // stack\n  char buf[64];     // stack\n}                   // both gone here"
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n    int x = 10;                       // stack: automatic, freed at end of main\n    int *y = malloc(sizeof *y);       // y itself is on the stack...\n    if (!y) return 1;\n    *y = 20;                          // ...the int it points to is on the heap\n    printf(\"%d %d\\n\", x, *y);         // 10 20\n    free(y);                          // heap block released by you\n    return 0;\n}"
     },
     {
-      "heading": "Heap allocation",
+      "heading": "Core Concepts",
       "bullets": [
-        "`malloc`/`calloc`/`realloc` request memory from the allocator; `free` returns it.",
-        "Lifetime is whatever you decide, independent of scope.",
-        "Much larger than the stack, but allocation has bookkeeping cost.",
-        "You must free exactly once and never use it afterward."
-      ],
-      "code": "int *p = malloc(100 * sizeof *p);   // heap\nif (!p) return -1;\n/* use p */\nfree(p);\np = NULL;"
-    },
-    {
-      "heading": "Comparison",
-      "bullets": [
-        "Management: automatic (stack) vs explicit (heap).",
-        "Speed: stack is faster; heap pays allocator overhead.",
-        "Size: stack small, heap large.",
-        "Lifetime: scope-bound vs programmer-controlled.",
-        "Typical failure: stack overflow vs leaks, dangling pointers, fragmentation."
+        "**Stack**: contiguous region, one per thread, that grows and shrinks with function calls. Allocation is moving a pointer.",
+        "**Stack frame (activation record)**: the slice of stack for one call: return address, saved registers, parameters, local variables and padding.",
+        "**Heap**: pool of memory managed by the allocator, handing out variable-size blocks in any order and taking them back in any order.",
+        "**Automatic storage duration**: lifetime ends when the enclosing block exits; no cleanup code needed.",
+        "**Allocated storage duration**: lifetime runs from `malloc` to `free`, independent of scope.",
+        "**LIFO discipline**: frames are released in reverse order of creation, which is why the stack needs no bookkeeping beyond one pointer.",
+        "**Stack overflow**: using more stack than the thread was given (typically 8 MiB main thread on Linux, 1 MiB on Windows), usually from deep recursion or giant locals.",
+        "**Fragmentation**: free space split into pieces too small to reuse; a heap problem, impossible on the stack.",
+        "**Escape**: a pointer to a stack object that outlives the function; always a bug.",
+        "**Ownership**: the rule for who frees a heap block; the stack has no such question because the frame owns its locals."
       ]
     },
     {
-      "heading": "Pointers connect them",
-      "body": "A very common pattern is a pointer variable on the stack that refers to a block on the heap. When the function returns the pointer vanishes; if you did not free the block (or hand the pointer on), it leaks."
+      "heading": "How It Works",
+      "body": "Calling a function pushes a new frame; returning pops it. Trace `main` calling `calculate`, then a recursive call, to see the stack grow and shrink.",
+      "bullets": [
+        "**Call chain**: `main` frame, then `print_down(3)`, `print_down(2)`, `print_down(1)`, `print_down(0)`. Five frames are live at the deepest point.",
+        "**Return**: `print_down(0)` returns first and its frame is discarded, then `print_down(1)`, and so on back to `main`. Release order is exactly the reverse of creation.",
+        "**Cost per frame**: a few tens of bytes for this function (return address 8, saved frame pointer 8, argument 4 plus padding). With 8 MiB you can go roughly 100,000 or more levels deep for a tiny function, far fewer for one with big locals.",
+        "**Heap path**: `malloc` consults the allocator's free lists, possibly asks the kernel for more memory, and returns a pointer. The block stays until `free`; the stack frame that held the pointer can be long gone, which is exactly how a function hands a new object to its caller."
+      ],
+      "code": "#include <stdio.h>\n\nvoid print_down(int n) {\n    if (n == 0) return;          // base case ends the descent\n    printf(\"%d \", n);\n    print_down(n - 1);           // each call pushes another frame\n}\n\nint main(void) {\n    print_down(3);               // prints: 3 2 1\n    return 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Stack arrays and VLAs**: `int a[n];` (C99) is fast but unchecked; if `n` is large or untrusted it can overflow the stack. C11 made VLAs optional.",
+        "**`alloca`**: stack allocation with a runtime size; freed on function return; non-standard, same overflow risk.",
+        "**Heap objects**: `malloc`, `calloc`, `realloc`; use for unknown sizes, large data, or data that must outlive the creating function.",
+        "**Static storage**: file-scope and `static` variables; fixed size, whole-program lifetime, in data/BSS. Not stack, not heap.",
+        "**Custom heaps**: arenas and pools, built on one big `malloc`, that make many small allocations cheap and freeable together.",
+        "**Other languages**: C++ puts `new` objects on the heap and RAII objects on the stack; Java keeps primitives and references in frames and every object on the heap under a garbage collector; Python stores all objects on the heap; Go and Rust decide with escape analysis or ownership.",
+        "**Threads**: each thread has its own stack; the heap is shared and therefore needs a thread-safe allocator."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Stack allocation**: O(1), a single add or subtract of the stack pointer (about one cycle) and no locks; deallocation is free.",
+        "**Heap allocation**: O(1) typical for small sizes from size-class bins, but worst case may scan free lists or call into the kernel; plan on tens to hundreds of nanoseconds, and microseconds for large mmap-backed blocks.",
+        "**Locality**: stack data is hot in cache because the top frames are reused constantly; heap nodes can scatter, so linked lists miss cache more than arrays.",
+        "**Size limits**: stack roughly 1 to 8 MiB per thread by default; heap limited by virtual memory (many GiB).",
+        "**Per-object overhead**: stack none; heap about 8 to 16 bytes per block in glibc plus rounding to 16-byte multiples (minimum 32-byte chunk).",
+        "**Recursion space**: a recursion of depth `d` uses O(d) stack; converting to a loop with an explicit heap-allocated stack removes the depth limit.",
+        "**Failure mode**: stack exhaustion kills the process with SIGSEGV and no chance to recover; heap exhaustion returns NULL, which you can handle."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Returning a pointer to a local**: `int *f(void){ int x = 1; return &x; }` returns an address into a dead frame. Reads may still show 1 for a while, then garbage.",
+        "**Huge locals**: `char buf[1 << 24];` (16 MiB) in a function overflows an 8 MiB stack. Use `static` or `malloc`.",
+        "**Unbounded recursion**: missing or wrong base case; each call adds a frame until the guard page faults.",
+        "**Memory leak**: forgetting `free`, or overwriting the only pointer. The OS reclaims everything at exit, but long-running programs grow without bound.",
+        "**Use after free and double free**: the heap block is not yours after `free`, even though the pointer still holds its address.",
+        "**Mixing allocators**: freeing a stack variable, or an `alloca` block, or a pointer from a different library's allocator, is undefined behaviour.",
+        "**Assuming uninitialized is zero**: both stack locals and `malloc` blocks hold garbage; only `calloc`, statics and globals are zeroed.",
+        "**Thinking the heap is always slow**: the cost is real but rarely the bottleneck; premature stack tricks that sacrifice safety are worse than a clear `malloc`.",
+        "**Stack addresses in other threads**: passing the address of a local to a thread that outlives the function creates a dangling pointer across threads."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Stack**: function calls, recursion in tree and graph traversals, small temporary buffers, and parameters. Most hot-path code is allocation-free stack code.",
+        "**Heap**: linked lists, trees, graphs, hash tables, dynamic arrays, strings from input, and objects returned from constructors such as `fopen`.",
+        "**Game and embedded code**: pools and arenas allocated at startup avoid fragmentation and unpredictable latency; some safety standards (MISRA, DO-178C practice) forbid post-startup `malloc`.",
+        "**Servers**: per-request arenas freed on completion; allocators like jemalloc and tcmalloc tuned for multi-threaded fragmentation behaviour.",
+        "**Security**: stack smashing and heap overflow are classic attack classes; canaries, ASan, and hardened allocators defend against them."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Where does a local pointer variable and what it points to live?** The pointer is on the stack; the target is on the heap if it came from `malloc`.",
+        "**Why is the stack faster?** Allocation is a pointer bump with perfect locality and no bookkeeping or locking.",
+        "**What happens on stack overflow?** The write hits the guard page and the process gets SIGSEGV.",
+        "**Can the heap overflow?** A request can fail (`NULL`); writing past a block is a buffer overflow that corrupts neighbours or metadata.",
+        "**Who frees stack memory?** Nobody; leaving the function does it. Heap memory is freed by the programmer.",
+        "**Is a static local on the stack?** No, it lives in static storage for the whole run.",
+        "**How does a recursive function use memory?** O(depth) stack frames; tail recursion may be optimized to reuse one frame."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Stack overflow",
-      "summary": "Runaway recursion and huge locals.",
+      "title": "Stack frames in detail",
+      "summary": "What one call actually stores.",
       "sections": [
         {
-          "body": "Each recursive call adds a frame. Missing base cases, or locals like `char big[10*1024*1024]`, exhaust the stack and the process is killed by SIGSEGV. Fix by bounding recursion, iterating, or moving large buffers to the heap."
+          "body": "On x86-64 System V a call pushes the return address, then the callee typically pushes the old frame pointer and subtracts from the stack pointer to make room for locals. The first six integer or pointer arguments arrive in registers (`rdi, rsi, rdx, rcx, r8, r9`) and spill to the frame if needed; the rest are pushed. The stack pointer must be 16-byte aligned at call sites. Because locals sit at fixed offsets from the frame pointer, the compiler addresses them as `[rbp - 8]`, `[rbp - 16]` and so on.",
+          "bullets": [
+            "Higher addresses: caller's frame, then arguments passed on the stack, then return address.",
+            "Lower addresses: saved frame pointer, locals, spill slots, and outgoing call space."
+          ]
         }
       ]
     },
     {
-      "title": "Heap fragmentation",
-      "summary": "Free memory that is unusable.",
+      "title": "Heap allocation in practice",
+      "summary": "Request, use, release, with ownership.",
       "sections": [
         {
-          "body": "Repeated allocate/free of different sizes leaves small holes. Total free memory may be large yet no single hole fits a request. Allocators mitigate with size classes and coalescing."
+          "body": "A function that builds something for its caller must put it on the heap, because a stack object dies at return. Document who frees it. The usual patterns: the creator returns an owned pointer and the caller frees it, or the caller supplies the buffer and the callee fills it (no allocation, no leak).",
+          "code": "char *make_greeting(const char *name) {      // caller owns the result\n    size_t n = strlen(name) + 8;\n    char *s = malloc(n);\n    if (s) snprintf(s, n, \"Hello, %s\", name);\n    return s;\n}\nvoid fill_greeting(char *out, size_t cap, const char *name) {   // caller owns out\n    snprintf(out, cap, \"Hello, %s\", name);\n}"
         }
       ]
     },
     {
-      "title": "Returning pointers to locals",
-      "summary": "A classic bug.",
+      "title": "Stack overflow and recursion depth",
+      "summary": "How deep can you go.",
       "sections": [
         {
-          "body": "Returning `&local` hands back stack memory that is already invalid. Return a heap pointer, a `static`, or fill a caller-provided buffer.",
-          "code": "int *bad(void)  { int x = 1; return &x; }          // dangling\nint *good(void) { int *p = malloc(sizeof *p); *p = 1; return p; }"
+          "body": "Depth limit is roughly stack size divided by frame size. A function with a 64-byte frame fits about 130,000 calls in 8 MiB; one carrying a 1 KiB local array fits about 8,000. Mitigations: convert recursion to iteration, use an explicit stack in heap memory, raise the limit (`ulimit -s unlimited` or a bigger thread stack), or restructure to tail recursion and compile with `-O2`, which GCC and Clang can turn into a loop.",
+          "code": "long sum_rec(long n) { return n == 0 ? 0 : n + sum_rec(n - 1); }   // O(n) stack\nlong sum_loop(long n) { long s = 0; while (n) s += n--; return s; } // O(1) stack"
         }
       ]
     },
     {
-      "title": "Heap data structure vs heap memory",
-      "summary": "Same word, different things.",
+      "title": "Dangling pointers to stack data",
+      "summary": "The classic escape bug.",
       "sections": [
         {
-          "body": "The 'heap' in priority queues is a tree-shaped data structure. The 'heap' here is the process memory region used for dynamic allocation. They are unrelated."
+          "body": "A pointer to a local is valid only until the function returns, or until the block ends for a block-scoped local. Compilers warn (`-Wreturn-local-addr`), and AddressSanitizer with `detect_stack_use_after_return` catches the rest. Fixes: return by value, take an output pointer from the caller, make the object `static` (not thread safe), or allocate on the heap.",
+          "code": "int *bad(void)  { int x = 7; return &x; }        // dangling\nint  good1(void){ int x = 7; return x; }         // return by value\nvoid good2(int *out) { *out = 7; }               // caller supplies storage\nint *good3(void){ int *p = malloc(sizeof *p); if (p) *p = 7; return p; }"
         }
       ]
     },
     {
-      "title": "Automatic memory management in other languages",
-      "summary": "Java and garbage collection.",
+      "title": "Fragmentation and allocator behaviour",
+      "summary": "Why heaps get messy over time.",
       "sections": [
         {
-          "body": "In Java, primitives and references live in stack frames while objects live on the heap; the garbage collector reclaims unreachable objects, so there is no free(). That removes dangling pointers and most leaks but adds GC pauses and less predictable timing than C's explicit control."
+          "body": "Allocating and freeing blocks of mixed sizes leaves holes. **External fragmentation** means the total free space is large but no hole fits the request; **internal fragmentation** is waste inside a block from size rounding. Allocators combat it by coalescing neighbours, using size classes, and returning big blocks to the OS. If your design allocates a few long-lived objects first and short-lived ones later, or frees in bulk with an arena, fragmentation largely disappears."
+        }
+      ]
+    },
+    {
+      "title": "Choosing stack or heap",
+      "summary": "A decision checklist.",
+      "sections": [
+        {
+          "body": "Use the stack when the size is small and known at compile time, the object is needed only within the function (or its callees), and speed matters. Use the heap when the size depends on input, the data is larger than a few KiB, the object must outlive the call, or you build linked structures. When unsure about size, cap the stack option: for example use `char buf[256]` for a short message and fall back to `malloc` if the text is longer.",
+          "bullets": [
+            "Small fixed record: stack.",
+            "Variable-length input line: heap (`getline`).",
+            "Node in a list or tree: heap.",
+            "Scratch table under 1 KiB inside one function: stack.",
+            "Anything above roughly 64 KiB: heap or static."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Stack and heap in other languages",
+      "summary": "Same idea, different management.",
+      "sections": [
+        {
+          "body": "In C++ `new`/`delete` and smart pointers manage heap objects while RAII values stay on the stack. Java stores primitives and object references in frames and all objects on the heap; the garbage collector frees unreachable ones, so there are no dangling pointers but there are pauses and leaks through lingering references. Python keeps every object on the heap with reference counting plus a cycle collector. Rust decides by ownership and `Box`, and Go uses escape analysis to put values on the stack when the compiler can prove they do not escape. Knowing C's explicit model makes all of those easier to reason about."
         }
       ]
     }
   ],
   "takeaways": [
-    "Stack: automatic, fast, scoped, small. Heap: manual, flexible, large, slower.",
-    "Never return the address of a local variable.",
-    "Every malloc needs exactly one free.",
-    "Use the stack by default; use the heap when size or lifetime demands it."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: Stack vs Heap memory allocation (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/stack-vs-heap-memory-allocation/"
-    }
+    "The stack stores one frame per active call and frees it automatically on return; the heap stores blocks that live until you `free` them.",
+    "Stack allocation is a pointer move with excellent locality; heap allocation is slower and carries 8 to 16 bytes of overhead per block.",
+    "Stack is small (about 8 MiB per thread on Linux) and overflows through deep recursion or huge locals; the heap is large and fails with `NULL`.",
+    "Never return the address of a local; allocate on the heap, return by value, or let the caller supply the buffer.",
+    "A pointer variable lives on the stack, while the object it points to may live on the heap.",
+    "Heap risks are leaks, dangling pointers, double free and fragmentation; stack risks are overflow and escaped locals."
   ],
   "practice": [
     {
-      "title": "Fix a function that returns the address of a local variable",
+      "title": "State which of x, p, *p lives on stack or heap in: int x; int *p = malloc(4);",
       "difficulty": "Easy"
     },
     {
-      "title": "Trigger a stack overflow and find the maximum recursion depth",
+      "title": "Trace the stack frames created by factorial(4) and the order they are released",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Fix a function that returns a pointer to a local char array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Estimate the maximum recursion depth for a function with a 100-byte frame and an 8 MiB stack",
       "difficulty": "Medium"
     },
     {
-      "title": "Benchmark malloc against stack allocation",
+      "title": "Rewrite a recursive tree traversal using an explicit heap-allocated stack",
       "difficulty": "Medium"
     },
     {
-      "title": "Implement a simple bump allocator",
+      "title": "Implement make_greeting returning an owned heap string and show the caller freeing it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find and fix the crash: a 20 MB local array in main",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Benchmark 10 million small allocations on the heap against the same with an arena or stack buffer",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why linked-list traversal is slower than array traversal despite equal O(n), with cache behaviour",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Stack vs Heap memory allocation (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/stack-vs-heap-memory-allocation/"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.2.4 Storage durations of objects",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "System V AMD64 ABI (calling convention and stack layout)",
+      "url": "https://gitlab.com/x86-psABIs/x86-64-ABI"
+    },
+    {
+      "label": "Bryant & O'Hallaron, Computer Systems: A Programmer's Perspective, ch. 3 and 9",
+      "url": "https://csapp.cs.cmu.edu/"
     }
   ]
 }

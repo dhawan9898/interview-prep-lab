@@ -1,133 +1,250 @@
 {
-  "summary": "C reads and writes files through the stdio library using a FILE * stream. You open a file with a mode, read or write with formatted, character, line, or binary functions, move the position indicator if needed, and close the stream.",
+  "summary": "C file I/O is built on the `FILE *` stream abstraction from `<stdio.h>`. A stream wraps an operating-system file descriptor with a buffer, a position and error flags, and gives you text and binary read and write functions. It matters because every tool, server, database and parser reads or writes files, and the subtle parts (buffering, modes, return values, partial reads, `fseek`) are where real bugs and interview questions live.",
   "sections": [
     {
-      "heading": "Opening and closing",
-      "body": "`fopen(path, mode)` returns a FILE * or NULL on failure; always test it and report errors with `perror`. Close with `fclose` to flush buffers and release the descriptor.",
-      "code": "FILE *f = fopen(\"data.txt\", \"r\");\nif (!f) { perror(\"fopen\"); return 1; }\n/* ... */\nfclose(f);"
+      "heading": "Overview",
+      "body": "A C program talks to files through streams. `fopen` returns a `FILE *` that you pass to `fprintf`, `fgets`, `fread`, `fwrite`, `fseek` and finally `fclose`. Three streams are already open when `main` starts: `stdin`, `stdout` and `stderr`. Underneath, each stream owns a file descriptor (on POSIX systems) and an in-memory buffer, so most calls never touch the kernel. This lesson covers opening modes, text and binary I/O, positioning, buffering, error handling and the lower-level POSIX descriptor API."
     },
     {
-      "heading": "Modes",
+      "heading": "Core Concepts",
       "bullets": [
-        "\"r\": read, file must exist.",
-        "\"w\": write, create or truncate.",
-        "\"a\": append, create if missing.",
-        "\"r+\", \"w+\", \"a+\": read and write variants.",
-        "Add \"b\" for binary (\"rb\", \"wb\"); it only matters on systems that translate newlines, like Windows."
+        "**Stream**: a sequence of bytes accessed through a `FILE *`. The `FILE` structure is opaque. Never copy it and never touch its fields.",
+        "**Text mode versus binary mode**: in text mode the library may translate line endings (`\\r\\n` to `\\n` on Windows). On Linux and macOS the two are identical, but write `\"b\"` anyway for portable binary code.",
+        "**Mode string**: `\"r\"` read (file must exist), `\"w\"` write (create or truncate), `\"a\"` append (create, always write at the end), plus `\"+\"` for update, for example `\"r+\"`, `\"w+\"`, `\"a+\"`. C11 adds `\"x\"` (with `w`) to fail if the file already exists.",
+        "**File position indicator**: the offset of the next byte to read or write. `fseek`, `ftell`, `rewind`, `fgetpos` and `fsetpos` move or report it.",
+        "**Buffering**: fully buffered (files), line buffered (terminals) or unbuffered (`stderr`). `fflush` pushes buffered output to the OS.",
+        "**EOF and error indicators**: two separate flags per stream. `feof(fp)` and `ferror(fp)` query them, `clearerr(fp)` resets both.",
+        "**`EOF` constant**: a negative `int` (usually -1) returned by `fgetc`, `getchar` and friends. It is why those functions return `int`, not `char`.",
+        "**File descriptor**: the small integer the kernel uses (0 stdin, 1 stdout, 2 stderr). `fileno(fp)` gets it from a stream, `fdopen(fd, mode)` builds a stream from one.",
+        "**`errno`**: set by failing library calls. `perror(\"msg\")` and `strerror(errno)` turn it into text."
       ]
     },
     {
-      "heading": "Reading and writing text",
-      "bullets": [
-        "`fgetc` / `fputc`: one character.",
-        "`fgets(buf, n, f)` / `fputs`: a line.",
-        "`fscanf` / `fprintf`: formatted values.",
-        "Loop on the return value, not on `feof`: `while (fgets(line, sizeof line, f)) { ... }`."
-      ],
-      "code": "char line[256];\nwhile (fgets(line, sizeof line, f)) {\n  fputs(line, stdout);\n}"
+      "heading": "How It Works",
+      "body": "The usual life cycle is open, check, use, check, close. `fopen` asks the OS to open the path, allocates a `FILE` with a buffer (often 4096 or 8192 bytes), and returns a pointer or `NULL`. Writes copy bytes into the buffer and only call `write(2)` when the buffer fills, when you call `fflush` or `fclose`, or when the program exits normally. Reads work in reverse: the first read pulls a whole block into the buffer and later reads are served from memory.",
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n    FILE *out = fopen(\"scores.txt\", \"w\");\n    if (out == NULL) { perror(\"fopen scores.txt\"); return EXIT_FAILURE; }\n    fprintf(out, \"alice 90\\nbob 72\\n\");\n    if (fclose(out) != 0) { perror(\"fclose\"); return EXIT_FAILURE; }\n\n    FILE *in = fopen(\"scores.txt\", \"r\");\n    if (!in) { perror(\"fopen\"); return EXIT_FAILURE; }\n    char name[32]; int score;\n    while (fscanf(in, \"%31s %d\", name, &score) == 2)\n        printf(\"%s -> %d\\n\", name, score);\n    fclose(in);\n    return 0;\n}"
     },
     {
-      "heading": "Binary I/O",
-      "body": "`fread(ptr, size, count, f)` and `fwrite(ptr, size, count, f)` move raw bytes and return the number of items transferred. Writing whole structs is quick but not portable across padding, endianness, or compilers.",
-      "code": "struct Rec { int id; double val; } r = {1, 2.5};\nFILE *b = fopen(\"rec.bin\", \"wb\");\nfwrite(&r, sizeof r, 1, b);\nfclose(b);"
+      "body": "Notice three habits. Every `fopen` is checked for `NULL`. The `fscanf` loop tests the return value (the count of items converted) instead of testing `feof` first. The `%31s` width keeps a long word from overflowing the 32-byte buffer. Even `fclose` is checked, because on a buffered write stream the final flush happens there and a full disk shows up only at that moment."
     },
     {
-      "heading": "Positioning",
+      "heading": "Variants & Types",
       "bullets": [
-        "`ftell(f)`: current offset.",
-        "`fseek(f, offset, SEEK_SET | SEEK_CUR | SEEK_END)`: move.",
-        "`rewind(f)`: back to the start and clear error flags."
-      ],
-      "code": "fseek(f, 0, SEEK_END);\nlong size = ftell(f);\nrewind(f);"
+        "**Formatted I/O**: `fprintf` and `fscanf` convert between text and values. Easy to read, slow, and `fscanf` is fragile on bad input.",
+        "**Character I/O**: `fgetc`, `fputc`, `getc`, `putc`, `ungetc` (one guaranteed pushback). Good for tokenizers.",
+        "**Line I/O**: `fgets(buf, n, fp)` reads up to `n-1` characters and keeps the newline. `fputs` writes a string without adding one. Avoid `gets`; it was removed in C11.",
+        "**Block (binary) I/O**: `fread(ptr, size, count, fp)` and `fwrite(...)` move raw bytes and return the number of items transferred. Use for structs and images, but remember padding and endianness make the file non-portable.",
+        "**Positioning**: `fseek(fp, offset, SEEK_SET | SEEK_CUR | SEEK_END)`, `ftell`, `rewind`. For files over 2 GiB on 32-bit `long` platforms use `fseeko`/`ftello` (POSIX) or `_fseeki64`.",
+        "**Whole-file helpers**: `remove`, `rename`, `tmpfile`, `tmpnam` (unsafe), `mkstemp` (POSIX, preferred).",
+        "**POSIX descriptors**: `open`, `read`, `write`, `lseek`, `close`, `fsync`. No library buffering, exact control, used for sockets, pipes and durability.",
+        "**Memory-mapped files**: `mmap` maps a file into the address space so you access it as an array. Best for large random access.",
+        "**`fmemopen` and `open_memstream`** (POSIX 2008): treat a memory buffer as a `FILE *`, which makes functions that take streams testable without touching disk."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "A buffered `fgetc` or `fputc` costs a few nanoseconds because it only moves one byte inside the buffer. An unbuffered `write(1, &c, 1)` per byte costs a system call, about 100 to 1000 ns each, so a megabyte written byte by byte is hundreds of milliseconds.",
+        "Default buffer size is `BUFSIZ`, at least 256 and 8192 on glibc. `setvbuf(fp, NULL, _IOFBF, 1 << 16)` before the first I/O gives a 64 KiB buffer for bulk transfers.",
+        "`fread` of one 4096-byte block is far cheaper than 4096 calls of `fgetc`. Prefer block reads and parse in memory.",
+        "`fseek` on a read stream discards the buffer, so seeking back and forth by small amounts wastes reads. Sequential access is the cheapest pattern; random access costs about one block read per seek on a miss.",
+        "`fflush` moves data to the kernel page cache only. `fsync(fileno(fp))` forces it to disk and can take milliseconds on spinning drives and still around 0.1 to 1 ms on SSDs.",
+        "`ftell` gives a `long`, which is 32 bits on 64-bit Windows and so caps at about 2 GiB. `fgetpos` and `fsetpos` avoid that limit."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Not checking `fopen`**: a `NULL` `FILE *` passed to `fprintf` is undefined behavior and usually a crash.",
+        "**`while (!feof(fp))`**: `feof` becomes true only after a read has already hit the end, so the loop runs once too often and processes garbage. Test the read function's return value.",
+        "**Storing `fgetc` in a `char`**: on platforms where `char` is unsigned `EOF` is never seen, and where it is signed a valid byte `0xFF` looks like `EOF`. Use `int`.",
+        "**Using `\"w\"` by mistake**: it truncates the file at open time, before your first write. Use `\"a\"` to add and `\"r+\"` to edit in place.",
+        "**Mixing reads and writes** on an update stream without an intervening `fflush` or `fseek` is undefined behavior.",
+        "**`fgets` and the newline**: the trailing `\\n` is kept. Strip it with `buf[strcspn(buf, \"\\n\")] = 0`. A line longer than the buffer comes back in pieces.",
+        "**`fscanf(\"%s\")` without a width** is as dangerous as `gets` and overflows the buffer on long input.",
+        "**Forgetting `fclose`**: leaks the descriptor (typical limit 1024 per process by default) and may lose buffered data if the program is killed.",
+        "**Writing structs with `fwrite`**: padding bytes, pointer members and byte order make the file unreadable on another machine or compiler. Serialize field by field for portable formats.",
+        "**Reading a text file in binary mode on Windows** leaves `\\r` before every `\\n`.",
+        "**Closing a stream twice** or using it after `fclose` is undefined behavior, a cousin of use-after-free."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Config and log files**: `fopen(path, \"a\")` plus line-buffered writes. Servers often open logs with `O_APPEND` so concurrent writers do not overwrite one another.",
+        "**Parsers and interpreters**: read the source with `fread` into one buffer, then parse in memory.",
+        "**Databases and key-value stores**: use raw descriptors, `pwrite`, `fsync` and write-ahead logs to guarantee data survives a crash.",
+        "**Unix filters**: programs like `cat`, `grep`, `sort` read `stdin` and write `stdout`, so shell pipes and redirection compose them.",
+        "**Atomic updates**: write to a temporary file in the same directory, `fsync`, then `rename` over the original. `rename` is atomic on POSIX, so readers see the old or the new file, never a half-written one.",
+        "**Binary formats**: image headers, ELF files and network captures are read with `fread` into structs or byte arrays, with explicit endianness conversion."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What does `fopen` return on failure?** `NULL`, with `errno` set. Check it every time.",
+        "**Difference between `\"w\"` and `\"a\"`?** `\"w\"` truncates an existing file. `\"a\"` keeps content and always writes at the end regardless of `fseek`.",
+        "**Why does `fgetc` return `int`?** To hold all 256 byte values plus a distinct `EOF`.",
+        "**Why is `while(!feof(fp))` wrong?** The flag is set only after a failed read, so you process one extra bogus iteration.",
+        "**`fread` returned less than requested; what now?** Either EOF or an error. Call `feof` and `ferror` to tell which.",
+        "**`FILE *` versus file descriptor?** `FILE *` is buffered, portable ISO C. A descriptor is a POSIX integer for unbuffered kernel calls.",
+        "**How do you get the size of a file?** `fseek(fp, 0, SEEK_END)` then `ftell`, or `fstat`/`stat` on POSIX, which is cheaper and works for large files."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Error handling",
-      "summary": "ferror, feof, errno.",
+      "title": "Opening, creating and closing",
+      "summary": "`fopen` modes decide whether a file is created, truncated or appended.",
       "sections": [
         {
-          "body": "Functions return EOF or a short count on trouble. Distinguish end-of-file from error with `feof(f)` and `ferror(f)`, and inspect `errno` / `perror` for the reason. Check `fclose` and `fflush` results when writing important data, since buffered writes can fail late."
+          "body": "A file is created by opening it with `\"w\"`, `\"a\"` (or their `+` forms). Opening with `\"r\"` or `\"r+\"` fails if it does not exist. `\"w\"` destroys old content immediately, so open the new file under a temporary name when you cannot afford to lose the old one. `fclose` flushes buffered output and releases the descriptor. Its return value is 0 on success and `EOF` on error, and it is the place where a deferred write error such as a full disk first appears.",
+          "code": "FILE *fp = fopen(\"data.bin\", \"wb\");       /* create or truncate, binary */\nif (!fp) { perror(\"data.bin\"); exit(1); }\n/* ... write ... */\nif (fclose(fp) == EOF) perror(\"close failed\"); /* flush errors appear here */\n\nFILE *safe = fopen(\"new.txt\", \"wx\");      /* C11: fail if it exists */"
         }
       ]
     },
     {
-      "title": "Buffering",
-      "summary": "Why output sometimes appears late.",
+      "title": "Reading text: fgets, fscanf and getline",
+      "summary": "Pick the reader that cannot overflow and reports the end of input correctly.",
       "sections": [
         {
-          "body": "stdio buffers output: line-buffered for terminals, fully buffered for files. `fflush(f)` forces a flush; `setvbuf` changes the mode. A crash before flush loses buffered data."
+          "body": "`fgets` is the safe default for line input. `fscanf` is fine for simple, trusted formats when you check its return value and bound every `%s`. POSIX `getline` allocates and grows a buffer for you, so it handles lines of any length, but you must `free` the buffer.",
+          "code": "char line[256];\nwhile (fgets(line, sizeof line, fp)) {\n    line[strcspn(line, \"\\n\")] = '\\0';\n    printf(\"[%s]\\n\", line);\n}\nif (ferror(fp)) perror(\"read\");\n\nchar *buf = NULL; size_t cap = 0; ssize_t n;\nwhile ((n = getline(&buf, &cap, fp)) != -1)\n    printf(\"%zd bytes\\n\", n);\nfree(buf);"
+        },
+        {
+          "body": "Reading is complete when the loop's read call fails. Afterwards distinguish normal end from failure: `feof(fp)` true means you consumed everything, `ferror(fp)` true means the OS reported an I/O problem."
+        }
+      ]
+    },
+    {
+      "title": "Binary I/O with fread and fwrite",
+      "summary": "Move raw bytes in blocks and always check the item count.",
+      "sections": [
+        {
+          "body": "`fwrite(&rec, sizeof rec, 1, fp)` returns the number of complete items written, which should equal the count you asked for. Reading mirrors it. Put the element size in the second argument and the count in the third so a short transfer reports whole items.",
+          "code": "typedef struct { int id; double score; } Rec;\n\nRec r = { 7, 91.5 };\nFILE *fp = fopen(\"recs.bin\", \"wb\");\nif (fp && fwrite(&r, sizeof r, 1, fp) != 1) perror(\"fwrite\");\nif (fp) fclose(fp);\n\nRec in;\nfp = fopen(\"recs.bin\", \"rb\");\nif (fp && fread(&in, sizeof in, 1, fp) == 1)\n    printf(\"%d %.1f\\n\", in.id, in.score);\nif (fp) fclose(fp);"
+        },
+        {
+          "body": "This file is tied to one compiler and architecture. `sizeof(Rec)` includes 4 padding bytes between `id` and `score` on typical 64-bit ABIs, and integers are stored in host byte order. For files that must move between machines, write each field with a fixed width (`uint32_t`) and a fixed byte order, or use a text or schema-based format."
+        }
+      ]
+    },
+    {
+      "title": "Moving the file pointer",
+      "summary": "fseek, ftell and rewind give random access for seekable files.",
+      "sections": [
+        {
+          "body": "`fseek(fp, off, whence)` takes `SEEK_SET` (from the start), `SEEK_CUR` (relative) or `SEEK_END` (from the end). Returns 0 on success. In text mode only offsets returned by `ftell` (or 0) are guaranteed meaningful. Pipes and terminals are not seekable, so `fseek` fails with `ESPIPE`.",
+          "code": "fseek(fp, 0, SEEK_END);\nlong size = ftell(fp);           /* file length in bytes */\nrewind(fp);                      /* same as fseek(fp, 0, SEEK_SET), clears error */\n\nfseek(fp, 3 * (long)sizeof(Rec), SEEK_SET);   /* jump to record number 3 */\nfread(&r, sizeof r, 1, fp);"
+        }
+      ]
+    },
+    {
+      "title": "Buffering, flushing and durability",
+      "summary": "Know which layer your bytes are in: user buffer, kernel cache, or disk.",
+      "sections": [
+        {
+          "body": "Three layers sit between `fprintf` and the platter. The stdio buffer lives in your process. `fflush` hands it to the kernel, which keeps it in the page cache. `fsync` asks the kernel to commit to the device. A crash of your process after `fflush` loses nothing, a power failure before `fsync` can lose everything. `setvbuf` changes the mode: `_IOFBF` full, `_IOLBF` line, `_IONBF` none, and must be called before any other operation on the stream.",
+          "code": "setvbuf(stdout, NULL, _IOLBF, 0);      /* line buffer even when piped */\nfprintf(log, \"event %d\\n\", id);\nfflush(log);                            /* to the kernel */\nfsync(fileno(log));                     /* to the disk (POSIX, <unistd.h>) */"
+        },
+        {
+          "body": "A common surprise: `printf(\"loading...\")` without a newline may not appear before a long computation because the terminal is line buffered. Call `fflush(stdout)`, or write progress to `stderr`, which is unbuffered."
         }
       ]
     },
     {
       "title": "Standard streams and redirection",
-      "summary": "stdin, stdout, stderr.",
+      "summary": "stdin, stdout and stderr are ordinary FILE pointers that the shell can rewire.",
       "sections": [
         {
-          "body": "Three streams are open at start. Errors belong on stderr (unbuffered) so they are visible even when stdout is redirected. `freopen` rebinds a stream to a file."
+          "body": "Streams 0, 1 and 2 are inherited from the parent process. `prog < in.txt > out.txt 2> err.txt` makes the shell open files and install them as descriptors 0, 1 and 2 before your `main` runs, so `scanf` and `printf` need no change. `freopen(path, mode, stdout)` does the same inside the program. Keep normal output on `stdout` and diagnostics on `stderr` so users can separate them, and use the exit status (`EXIT_SUCCESS` or `EXIT_FAILURE`) to report errors to scripts."
         }
       ]
     },
     {
-      "title": "Reading a whole file",
-      "summary": "A common helper.",
+      "title": "Error handling patterns",
+      "summary": "Check every call, report with errno, and clean up on all paths.",
       "sections": [
         {
-          "code": "char *slurp(const char *path, size_t *n) {\n  FILE *f = fopen(path, \"rb\"); if (!f) return NULL;\n  fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);\n  char *buf = malloc(sz + 1);\n  if (buf && fread(buf, 1, sz, f) == (size_t)sz) { buf[sz] = 0; if (n) *n = sz; }\n  else { free(buf); buf = NULL; }\n  fclose(f); return buf;\n}"
+          "body": "A reliable pattern uses one cleanup label so that every failure path closes what was opened. Because `errno` can be overwritten by later calls, capture it right after the failing call.",
+          "code": "int copy(const char *src, const char *dst) {\n    int rc = -1;\n    FILE *a = NULL, *b = NULL;\n    char buf[8192];\n    size_t n;\n\n    if (!(a = fopen(src, \"rb\"))) goto done;\n    if (!(b = fopen(dst, \"wb\"))) goto done;\n    while ((n = fread(buf, 1, sizeof buf, a)) > 0)\n        if (fwrite(buf, 1, n, b) != n) goto done;\n    if (ferror(a)) goto done;\n    rc = 0;\ndone:\n    if (b && fclose(b) != 0) rc = -1;\n    if (a) fclose(a);\n    return rc;\n}"
         }
       ]
     },
     {
-      "title": "POSIX file descriptors",
-      "summary": "Lower-level alternative.",
+      "title": "POSIX file descriptors and mmap",
+      "summary": "The unbuffered layer under stdio, used for sockets, pipes, locking and durability.",
       "sections": [
         {
-          "body": "`open`, `read`, `write`, `close` operate on integer descriptors with no stdio buffering and are used for sockets, pipes, and devices. `fileno(f)` and `fdopen(fd, mode)` convert between the two."
+          "body": "`open(path, flags, mode)` returns a descriptor or -1. `read` and `write` may transfer fewer bytes than requested (short counts), so robust code loops until done and retries on `EINTR`. Flags such as `O_CREAT | O_EXCL`, `O_APPEND`, `O_TRUNC`, `O_NONBLOCK` and `O_CLOEXEC` give precise control that `fopen` modes cannot. `mmap` maps a file into memory so the kernel pages data in on demand.",
+          "code": "int fd = open(\"data.bin\", O_RDONLY | O_CLOEXEC);\nif (fd < 0) { perror(\"open\"); return 1; }\nstruct stat st;\nfstat(fd, &st);\nunsigned char *p = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);\nif (p == MAP_FAILED) { perror(\"mmap\"); close(fd); return 1; }\nprintf(\"first byte %u of %lld\\n\", p[0], (long long)st.st_size);\nmunmap(p, st.st_size);\nclose(fd);"
         }
       ]
     }
   ],
   "takeaways": [
-    "Open with fopen, always test for NULL, close with fclose.",
-    "Choose text functions (fgets, fprintf) or binary (fread, fwrite) deliberately.",
-    "Loop on read return values, not on feof.",
-    "Output is buffered; flush or close to persist it."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: File handling in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/c/basics-file-handling-c/"
-    },
-    {
-      "label": "Linux man-pages: fopen(3)",
-      "url": "https://man7.org/linux/man-pages/man3/fopen.3.html"
-    }
+    "A `FILE *` is a buffered stream over a descriptor; always check `fopen` for `NULL` and `fclose` for failure.",
+    "Drive read loops by the return value of the read call (`fgets`, `fread`, `fscanf`), never by `while (!feof(fp))`.",
+    "`\"w\"` truncates, `\"a\"` appends at the end no matter what, `\"r+\"` edits in place, and C11 `\"x\"` refuses to overwrite.",
+    "`fgetc` returns `int` so that `EOF` stays distinct from the 256 byte values.",
+    "`fflush` reaches the kernel, `fsync` reaches the disk; crash safety needs the second.",
+    "Binary structs written with `fwrite` are not portable: padding, size and endianness all differ across systems.",
+    "Bound every `%s` in `fscanf` and use `fgets` or `getline` for lines to avoid buffer overflows."
   ],
   "practice": [
     {
-      "title": "Copy one file to another in blocks",
+      "title": "Write a program that counts lines, words and bytes of a file (a mini wc)",
       "difficulty": "Easy"
     },
     {
-      "title": "Count lines, words, and characters in a file",
+      "title": "Explain why `while(!feof(fp))` processes the last record twice",
       "difficulty": "Easy"
     },
     {
-      "title": "Read records from a CSV into an array of structs",
+      "title": "Copy a file with fread and fwrite, handling short writes and errors",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Read a file of unknown line length into memory without overflowing a buffer",
       "difficulty": "Medium"
     },
     {
-      "title": "Store and retrieve structs with fwrite/fread and fseek",
+      "title": "Write and read back an array of structs, then explain why the file is not portable",
       "difficulty": "Medium"
     },
     {
-      "title": "Implement tail -n by seeking from the end",
+      "title": "Print the last 10 lines of a large file without reading all of it (tail)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Update one record in place in a binary file using fseek, and describe the read/write switch rule",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement an atomic file replace (write temp, fsync, rename) and explain each step",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Explain stdio buffering modes and show a program whose output order differs between terminal and pipe",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "GeeksforGeeks: File Handling in C",
+      "url": "https://www.geeksforgeeks.org/c/basics-file-handling-c/"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, section 7.21",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "fopen(3) Linux manual page",
+      "url": "https://man7.org/linux/man-pages/man3/fopen.3.html"
+    },
+    {
+      "label": "setvbuf(3) Linux manual page",
+      "url": "https://man7.org/linux/man-pages/man3/setbuf.3.html"
     }
   ]
 }

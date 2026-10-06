@@ -1,132 +1,283 @@
 {
-  "summary": "The C preprocessor is a text-substitution step that runs before compilation. It includes files, defines macros, and conditionally keeps or drops code. Because it works on tokens, not types or scopes, macros are powerful and easy to misuse.",
+  "summary": "The C preprocessor is a text-processing pass that runs before the compiler proper. It pastes in header files, replaces macros, and keeps or drops regions of source according to conditions. It matters because every real C project, from embedded firmware to the Linux kernel, depends on include guards, feature flags and macro helpers, and because careless macros are a classic source of subtle bugs and interview questions.",
   "sections": [
     {
-      "heading": "#include",
-      "body": "`#include <file>` searches system directories; `#include \"file\"` searches the current directory first. The preprocessor pastes the file's contents in place.",
-      "code": "#include <stdio.h>\n#include \"mylib.h\""
+      "heading": "Overview",
+      "body": "The preprocessor is the first translation phase you meet. It reads your `.c` file, obeys every line that starts with `#`, and hands a cleaned-up stream of tokens to the compiler. It knows nothing about types, scopes or functions. It only understands tokens, lines and a small expression language for conditions. That is why a macro can do things a function cannot (build a string from a name, paste identifiers together, remove code entirely) and also why it can do things a function would never allow (evaluate an argument twice, capture a surrounding variable by accident).",
+      "code": "gcc -E main.c -o main.i    # stop after preprocessing, inspect the result\ngcc -S main.i              # then compile to assembly\ngcc -c main.c              # or do every phase, ending in main.o"
     },
     {
-      "heading": "Object-like macros",
-      "body": "A name replaced by tokens, commonly for constants. Prefer `enum` or `const` for typed constants; use #define when you need a preprocessor-time value.",
-      "code": "#define BUFSIZE 1024\n#define PI 3.14159"
-    },
-    {
-      "heading": "Function-like macros",
-      "body": "Macros with parameters expand textually, so they must be parenthesized carefully; arguments with side effects can be evaluated more than once.",
-      "code": "#define SQR_BAD(x) x * x\n#define SQR(x)     ((x) * (x))\nSQR_BAD(1 + 2)   // 1 + 2 * 1 + 2 = 5, not 9\nSQR(i++)         // i incremented twice: undefined behavior"
-    },
-    {
-      "heading": "Conditional compilation",
+      "heading": "Core Concepts",
       "bullets": [
-        "`#ifdef NAME` / `#ifndef NAME` / `#if expr` / `#elif` / `#else` / `#endif` select code at build time.",
-        "Use for platform differences, debug builds, and feature flags.",
-        "`#if 0 ... #endif` temporarily disables a block."
-      ],
-      "code": "#ifdef DEBUG\n  #define LOG(msg) fprintf(stderr, \"%s:%d %s\\n\", __FILE__, __LINE__, msg)\n#else\n  #define LOG(msg) ((void)0)\n#endif"
+        "**Directive**: a line whose first non-blank token is `#`, such as `#include`, `#define`, `#if`. It ends at the newline unless you continue it with a trailing backslash.",
+        "**Object-like macro**: `#define NAME replacement`. Every later use of the token `NAME` is replaced by the replacement tokens.",
+        "**Function-like macro**: `#define NAME(a, b) replacement`. The `(` must touch the name. The arguments are substituted as token sequences, not as values.",
+        "**Macro expansion**: after substitution the result is rescanned, so a macro can expand to another macro. A macro never expands inside itself (this stops infinite recursion).",
+        "**Stringification**: `#x` inside a macro body turns the argument into a string literal.",
+        "**Token pasting**: `a ## b` glues two tokens into one new token, for example `var` and `1` into `var1`.",
+        "**Conditional compilation**: `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else`, `#endif` keep or discard regions of text before the compiler sees them.",
+        "**Include guard**: an `#ifndef X / #define X / #endif` wrapper that makes a header safe to include many times.",
+        "**Predefined macros**: names such as `__FILE__`, `__LINE__`, `__DATE__`, `__TIME__`, `__STDC_VERSION__` that the implementation supplies.",
+        "**Translation unit**: the output of preprocessing one source file, with every header pasted in. This is what the compiler really compiles."
+      ]
     },
     {
-      "heading": "Include guards",
-      "body": "A header can be included twice through different paths, causing redefinition errors. Guard it so the body is seen once, or use the widely supported `#pragma once`.",
-      "code": "#ifndef MYLIB_H\n#define MYLIB_H\n/* declarations */\n#endif"
+      "heading": "How It Works",
+      "body": "The standard describes eight translation phases. Four of them matter for macros. First, trigraphs and line splices (backslash-newline) are handled. Next the text is split into preprocessing tokens and comments become a single space. Then directives run and macros expand. Finally adjacent string literals are concatenated, and only then does real compilation begin. The order explains several oddities: a backslash at the end of a `//` comment continues the comment onto the next line, and comments vanish before `#define` bodies are recorded.",
+      "code": "#include <stdio.h>\n#define SQUARE(x) ((x) * (x))\n#define LIMIT 5\n#ifdef DEBUG\n#define TRACE(msg) fprintf(stderr, \"%s:%d %s\\n\", __FILE__, __LINE__, msg)\n#else\n#define TRACE(msg) ((void)0)\n#endif\n\nint main(void) {\n    int n = SQUARE(LIMIT + 1);   /* ((5 + 1) * (5 + 1)) = 36 */\n    TRACE(\"computed n\");\n    printf(\"%d\\n\", n);\n    return 0;\n}"
+    },
+    {
+      "body": "Walk through `SQUARE(LIMIT + 1)`. The preprocessor sees the function-like macro and collects the argument tokens `LIMIT + 1`. It fully expands the argument first (so `LIMIT` becomes `5`), substitutes it for each `x` in the body, and rescans the result. With the parentheses in the body you get `((5 + 1) * (5 + 1))`, which is 36. Without them you would get `5 + 1 * 5 + 1`, which is 11. Compile with `-DDEBUG` and `TRACE` prints file, line and message. Without it `TRACE` becomes `((void)0)`, a no-op that still behaves like an expression statement."
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Object-like constant** (`#define N 100`): no type, no scope, no address. Prefer `enum { N = 100 };` for integers or `static const int N = 100;` when you want a real object. Keep `#define` for values needed by `#if` or by array sizes in old compilers.",
+        "**Chain macros**: one macro whose body names another (`#define INSTA FOLLOWERS`, `#define FOLLOWERS 138`). Expansion is lazy, so the inner name is looked up at the point of use, not at the point of definition.",
+        "**Multi-line macros**: end each line with a backslash. The last line has none. Nothing may follow the backslash, not even a space.",
+        "**Function-like macro**: fast to write, no call overhead, works for any type. Pays with double evaluation and no type checking.",
+        "**Variadic macro**: `#define LOG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)` since C99. `__VA_OPT__` is standard only from C23, GNU offers `##__VA_ARGS__` before that.",
+        "**`static inline` function**: typed, evaluated once per argument, debuggable, usually as fast. Pick it whenever a function can express the idea.",
+        "**`_Generic` selection** (C11): choose an expression by argument type, often wrapped in a macro to fake overloading.",
+        "**X-macros**: define a list once as `X(name, value)` entries and expand it several times with different definitions of `X` to generate enums, name tables and switch cases in sync."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "Preprocessing is linear in the size of the translation unit after includes. A header pulled into 500 source files is parsed 500 times, so include hygiene directly affects build time.",
+        "A function-like macro has no call cost, but each use duplicates its body. Ten uses of a 30-token macro add roughly 300 tokens of code for the compiler to parse and possibly for the optimizer to merge.",
+        "`#include <stdio.h>` typically expands to a few hundred lines on glibc. A C++ standard header can expand to tens of thousands of lines. Precompiled headers and forward declarations exist to cut this.",
+        "A macro argument that has side effects runs once per appearance in the body. `MAX(f(), g())` with a naive `MAX` calls the winner twice, doubling its cost and its side effects.",
+        "Macro names live in a single global namespace for the rest of the translation unit. There is no scope, so a name like `max` or `min` can silently rewrite unrelated identifiers in later headers."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Missing parentheses around parameters**: `#define SQR(x) x*x` turns `SQR(a+b)` into `a+b*a+b`. Parenthesize every parameter use and the whole body.",
+        "**Missing parentheses around the body**: `#define TWICE(x) (x)+(x)` breaks `3 * TWICE(2)` into `3 * (2)+(2)`, giving 8 instead of 12.",
+        "**Double evaluation**: `SQR(i++)` expands to `((i++) * (i++))`, which modifies `i` twice without a sequence point. That is undefined behavior, not merely a wrong answer.",
+        "**Semicolon after a macro statement**: `#define SWAP(a,b) { int t=a; a=b; b=t; }` fails inside `if (c) SWAP(x,y); else ...` because the stray `;` ends the `if`. Wrap the body in `do { ... } while (0)`.",
+        "**Space before the parenthesis**: `#define F (x) x+1` defines an object-like macro whose body starts with `(x)`. For function-like macros write `F(x)` with no gap.",
+        "**Hidden variable capture**: a temporary named `t` inside a macro shadows a caller variable called `t`. Use unusual names or avoid temporaries.",
+        "**Trailing backslash with a space** after it splits the macro and produces confusing errors.",
+        "**Using `#define` for types**: `#define PINT int*` followed by `PINT a, b;` declares only `a` as a pointer. Use `typedef int *pint;`.",
+        "**Stringifying an unexpanded macro**: `STR(LIMIT)` gives `\"LIMIT\"`, not `\"5\"`. You need two levels, `XSTR(x) STR(x)`, so the argument expands before `#` applies.",
+        "**Redefinition**: defining the same name twice with different bodies is a constraint violation. Identical redefinition is allowed. Use `#undef` first when you truly need to change it."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Include guards and `#pragma once`** in every header of every C library.",
+        "**Portability layers**: `#if defined(_WIN32)` versus `#elif defined(__linux__)` selects the right system calls and types.",
+        "**Feature flags and builds**: `-DNDEBUG` turns `assert` into nothing. `-DDEBUG` enables tracing. Autoconf and CMake feed `config.h` full of `HAVE_*` macros.",
+        "**Linux kernel**: `container_of`, `offsetof`, `ARRAY_SIZE`, `BUILD_BUG_ON`, `likely`/`unlikely` and the whole `CONFIG_*` system are macros.",
+        "**Logging**: `LOG(level, ...)` macros capture `__FILE__` and `__LINE__` at the call site, which no ordinary function can do.",
+        "**Code generation with X-macros**: opcode tables, error-code string tables and register maps stay consistent because they come from one list.",
+        "**Compile-time checks**: `static_assert` (C11) and older negative-array-size tricks catch size and layout mistakes before the program runs."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What does the preprocessor do?** It runs before compilation, does textual substitution, file inclusion and conditional selection, and knows nothing about types.",
+        "**Macro versus function?** Macro: no call overhead, type-agnostic, can use `#`/`##` and `__LINE__`, but double evaluation and no type safety. Function: typed, single evaluation, debuggable.",
+        "**`<file>` versus `\"file\"`?** Angle brackets search the system include path. Quotes search the including file's directory first and then fall back to the system path.",
+        "**Why `do { } while (0)`?** It makes a multi-statement macro behave as one statement, safe in `if`/`else` without braces.",
+        "**What is `#` and `##`?** Stringify an argument, and paste two tokens into one.",
+        "**Can `#define` be debugged?** Not directly. Use `gcc -E` or `-save-temps` to see the expansion, and `gcc -dM -E - < /dev/null` to list predefined macros."
+      ]
     }
   ],
   "subtopics": [
     {
       "title": "Stringification and token pasting",
-      "summary": "# and ##.",
+      "summary": "`#x` makes a string, `a ## b` makes a new identifier, and both need a second level to expand arguments first.",
       "sections": [
         {
-          "body": "`#x` turns a macro argument into a string literal; `a ## b` glues two tokens into one identifier.",
-          "code": "#define STR(x) #x\n#define CAT(a, b) a##b\nprintf(\"%s\\n\", STR(hello));   // hello\nint CAT(var, 1) = 5;            // int var1 = 5;"
+          "heading": "Operators",
+          "body": "Inside a function-like macro body, `#param` replaces the argument with a string literal containing its spelling (with whitespace normalized and quotes and backslashes escaped). `left ## right` removes the whitespace around the operator and joins the two tokens, and the result must be a valid token. Neither operator expands its operands first, which is the source of the classic two-level trick.",
+          "code": "#define STR(x)  #x\n#define XSTR(x) STR(x)\n#define CAT(a, b)  a##b\n#define XCAT(a, b) CAT(a, b)\n#define VERSION 3\n\nprintf(\"%s\\n\", STR(VERSION));    /* VERSION */\nprintf(\"%s\\n\", XSTR(VERSION));   /* 3 */\nint CAT(count, 1) = 0;           /* int count1 = 0; */\nint XCAT(v, VERSION) = 0;        /* int v3 = 0; */"
+        },
+        {
+          "heading": "Typical uses",
+          "body": "Print the name of an expression in a test macro (`#define CHECK(e) if(!(e)) puts(\"failed: \" #e)`), build function names such as `handler_##name`, and generate families of similar structs or accessors. Adjacent string literals concatenate, so `\"failed: \" #e` works without any helper function."
         }
       ]
     },
     {
       "title": "Predefined macros",
-      "summary": "Built-in context.",
+      "summary": "The compiler supplies location and environment macros you can use for logging and portability.",
       "sections": [
         {
           "bullets": [
-            "`__FILE__`, `__LINE__`: current file and line.",
-            "`__func__`: current function name (C99, not a macro).",
-            "`__DATE__`, `__TIME__`: compile time.",
-            "`__STDC_VERSION__`: the C standard in use (e.g. 201112L).",
-            "`NDEBUG`: when defined, `assert` is disabled."
+            "`__FILE__`: the source file name as a string literal.",
+            "`__LINE__`: the current line number as an integer constant.",
+            "`__func__` (C99): not a macro but a predefined identifier holding the current function name. `__FUNCTION__` is a GNU spelling.",
+            "`__DATE__` and `__TIME__`: build date as `\"Mmm dd yyyy\"` and time as `\"hh:mm:ss\"`. They make builds non-reproducible, so many projects avoid them.",
+            "`__STDC__`: 1 on conforming implementations. `__STDC_VERSION__`: `199901L` for C99, `201112L` for C11, `201710L` for C17.",
+            "`__COUNTER__` (GCC, Clang, MSVC): an integer that increments on every use, handy for unique names.",
+            "`__cplusplus`: defined only when compiled as C++, used in headers to add `extern \"C\"`."
           ]
+        },
+        {
+          "body": "List every macro your compiler predefines with `gcc -dM -E - < /dev/null`. You will see `__x86_64__`, `__linux__`, `__GNUC__`, `__SIZEOF_INT__` and hundreds more. These are the right way to branch on architecture, OS and word size."
         }
       ]
     },
     {
       "title": "Safe multi-statement macros",
-      "summary": "do { } while (0).",
+      "summary": "Use `do { ... } while (0)` and unique names so a macro acts like one statement.",
       "sections": [
         {
-          "body": "Wrap multi-statement macros so they behave as one statement and work after `if` without braces.",
-          "code": "#define SWAP(a, b) do { __typeof__(a) t = (a); (a) = (b); (b) = t; } while (0)"
+          "body": "A macro that expands to several statements breaks when used as the body of an unbraced `if`. Wrapping in a bare block fixes that case but fails when the caller writes a semicolon before `else`. The `do { ... } while (0)` form consumes exactly one trailing semicolon, runs once, and keeps temporaries in their own scope.",
+          "code": "#define SWAP_BAD(a, b)  { int t = (a); (a) = (b); (b) = t; }\n#define SWAP(a, b)  do { int t_ = (a); (a) = (b); (b) = t_; } while (0)\n\nif (x > y)\n    SWAP(x, y);      /* fine with SWAP, a syntax error with SWAP_BAD */\nelse\n    puts(\"ordered\");"
+        },
+        {
+          "body": "With GCC or Clang you can use statement expressions and `typeof` to also avoid double evaluation, for example `({ typeof(a) _a = (a); typeof(b) _b = (b); _a > _b ? _a : _b; })`. These are extensions, not standard C, so a portable library should prefer a `static inline` function when the type is fixed."
         }
       ]
     },
     {
       "title": "Macros versus inline functions",
-      "summary": "Prefer functions when you can.",
+      "summary": "A `static inline` function usually matches macro speed and avoids all the textual traps.",
       "sections": [
         {
-          "body": "`static inline` functions are type-checked, evaluate arguments once, show up in debuggers, and are usually as fast. Use macros for things functions cannot do: conditional compilation, token pasting, `__FILE__`/`__LINE__` capture, and generic helpers."
+          "body": "Compilers inline small functions on their own at `-O1` and above, so the old performance argument for macros is weak. A function checks argument types, evaluates each argument once, appears in a debugger and in stack traces, and respects scope. Reach for a macro only when you need something a function cannot do.",
+          "bullets": [
+            "**Use a macro for**: stringification, token pasting, `__FILE__`/`__LINE__` capture, conditional compilation, constants needed by the preprocessor, and type-generic helpers when `_Generic` is too clumsy.",
+            "**Use a function for**: everything else, especially anything with side-effecting arguments or more than two lines of logic.",
+            "**Constants**: `enum` and `static const` respect scope and appear in the debugger. `#define` constants do not."
+          ],
+          "code": "static inline int max_int(int a, int b) { return a > b ? a : b; }\n\n#define MAX(a, b) ((a) > (b) ? (a) : (b))   /* works for any type, double eval */\nint m = MAX(i++, j);   /* i may be incremented twice */"
         }
       ]
     },
     {
-      "title": "Inspecting expansion",
-      "summary": "See what the preprocessor did.",
+      "title": "Conditional compilation and include guards",
+      "summary": "Select code per platform or build, and make headers idempotent.",
       "sections": [
         {
-          "body": "`gcc -E file.c` prints the preprocessed output; `-D NAME=value` defines a macro from the command line; `-I dir` adds an include path.",
-          "code": "gcc -E -DDEBUG main.c | less"
+          "body": "`#if` evaluates an integer constant expression. Undefined identifiers count as 0, and `defined(NAME)` (or `defined NAME`) tests existence. `#elif` chains alternatives. `#ifdef X` is shorthand for `#if defined(X)`. Conditions cannot use `sizeof`, casts or enum constants, because the preprocessor does not know about types.",
+          "code": "#if defined(__linux__)\n  #include <unistd.h>\n#elif defined(_WIN32)\n  #include <windows.h>\n#else\n  #error \"unsupported platform\"\n#endif\n\n#if __STDC_VERSION__ >= 201112L\n  _Static_assert(sizeof(int) >= 4, \"int too small\");\n#endif"
+        },
+        {
+          "heading": "Include guards",
+          "body": "A header included twice through different paths would redeclare its types, which is an error for `struct` definitions. The guard macro name should be unique, usually derived from the path, for example `PROJECT_NET_SOCKET_H`. `#pragma once` is shorter and accepted by every mainstream compiler, though it is not in the standard.",
+          "code": "#ifndef PROJECT_VECTOR_H\n#define PROJECT_VECTOR_H\ntypedef struct { int *data; size_t len, cap; } Vector;\n#endif /* PROJECT_VECTOR_H */"
+        }
+      ]
+    },
+    {
+      "title": "Other directives: #undef, #error, #line, #pragma",
+      "summary": "Smaller directives that control macro lifetime, diagnostics and compiler hints.",
+      "sections": [
+        {
+          "bullets": [
+            "**`#undef NAME`**: removes a macro so you can redefine it or stop it leaking into later code. Undefining a name that is not defined is allowed.",
+            "**`#error message`**: stops compilation with your message. Pair with `#if` to reject unsupported configurations. `#warning` is a common extension.",
+            "**`#line N \"file\"`**: overrides `__LINE__` and `__FILE__`, used by generators such as lex and yacc so errors point at the original source.",
+            "**`#pragma`**: implementation-defined hints, for example `#pragma pack(push, 1)` for struct packing, `#pragma once`, and `#pragma GCC diagnostic`. Unknown pragmas are ignored.",
+            "**`_Pragma(\"...\")`**: the operator form of `#pragma`, usable inside macro bodies.",
+            "**Null directive**: a lone `#` on a line does nothing."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Inspecting expansion and debugging macros",
+      "summary": "Use the compiler to show what a macro really became.",
+      "sections": [
+        {
+          "body": "When a macro misbehaves, look at its expansion. `gcc -E file.c | less` prints the translation unit after preprocessing, with `# 12 \"file.c\"` line markers. `-P` suppresses those markers. `-C` keeps comments. `-dD` leaves the `#define` lines in the output so you can see definitions in order. For a single macro, write a tiny file that uses it and run `-E` on that. Remember that error messages from inside a macro point at the use site, and GCC adds a note such as \"in expansion of macro 'X'\" to help you trace it.",
+          "code": "$ cat t.c\n#define SQR(x) x*x\nint f(int a, int b) { return SQR(a+b); }\n$ gcc -E -P t.c\nint f(int a, int b) { return a+b*a+b; }"
+        }
+      ]
+    },
+    {
+      "title": "X-macros and generated tables",
+      "summary": "Write a list once, expand it several times to keep enums and strings in sync.",
+      "sections": [
+        {
+          "body": "An X-macro is a list macro whose entries call an undefined helper `X`. Before each use you define `X` to produce what you need, then undefine it. Adding a new entry then updates every derived table automatically, which removes a whole class of out-of-sync bugs between an enum and its name array.",
+          "code": "#define COLORS(X) \\\n    X(RED,   0xFF0000) \\\n    X(GREEN, 0x00FF00) \\\n    X(BLUE,  0x0000FF)\n\nenum color {\n#define X(name, rgb) COLOR_##name,\n    COLORS(X)\n#undef X\n};\nstatic const char *color_name[] = {\n#define X(name, rgb) #name,\n    COLORS(X)\n#undef X\n};"
         }
       ]
     }
   ],
   "takeaways": [
-    "The preprocessor does text substitution before compilation.",
-    "Parenthesize macro parameters and the whole expansion; avoid arguments with side effects.",
-    "Use include guards or #pragma once in every header.",
-    "Prefer enum, const, and inline functions to macros where possible."
+    "The preprocessor is pure text and token substitution: it runs before compilation and knows nothing about types or scopes.",
+    "Parenthesize every macro parameter and the whole body, or precedence will bite: `SQR(a+b)` must not become `a+b*a+b`.",
+    "Arguments with side effects (`i++`) are evaluated once per appearance in the macro body, which can be undefined behavior.",
+    "Use `do { ... } while (0)` for multi-statement macros and a `static inline` function whenever a function is enough.",
+    "`#x` stringifies and `a ## b` pastes, and you need a two-level wrapper (`XSTR`) to expand a macro argument first.",
+    "Guard every header with `#ifndef`/`#define`/`#endif` or `#pragma once`.",
+    "`gcc -E` shows exactly what the compiler will see and is the first tool to reach for when a macro misbehaves."
+  ],
+  "practice": [
+    {
+      "title": "Predict the output of `SQR(2+3)` for `#define SQR(x) x*x` and fix the macro",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain the difference between `#include <x.h>` and `#include \"x.h\"`",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write include guards for a header and say why the guard name must be unique",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Write a MAX macro that evaluates each argument only once using GCC extensions, then without them",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Why does `SWAP(a,b)` as a braced block fail before an `else`, and how does do-while(0) fix it?",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Make `PRINT_VAR(x)` print the variable name and its value using `#`",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Use X-macros to generate an enum and a matching string table",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a LOG macro that adds file and line and compiles to nothing in release builds",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain why `STR(VERSION)` prints VERSION and write `XSTR` so it prints the number",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Count the bugs in `#define ABS(x) x<0?-x:x` and write a correct version",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "label": "GeeksforGeeks: C Preprocessors",
+      "url": "https://www.geeksforgeeks.org/c/cc-preprocessors/"
+    },
+    {
+      "label": "GeeksforGeeks: Macros and its types in C",
+      "url": "https://www.geeksforgeeks.org/c/macros-and-its-types-in-c-cpp/"
+    },
+    {
+      "label": "GeeksforGeeks: #define in C",
+      "url": "https://www.geeksforgeeks.org/c/c-define-preprocessor/"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, section 6.10",
       "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
     },
     {
       "label": "GNU C Preprocessor manual",
       "url": "https://gcc.gnu.org/onlinedocs/cpp/"
-    },
-    {
-      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
-      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Write MAX and MIN macros that avoid double evaluation",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Add include guards to a header and test double inclusion",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement a debug-only logging macro with file and line",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Create an X-macro that defines an enum and its string table",
-      "difficulty": "Hard"
-    },
-    {
-      "title": "Show why #define SQR(x) x*x is wrong",
-      "difficulty": "Easy"
     }
   ]
 }

@@ -1,140 +1,261 @@
 {
-  "summary": "A C string is a char array whose end is marked by the NUL character '\\0'. There is no string type and no length stored anywhere, so every library routine walks until it finds the terminator. Mismanaging that terminator or buffer size is behind a large share of C security bugs.",
+  "summary": "A C string is not a type but a convention: a sequence of char values ending with a zero byte, '\\0', stored in an array and passed around by the address of its first character. Every string function, from printf to strlen, walks memory until it finds that terminator. This makes strings cheap and flexible and also the most common place for buffer overflows, missing terminators and writes to read-only literals. Text handling in parsers, protocols, file paths, command lines and kernels all rests on these rules.",
   "sections": [
     {
-      "heading": "Representation",
-      "body": "The string \"Geeks\" occupies 6 bytes: five characters plus the terminator. `strlen` counts characters before the NUL; `sizeof` of the array counts the NUL too.",
-      "code": "char s[] = \"Geeks\";        // 6 bytes: G e e k s \\0\nchar t[6] = {'G','e','e','k','s','\\0'};\nprintf(\"%zu %zu\\n\", strlen(s), sizeof s);   // 5 6"
+      "heading": "Overview",
+      "body": "C has no string type. Text is an array of `char`, and the end of the text is marked by a byte with value 0, written `'\\0'` and called the NUL terminator. The string \"Geeks\" is therefore six bytes: G, e, e, k, s and 0. Functions that take a string receive only a `char *` to the first byte. They have no idea how large the underlying array is, so they trust the terminator to stop them.\n\nThis design is minimal and fast, and it shapes everything: the length of a string is not stored (you count to find it), copying needs room for one more byte than the visible length, and any code that forgets the terminator or the capacity runs off the end of the buffer. Learning strings in C is mostly learning to track three things at once: where the string starts, where it ends, and how much space exists after the start."
     },
     {
-      "heading": "Array versus literal pointer",
-      "body": "`char s[] = \"hi\"` makes a modifiable copy on the stack. `const char *p = \"hi\"` points at a literal in read-only memory; writing through it is undefined behavior (usually a crash). Declare literal pointers `const` so the compiler catches mistakes.",
-      "code": "char a[] = \"hi\"; a[0] = 'H';        // ok\nconst char *p = \"hi\"; /* p[0] = 'H'; */  // UB"
-    },
-    {
-      "heading": "Reading strings safely",
+      "heading": "Core Concepts",
       "bullets": [
-        "`scanf(\"%s\")` stops at whitespace and has no bound: always give a width, `%19s`.",
-        "`fgets(buf, sizeof buf, stdin)` reads a whole line including the newline and respects the buffer size.",
-        "`gets` was removed in C11 because it cannot be used safely.",
-        "Strip the trailing newline with `buf[strcspn(buf, \"\\n\")] = 0;`."
-      ],
-      "code": "char line[64];\nif (fgets(line, sizeof line, stdin)) {\n  line[strcspn(line, \"\\n\")] = '\\0';\n}"
-    },
-    {
-      "heading": "<string.h> essentials",
-      "bullets": [
-        "`strlen(s)`: length excluding NUL, O(n).",
-        "`strcpy(d, s)`, `strcat(d, s)`: unbounded, caller must guarantee space.",
-        "`strncpy(d, s, n)`: bounded, but may leave d without a NUL.",
-        "`strcmp(a, b)`: <0, 0, >0; use it, never `==`, to compare contents.",
-        "`strchr`, `strrchr`, `strstr`: find a character or substring.",
-        "`memcpy`, `memmove`, `memset`: raw byte operations (use memmove when ranges overlap)."
+        "**NUL terminator**: the byte `'\\0'` (value 0) that ends a string. It is not part of the length but it does occupy a byte.",
+        "**String length**: the number of characters before the terminator. `strlen(\"Geeks\")` is 5, while the array needs at least 6 bytes.",
+        "**Character array**: `char s[] = \"hi\";` creates a writable array of 3 bytes (h, i, 0) initialized from the literal.",
+        "**String literal**: text in double quotes. It has static storage, has type `char[N+1]`, and must never be modified. Modifying one is undefined behavior and typically crashes because the data sits in read-only memory.",
+        "**Pointer to a string**: `const char *p = \"hi\";` stores the address of the first character of the literal. You cannot grow or change what it points at.",
+        "**Capacity versus length**: the array size is how much you may store, the length is how much you did store. Safe code compares them.",
+        "**`char` signedness**: plain `char` may be signed or unsigned depending on the platform, so passing it to `isalpha` and friends requires a cast to `unsigned char`.",
+        "**`<string.h>`**: the standard header for `strlen`, `strcpy`, `strncpy`, `strcat`, `strcmp`, `strchr`, `strstr`, `memcpy` and related functions.",
+        "**Scanset**: `%[...]` in `scanf` selects which characters to read, such as `%19[^\\n]` for a whole line."
       ]
     },
     {
-      "heading": "Typical pitfalls",
+      "heading": "How It Works",
+      "body": "Declaring `char s[] = \"Geeks\";` asks the compiler to size the array by counting the literal plus its terminator, so `sizeof s` is 6. The initializer is copied into `s`, which lives where the variable lives (the stack for a local). You can edit it freely: `s[0] = 'R'` is fine. Declaring `const char *p = \"Geeks\";` creates no array at all. It creates a pointer variable that holds the address of the literal's bytes in the read-only data section.\n\nEvery operation is a loop that stops at the terminator. Length counting reads bytes until it sees 0 and returns the count, so it costs O(n). Copying reads and writes bytes until it has copied the 0. Comparing walks two strings in step until the bytes differ or both end. The functions below show how little machinery that takes.",
+      "code": "#include <stddef.h>\n\nsize_t my_strlen(const char *s) {\n    const char *p = s;\n    while (*p != '\\0') p++;       // stop at the terminator\n    return (size_t)(p - s);        // pointer difference, in chars\n}\n\nchar *my_strcpy(char *dst, const char *src) {\n    char *d = dst;\n    while ((*d++ = *src++) != '\\0')\n        ;                          // copies the terminator, then stops\n    return dst;                    // caller must have sized dst >= len+1\n}\n\nint my_strcmp(const char *a, const char *b) {\n    while (*a && *a == *b) { a++; b++; }\n    return (unsigned char)*a - (unsigned char)*b;   // <0, 0, >0\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Forgetting room for the NUL when allocating: `malloc(strlen(s) + 1)`.",
-        "Comparing with `==` compares addresses, not text.",
-        "Modifying a string literal.",
-        "Using a char array that is not terminated.",
-        "Off-by-one in loops that copy characters."
+        "**Writable array**: `char s[] = \"text\";` a private copy you can modify, sized exactly to the literal unless you give a bigger size such as `char s[64] = \"text\";`.",
+        "**Pointer to literal**: `const char *s = \"text\";` shares one read-only copy, can be re-pointed, cannot be edited. Use `const` so the compiler catches writes.",
+        "**Heap string**: `char *s = malloc(n + 1);` or `strdup(t)` (POSIX, and standard in C23). You choose the size at run time and must `free` it.",
+        "**Array of strings**: `const char *names[] = {\"ls\", \"cat\", \"grep\"};` is an array of pointers to literals. `char grid[3][8]` is a rectangular block of three 8-byte strings instead.",
+        "**Counted string**: a struct with a `char *data` and a `size_t len`. Used by Pascal strings, many network protocols and most modern libraries, so embedded zero bytes and O(1) length work.",
+        "**Wide and multibyte strings**: `wchar_t` strings use `wcslen` and friends, and UTF-8 stored in plain `char` arrays uses 1 to 4 bytes per character, so `strlen` counts bytes, not characters.",
+        "**Bounded variants**: `strncpy`, `strncat`, `snprintf`, `strnlen`, `strlcpy` (BSD) trade the unbounded behavior of their cousins for explicit limits, each with its own quirks."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**strlen**: O(n), since the length is found by scanning. Calling it in a loop condition makes the loop O(n^2): `for (i = 0; i < strlen(s); i++)`.",
+        "**strcpy, strcat, strcmp, strchr**: O(n) in the string length. `strcat` must first find the end of the destination, so building a long string with repeated `strcat` calls is O(n^2) in total. Keep a running end pointer instead.",
+        "**strstr**: O(n*m) worst case for the naive search. Good libc versions use two-way or similar algorithms to guarantee linear time.",
+        "**Memory**: `len + 1` bytes per string. A `char *` array holding k short strings spends 8 bytes per pointer on 64-bit plus the text.",
+        "**Literal sharing**: identical literals may be merged by the compiler, so a program with 1000 copies of \"error\" can still contain one copy.",
+        "**Comparison**: `==` on two `char *` compares addresses in O(1) and is almost never what you want. `strcmp` compares contents.",
+        "**Formatting**: `snprintf` returns the length the full output would have had, so you can detect truncation by comparing the result with the buffer size."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Missing room for the terminator**: `char s[5] = \"Geeks\";` fits the letters but has no terminator, so `printf(\"%s\", s)` reads past the array. The array must be at least 6 bytes.",
+        "**Modifying a literal**: `char *p = \"abc\"; p[0] = 'x';` is undefined behavior and usually a segmentation fault. Declare `const char *p` or use an array.",
+        "**Comparing with `==`**: `if (name == \"admin\")` compares pointers and may be true or false depending on the compiler. Use `strcmp(name, \"admin\") == 0`.",
+        "**`strcpy` into too small a buffer**: nothing checks the destination size. It is the textbook stack buffer overflow. Check `strlen(src) < sizeof dst` first or use `snprintf`.",
+        "**`strncpy` is not a safe `strcpy`**: if the source is as long as the limit, it does not write a terminator. If shorter, it pads the rest with zeros, wasting time. Always set `dst[n-1] = '\\0'` afterwards.",
+        "**`scanf(\"%s\")` without a width**: reads any amount of text into your buffer. Write `%31s` for a 32-byte buffer, or use `fgets`.",
+        "**Forgetting the newline from `fgets`**: the buffer includes the trailing `'\\n'`, which breaks later comparisons. Strip it with `strcspn`.",
+        "**`sizeof` versus `strlen`**: `sizeof s` is the array capacity including the terminator, `strlen(s)` is the current length. On a `char *` parameter, `sizeof` gives the pointer size.",
+        "**`strtok` modifies its input and keeps hidden state**: it overwrites delimiters with zeros, fails on literals and is not thread-safe. Prefer `strtok_r` or manual scanning.",
+        "**Treating `char` as always positive**: with bytes above 127 a plain `char` may be negative, which breaks table lookups and `isalpha` unless cast to `unsigned char`."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Command-line arguments**: `argv` is an array of `char *` strings, ended by a null pointer.",
+        "**File paths and environment**: `fopen`, `open`, `getenv` and `execve` all take NUL-terminated strings. A path with an embedded zero byte is silently cut short, a known source of injection bugs.",
+        "**Text protocols**: HTTP request lines, SMTP and many config formats are parsed in place by scanning for delimiters and replacing them with terminators.",
+        "**Logging and formatting**: `snprintf` into a fixed buffer is the standard way to build messages safely in firmware and kernels.",
+        "**Security**: classic exploits, such as the Morris worm via `gets` and format-string attacks via `printf(user_input)`, come from unchecked string handling.",
+        "**Kernel and embedded**: the Linux kernel avoids `strcpy` and `strncpy` in favour of `strscpy`, which always terminates and reports truncation."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Q: What is a C string?** A char array ending with `'\\0'`. The length is computed by scanning for it.",
+        "**Q: Difference between `char s[] = \"hi\"` and `char *s = \"hi\"`?** The first is a writable 3-byte array with a copy of the text. The second is a pointer to read-only literal data that must not be modified.",
+        "**Q: How much space does a string of length n need?** n + 1 bytes.",
+        "**Q: Why is `strncpy` considered dangerous?** It may leave the destination unterminated and pads with zeros when the source is short.",
+        "**Q: How would you reverse a string in place?** Two indices from both ends swapping until they meet, O(n) time and O(1) space.",
+        "**Q: How do you read a line safely?** `fgets` with the buffer size, then strip the newline. Never `gets`.",
+        "**Q: Why not `==` for strings?** It compares addresses. Use `strcmp`.",
+        "**Q: What does `sizeof(\"abc\")` return?** 4, because the literal is a `char[4]` including the terminator."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Implementing strlen, strcpy, strcmp",
-      "summary": "Pointer idioms.",
+      "title": "Declaring and initializing strings",
+      "summary": "Array, literal pointer and heap forms side by side.",
       "sections": [
         {
-          "code": "size_t my_strlen(const char *s) { const char *p = s; while (*p) p++; return p - s; }\nchar *my_strcpy(char *d, const char *s) { char *r = d; while ((*d++ = *s++)) ; return r; }\nint my_strcmp(const char *a, const char *b) {\n  while (*a && *a == *b) { a++; b++; }\n  return (unsigned char)*a - (unsigned char)*b;\n}"
+          "body": "`char a[] = \"Hi\";` copies the text into a writable 3-byte array. `char b[10] = \"Hi\";` copies it into a bigger array and zero-fills the remaining 7 bytes. `char c[] = {'H', 'i', '\\0'};` is the same as the first form spelled out. `const char *d = \"Hi\";` points at the literal. The only dangerous mistake is leaving out the terminator, as in `char e[] = {'H', 'i'};`, which is a valid char array but not a string.",
+          "code": "char a[]   = \"Hi\";                // 3 bytes: H i \\0\nchar b[10] = \"Hi\";                // 10 bytes: H i \\0 \\0 \\0 \\0 \\0 \\0 \\0 \\0\nconst char *d = \"Hi\";             // pointer to read-only data\nprintf(\"%zu %zu %zu\\n\", sizeof a, sizeof b, sizeof d);   // 3 10 8 on 64-bit"
         }
       ]
     },
     {
-      "title": "Safer copying",
-      "summary": "snprintf and size-aware helpers.",
+      "title": "Reading and writing strings",
+      "summary": "scanf, scansets, fgets, puts and printf, and what each does with whitespace and capacity.",
       "sections": [
         {
-          "body": "`snprintf(dst, sizeof dst, \"%s\", src)` always terminates and truncates safely; BSD `strlcpy` does the same. If you use `strncpy`, set the last byte to NUL yourself.",
-          "code": "snprintf(dst, sizeof dst, \"%s\", src);"
+          "body": "`printf(\"%s\", s)` prints from the address until the terminator. `scanf(\"%s\", buf)` stops at the first whitespace, so \"Geeks For Geeks\" yields only \"Geeks\". A scanset such as `%19[^\\n]` reads up to 19 characters until a newline, spaces included. `fgets` reads a full line into a buffer with an explicit size and keeps the newline.",
+          "code": "char word[16], line[32];\nscanf(\"%15s\", word);              // one token, at most 15 chars + terminator\nscanf(\" %31[^\\n]\", line);         // leading space skips pending whitespace\nfgets(line, sizeof line, stdin);  // line with spaces, bounded by sizeof"
+        }
+      ]
+    },
+    {
+      "title": "Standard string functions",
+      "summary": "The core of string.h with their exact behavior and risks.",
+      "sections": [
+        {
+          "bullets": [
+            "`strlen(s)`: count of characters before the terminator, type `size_t`.",
+            "`strcpy(d, s)`: copies including the terminator, no bounds check.",
+            "`strncpy(d, s, n)`: copies at most n bytes, pads with zeros, may not terminate.",
+            "`strcat(d, s)` and `strncat(d, s, n)`: append `s` after the end of `d`. `strncat` always terminates and its limit counts only the appended characters.",
+            "`strcmp(a, b)` and `strncmp`: return negative, zero or positive according to the first differing byte, compared as unsigned char.",
+            "`strchr(s, c)` and `strrchr`: first and last occurrence of a character, or `NULL`.",
+            "`strstr(h, n)`: first occurrence of substring `n` in `h`, or `NULL`.",
+            "`memcpy`, `memmove`, `memset`, `memcmp`: work on raw bytes with explicit counts, so they handle data with embedded zeros. Use `memmove` when ranges overlap."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Strings and pointers",
+      "summary": "Walking a string by pointer, and why the array form and pointer form differ.",
+      "sections": [
+        {
+          "body": "A `char *` pointing at the first character is all a string function needs. Walking is a loop that advances until `*p == '\\0'`. Subtracting two pointers into the same string gives a character count, which is how `strlen` and many parsers are written. The pointer form lets you re-point (`p = \"other\"`), the array form does not (`s = \"other\"` is a compile error), but only the array form owns bytes you may modify.",
+          "code": "char s[20] = \"Geeks\";\nfor (char *p = s; *p != '\\0'; p++)\n    putchar(*p);                    // Geeks\nconst char *t = \"hello world\";\nconst char *sp = strchr(t, ' ');\nsize_t first = (size_t)(sp - t);    // 5: length of the first word"
+        }
+      ]
+    },
+    {
+      "title": "String literals and read-only memory",
+      "summary": "Why modifying a literal crashes, and how const helps.",
+      "sections": [
+        {
+          "body": "A literal such as \"Hello World\" has static storage duration and is typically placed in a read-only section, so a store through a pointer to it triggers a segmentation fault. The C type of a literal is `char[N]`, not `const char[N]`, for historical reasons, so the compiler will not warn unless you enable `-Wwrite-strings` or declare the pointer `const`. Two equal literals may or may not share storage, so never depend on pointer equality."
         }
       ]
     },
     {
       "title": "Arrays of strings",
-      "summary": "char *argv[] and 2D char arrays.",
+      "summary": "Pointer arrays versus 2D char arrays, and iterating argv.",
       "sections": [
         {
-          "body": "`char *names[] = {\"ann\", \"bob\"}` is an array of pointers to (possibly differently sized) literals. `char names[2][8]` is a block of fixed rows. `main(int argc, char *argv[])` receives the first form, terminated by a NULL pointer."
+          "body": "`const char *names[3]` stores three pointers (24 bytes on 64-bit) to literals of any length. `char names[3][8]` stores 24 bytes of text with every row 8 bytes, wasting space for short names but keeping the text writable and contiguous. `argv` is the pointer form, and `argv[argc]` is `NULL`.",
+          "code": "const char *cmds[] = {\"ls\", \"cat\", \"grep\"};\nfor (size_t i = 0; i < sizeof cmds / sizeof cmds[0]; i++)\n    puts(cmds[i]);\nint main(int argc, char **argv) {\n    for (int i = 0; i < argc; i++) printf(\"%d: %s\\n\", i, argv[i]);\n}"
         }
       ]
     },
     {
-      "title": "Parsing and tokenizing",
-      "summary": "strtok and strtol.",
+      "title": "Converting between strings and numbers",
+      "summary": "strtol and snprintf instead of atoi and sprintf.",
       "sections": [
         {
-          "body": "`strtok` splits in place by writing NULs into the string (and keeps hidden state, so it is not thread-safe; prefer `strtok_r`). `strtol(s, &end, 10)` converts numbers with error detection through `end` and `errno`, unlike `atoi`."
+          "body": "`atoi` returns 0 for garbage and cannot report overflow. `strtol(s, &end, 10)` parses a number, sets `end` to the first unparsed character and sets `errno` to `ERANGE` on overflow. Check `end != s` and `*end == '\\0'` to be sure the whole string was a number. For the reverse direction use `snprintf(buf, sizeof buf, \"%d\", n)`, never `sprintf`, which has no limit.",
+          "code": "const char *in = \"1234xyz\";\nchar *end;\nerrno = 0;\nlong v = strtol(in, &end, 10);          // v = 1234, *end = 'x'\nif (end == in || errno == ERANGE) { /* no digits, or out of range */ }\nchar buf[12];\nsnprintf(buf, sizeof buf, \"%ld\", v);    // \"1234\""
         }
       ]
     },
     {
-      "title": "Wide and UTF-8 text",
-      "summary": "Beyond ASCII.",
+      "title": "Safe string handling and buffer overflow",
+      "summary": "The habits that prevent the classic security bugs.",
       "sections": [
         {
-          "body": "`char` strings in UTF-8 can hold multi-byte characters, so `strlen` counts bytes, not characters. `wchar_t` and `<wchar.h>` provide wide strings; for real Unicode handling use a library such as ICU."
+          "bullets": [
+            "Know the capacity of every buffer and pass it along with the pointer.",
+            "Prefer `snprintf` and `fgets`. Treat `gets`, `strcpy`, `strcat` and `sprintf` with unchecked input as bugs.",
+            "Always leave room for the terminator and verify truncation by checking the return value of `snprintf`.",
+            "Never pass user input as the format string: write `printf(\"%s\", s)`, not `printf(s)`.",
+            "Build with `-Wall -Wextra -fsanitize=address` during testing to catch overflows."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Implementing string utilities",
+      "summary": "Reverse and palindrome check, the two most common interview programs.",
+      "sections": [
+        {
+          "body": "Both use two indices that start at the ends and move toward each other, so they run in O(n) time and O(1) space. For the palindrome check, compare characters and stop at the first mismatch. For case-insensitive or punctuation-skipping versions, advance each index past characters you ignore and compare with `tolower((unsigned char)c)`.",
+          "code": "void reverse(char *s) {\n    size_t n = strlen(s);\n    if (n < 2) return;\n    for (size_t i = 0, j = n - 1; i < j; i++, j--) {\n        char t = s[i]; s[i] = s[j]; s[j] = t;\n    }\n}\nint is_palindrome(const char *s) {\n    size_t i = 0, j = strlen(s);\n    while (j > i + 1) if (s[i++] != s[--j]) return 0;\n    return 1;\n}"
         }
       ]
     }
   ],
   "takeaways": [
-    "A string is a NUL-terminated char array; length is not stored.",
-    "Size buffers for the NUL, and bound every read and copy.",
-    "Literals are read-only: use const char * or a char array copy.",
-    "Compare with strcmp, not ==."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed.",
-      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
-    },
-    {
-      "label": "Reference: Strings in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/c/strings-in-c/"
-    }
+    "A C string is a char array ending in `'\\0'`; a string of length n needs n + 1 bytes.",
+    "`strlen` scans for the terminator, so it is O(n) and should not sit in a loop condition.",
+    "`char s[] = \"x\"` is a writable copy; `const char *p = \"x\"` points at read-only data and must never be modified.",
+    "Never compare strings with `==`; use `strcmp`, which returns zero when they match.",
+    "`strcpy`, `strcat`, `sprintf`, `gets` and unbounded `scanf(\"%s\")` do not check capacity; prefer `snprintf` and `fgets`.",
+    "`strncpy` may leave the destination unterminated, so terminate manually.",
+    "`fgets` keeps the newline; strip it with `strcspn(line, \"\\n\")`.",
+    "In UTF-8 text `strlen` returns bytes, not characters."
   ],
   "practice": [
+    {
+      "title": "Implement strlen, strcpy and strcmp without the library",
+      "difficulty": "Easy"
+    },
     {
       "title": "Reverse a string in place",
       "difficulty": "Easy"
     },
     {
-      "title": "Check whether a string is a palindrome",
+      "title": "Count vowels and consonants in a string using a pointer",
       "difficulty": "Easy"
     },
     {
-      "title": "Count vowels, consonants, and words in a line",
+      "title": "Check whether a string is a palindrome, ignoring case and punctuation",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Check whether two strings are anagrams using a 256-entry count table",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Remove all duplicate characters from a string in place, keeping the first occurrence",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Reverse the words in a sentence in place using reverse of whole string then each word",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement strstr with a naive scan, then explain how KMP improves it",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Parse an integer from a string with sign and overflow detection, without atoi",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain why `char *p = \"abc\"; p[0] = 'x';` crashes and show two fixes",
       "difficulty": "Easy"
+    }
+  ],
+  "references": [
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 7.24 String handling and 6.4.5 String literals",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
     },
     {
-      "title": "Implement strstr naively",
-      "difficulty": "Medium"
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed., section 5.5",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
     },
     {
-      "title": "Remove duplicate characters from a string",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Safely tokenize a CSV line with strtok_r",
-      "difficulty": "Medium"
+      "label": "Reference: Strings in C (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/strings-in-c/"
     }
   ]
 }

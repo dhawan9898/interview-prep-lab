@@ -1,134 +1,276 @@
 {
-  "summary": "Dynamic memory allocation lets a program request heap memory at run time, sized by data it only learns while running. C provides four functions in <stdlib.h>: malloc, calloc, realloc, and free. You must check every request and release every block exactly once.",
+  "summary": "Dynamic memory allocation lets a C program ask the runtime for a block of bytes while it is running, use it through a pointer, and give it back when finished. It exists because many sizes (how many records a file holds, how long a line is) are unknown at compile time and because some data must outlive the function that created it. The four tools are `malloc`, `calloc`, `realloc` and `free` from `<stdlib.h>`, and almost every linked list, tree, hash table and growable buffer in C is built on them. Getting them wrong produces leaks, dangling pointers and heap corruption, which is why this topic is a staple of C interviews.",
   "sections": [
     {
-      "heading": "malloc",
-      "body": "`void *malloc(size_t size)` returns a pointer to `size` uninitialized bytes, or NULL on failure. The idiom `sizeof *p` keeps the size correct if the type changes.",
-      "code": "int *p = malloc(10 * sizeof *p);\nif (p == NULL) { perror(\"malloc\"); return 1; }"
+      "heading": "Overview",
+      "body": "Variables you declare normally live in fixed-size storage: globals exist for the whole run and locals vanish when their function returns. Neither helps when you read an unknown number of items, or when a function must hand a freshly built object back to its caller. Dynamic allocation fills that gap. You request `n` bytes, the C library finds a block of that size in the **heap**, and returns its address as a `void *`. You own that block until you pass the same address to `free`.",
+      "bullets": [
+        "**What you get**: a contiguous block of bytes, suitably aligned for any standard type, living until you free it.",
+        "**What you must do**: check for `NULL`, use only the bytes you asked for, free exactly once, and never touch the block afterwards.",
+        "**Where it sits**: the heap segment of the process, managed by the allocator in libc (glibc ptmalloc, musl, jemalloc and so on), not by the compiler."
+      ]
     },
     {
-      "heading": "calloc",
-      "body": "`void *calloc(size_t n, size_t size)` allocates n elements and sets all bytes to zero. It also detects overflow in n * size, which a hand-written multiplication for malloc would not.",
-      "code": "int *z = calloc(10, sizeof *z);   // all 0"
+      "heading": "Core Concepts",
+      "bullets": [
+        "**Heap**: the region of process memory used for dynamic allocation; it is separate from the call stack and from static data.",
+        "**`void *`**: the generic pointer type returned by the allocators. In C it converts to any object pointer type implicitly, so no cast is needed (and a cast can hide a missing `#include <stdlib.h>` on old compilers).",
+        "**`malloc(size)`**: reserves `size` bytes. Contents are indeterminate (whatever was there before). Returns `NULL` on failure.",
+        "**`calloc(count, size)`**: reserves `count * size` bytes and sets every byte to zero. It also checks that the multiplication does not overflow and returns `NULL` if it would.",
+        "**`realloc(ptr, new_size)`**: resizes a block, keeping the old contents up to the smaller of the two sizes. It may extend in place or move the data to a new address.",
+        "**`free(ptr)`**: returns a block to the allocator. `free(NULL)` is defined to do nothing.",
+        "**Lifetime**: allocated storage lasts from the successful allocation call until `free`, independent of any function or scope.",
+        "**Ownership**: the part of the program responsible for calling `free`. Decide it for every allocation and document it.",
+        "**Allocation failure**: returning `NULL` when no block can be provided. On Linux with overcommit this is rare for small requests, but huge sizes and embedded targets do fail.",
+        "**Heap metadata**: bookkeeping bytes (usually the block size and flags) stored just before each block, which is why writing past a block can crash a later `free`."
+      ]
     },
     {
-      "heading": "realloc",
-      "body": "`void *realloc(void *p, size_t new_size)` resizes a block, preserving contents up to the smaller size. It may move the block, so the old pointer becomes invalid. On failure it returns NULL and leaves the original block untouched, so never write `p = realloc(p, n)` directly (you would leak p).",
-      "code": "int *tmp = realloc(p, 20 * sizeof *p);\nif (tmp == NULL) { /* p still valid: handle error */ }\nelse p = tmp;"
+      "heading": "How It Works",
+      "body": "The normal life cycle has four steps: allocate, check, use, release. The program below reads a count, allocates that many ints, fills them and frees them.",
+      "bullets": [
+        "Write `p = malloc(n * sizeof *p)` rather than `sizeof(int)`: the size follows the pointer's type automatically.",
+        "`calloc(5, sizeof(int))` gives five zeroed ints; reading them is well defined for integers. All-bits-zero is not guaranteed to be a null pointer or 0.0 on exotic platforms, though it is on every mainstream one.",
+        "The block you receive is aligned for the strictest standard type, typically 16 bytes on 64-bit Linux, so you can store a `double` or `long double` in it safely.",
+        "After `free(p)` the pointer value is indeterminate. Setting it to `NULL` turns a later accidental `free(p)` into a harmless no-op and a later dereference into a clean crash."
+      ],
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n    size_t n = 5;\n    int *a = malloc(n * sizeof *a);   // sizeof *a stays right if the type changes\n    if (a == NULL) {\n        fprintf(stderr, \"out of memory\\n\");\n        return 1;\n    }\n    for (size_t i = 0; i < n; i++)\n        a[i] = (int)(i + 1);\n    for (size_t i = 0; i < n; i++)\n        printf(\"%d \", a[i]);          // 1 2 3 4 5\n    free(a);\n    a = NULL;                         // a now cannot be misused by accident\n    return 0;\n}"
     },
     {
-      "heading": "free",
-      "body": "`free(p)` returns a block obtained from malloc, calloc, or realloc. `free(NULL)` is a safe no-op. Freeing twice or freeing a pointer that did not come from the allocator is undefined behavior. Set the pointer to NULL afterward.",
-      "code": "free(p);\np = NULL;"
+      "heading": "Variants & Types",
+      "bullets": [
+        "**malloc**: fastest, no initialization. Use when you will overwrite every byte anyway.",
+        "**calloc**: zeroed memory and overflow-checked size. Use for counters, flag arrays, and structs whose unset fields must be 0 or NULL.",
+        "**realloc**: grow or shrink. Use for dynamic arrays and string builders; always through a temporary pointer.",
+        "**free**: only for pointers returned by these functions, passed unchanged. Never for stack arrays, string literals, or pointers into the middle of a block.",
+        "**aligned_alloc (C11)**: block with a stricter alignment than normal, for SIMD or cache-line alignment; the size should be a multiple of the alignment.",
+        "**posix_memalign / mmap**: POSIX alternatives. `mmap` hands out whole pages straight from the kernel and is what malloc itself uses for very large requests (128 KiB by default in glibc).",
+        "**alloca / variable length arrays**: stack allocation, not heap. Fast, but no failure signal and a stack overflow if the size is large.",
+        "**Arena (region) allocators**: one big `malloc` carved up by a bump pointer and freed all at once. Excellent for parsers and per-request data."
+      ]
     },
     {
-      "heading": "A growable array",
-      "body": "Doubling capacity when full gives amortized O(1) appends.",
-      "code": "typedef struct { int *data; size_t len, cap; } Vec;\nint push(Vec *v, int x) {\n  if (v->len == v->cap) {\n    size_t nc = v->cap ? v->cap * 2 : 4;\n    int *t = realloc(v->data, nc * sizeof *t);\n    if (!t) return -1;\n    v->data = t; v->cap = nc;\n  }\n  v->data[v->len++] = x; return 0;\n}"
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Time**: a typical allocator serves small blocks from per-size free lists in tens of nanoseconds, but the worst case can involve searching or asking the kernel (`brk`/`mmap`), costing microseconds. Compare with a stack allocation, which is one subtraction.",
+        "**Space overhead**: glibc adds 8 bytes of header per block on 64-bit and rounds the total up to a multiple of 16, with a minimum chunk of 32 bytes. Allocating 1 byte therefore consumes 32 bytes.",
+        "**Growth strategy**: growing a dynamic array by a constant increment makes `n` appends cost O(n^2) total; doubling the capacity makes appends amortized O(1) at the price of up to 50 percent unused space.",
+        "**Fragmentation**: external (free space split into pieces too small for a request) and internal (rounding waste). Long running servers with mixed sizes are most affected.",
+        "**Cache behaviour**: nodes allocated one at a time can land far apart, so pointer-chasing structures are slower than arrays even with equal big-O.",
+        "**Thread contention**: a global allocator lock can serialize threads; modern allocators use per-thread arenas or caches to avoid this."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Memory leak**: losing the last pointer to a block, or returning early without freeing. The program keeps growing until the OS kills it.",
+        "**Use after free**: dereferencing a freed pointer. It often appears to work until the allocator reuses the block, then corrupts unrelated data.",
+        "**Double free**: freeing the same block twice corrupts allocator lists and is a classic exploit primitive. glibc aborts with `free(): double free detected`.",
+        "**Invalid free**: freeing a stack address, a global, a literal, or `p + 1` is undefined behaviour.",
+        "**Unchecked NULL**: dereferencing the result of a failed allocation.",
+        "**`p = realloc(p, n)`**: if it fails you overwrite your only pointer with `NULL` and leak the old block. Use a temporary.",
+        "**Wrong size**: `malloc(sizeof p)` allocates the size of the pointer (8 bytes), not the object. `malloc(strlen(s))` forgets the terminating NUL.",
+        "**Overflow in the size**: `malloc(n * sizeof(int))` can wrap for huge `n`, giving a tiny block that is then overrun. Use `calloc(n, sizeof(int))` or check `n > SIZE_MAX / sizeof(int)` first.",
+        "**Assuming zeroed memory**: `malloc` contents are garbage; reading them before writing is undefined behaviour for most types.",
+        "**Pointer invalidated by realloc**: any other pointer into the old block (an iterator, a `char *end`) dangles after a move.",
+        "**Zero-size requests**: `malloc(0)` may return `NULL` or a unique pointer that must still be freed; do not treat `NULL` there as failure without thinking."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Containers**: vectors, hash tables, linked lists, trees, graphs, and LRU caches all allocate nodes or backing arrays on the heap.",
+        "**Strings and buffers**: reading lines of unknown length (`getline` uses `realloc` internally), building output with growing buffers.",
+        "**Libraries and objects**: opaque handles such as `FILE *` or `sqlite3 *` are heap objects created by an `open` function and released by a `close` function.",
+        "**Kernel and embedded**: the Linux kernel uses `kmalloc`/`kfree` and slab caches with the same discipline; embedded systems often ban dynamic allocation after startup or use fixed pools.",
+        "**Tooling**: Valgrind, AddressSanitizer (`-fsanitize=address`) and `mtrace` find leaks and misuse; production servers swap in jemalloc or tcmalloc for lower fragmentation."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**malloc vs calloc?** calloc zeroes the memory and takes a count and an element size (with overflow checking); malloc does neither.",
+        "**What does realloc return on failure?** NULL, and the original block is still valid and still yours to free.",
+        "**Does free(NULL) crash?** No, it does nothing.",
+        "**Why not cast malloc's result in C?** It is unnecessary, and in old code it could silence the warning for a missing `stdlib.h`. In C++ you must cast.",
+        "**How does free know the size?** The allocator stores metadata beside the block, which is why you pass only the pointer.",
+        "**Is the heap the same as the heap data structure?** No. Same word, unrelated concepts.",
+        "**How do you find a leak?** Run under Valgrind or build with ASan/LeakSanitizer; both report the allocation stack of unreleased blocks."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Allocating 2D arrays",
-      "summary": "Three layouts.",
+      "title": "malloc and the size expression",
+      "summary": "Request bytes, get an uninitialized block.",
       "sections": [
         {
-          "bullets": [
-            "One block of rows*cols ints, index as m[i*cols + j]: best locality and a single free.",
-            "Array of row pointers, each malloc'd: flexible rows, many frees.",
-            "Pointer to array: `int (*m)[cols] = malloc(rows * sizeof *m);` gives m[i][j] syntax with one block."
-          ]
+          "body": "`malloc(size)` takes a byte count of type `size_t`. The idiom `malloc(n * sizeof *p)` ties the size to the pointer type. For a struct, `sizeof *node` includes padding, so it is always right. For strings add one byte for the terminator.",
+          "code": "char *dup = malloc(strlen(s) + 1);     // +1 for '\\0'\nif (dup) strcpy(dup, s);\nstruct Node *nd = malloc(sizeof *nd);  // not sizeof(struct Node *)"
         }
       ]
     },
     {
-      "title": "Common errors",
-      "summary": "What goes wrong.",
+      "title": "calloc and zeroed memory",
+      "summary": "Zero fill plus overflow-checked sizing.",
       "sections": [
         {
-          "bullets": [
-            "Not checking for NULL.",
-            "Memory leak: lost pointer, missing free.",
-            "Use after free and double free.",
-            "Buffer overrun: writing past the requested size.",
-            "Wrong size such as `malloc(sizeof p)` for a pointer p (gives the pointer size).",
-            "Casting malloc's result in C (unnecessary; can hide a missing #include <stdlib.h>)."
-          ]
+          "body": "`calloc(count, size)` multiplies for you and fails cleanly on overflow. Newly obtained pages from the kernel are already zero, so a good allocator can skip the memset for large blocks and calloc is then nearly free. Use it for tables where zero means empty, such as a frequency array or a hash table's bucket heads.",
+          "code": "int *freq = calloc(26, sizeof *freq);      // 26 zeroed counters\nfor (const char *c = word; *c; c++)\n    freq[*c - 'a']++;\nfree(freq);"
+        }
+      ]
+    },
+    {
+      "title": "realloc and the safe-resize idiom",
+      "summary": "Grow or shrink without losing the block on failure.",
+      "sections": [
+        {
+          "body": "If the new size is larger, the extra bytes are uninitialized. The block may move, so every old pointer into it is invalid afterwards. `realloc(NULL, n)` behaves like `malloc(n)`. `realloc(p, 0)` is not portable (implementation-defined, deprecated in C23), so call `free` instead. Always assign through a temporary.",
+          "code": "int *tmp = realloc(a, 10 * sizeof *a);\nif (tmp == NULL) {\n    free(a);          // original is still valid; clean up and bail out\n    return -1;\n}\na = tmp;              // only now replace the old pointer"
+        }
+      ]
+    },
+    {
+      "title": "free and pointer hygiene",
+      "summary": "Release once, then forget the pointer.",
+      "sections": [
+        {
+          "body": "`free` does not change your pointer variable; it only tells the allocator the block is reusable. The usual defence is to null the pointer straight after. A helper macro keeps this consistent, but remember it cannot protect other copies of the same pointer, so single ownership matters more than the macro.",
+          "code": "#define FREE(p) do { free(p); (p) = NULL; } while (0)\n\nFREE(buf);\nFREE(buf);            // second call is a harmless free(NULL)"
+        }
+      ]
+    },
+    {
+      "title": "Growable arrays",
+      "summary": "Doubling capacity gives amortized O(1) append.",
+      "sections": [
+        {
+          "body": "Keep a struct with data pointer, length and capacity. When the length reaches the capacity, double it. Total copying across `n` appends is at most 2n element moves, so each append costs O(1) amortized. Growing by a fixed step instead degrades to O(n^2).",
+          "code": "typedef struct { int *data; size_t len, cap; } Vec;\n\nint vec_push(Vec *v, int x) {\n    if (v->len == v->cap) {\n        size_t ncap = v->cap ? v->cap * 2 : 4;\n        int *tmp = realloc(v->data, ncap * sizeof *tmp);\n        if (!tmp) return -1;\n        v->data = tmp;\n        v->cap = ncap;\n    }\n    v->data[v->len++] = x;\n    return 0;\n}"
+        },
+        {
+          "body": "Free with one call on `v->data`. If you keep pointers to elements, they dangle after a push; store indexes instead."
+        }
+      ]
+    },
+    {
+      "title": "Allocating 2D arrays",
+      "summary": "Three layouts and their trade-offs.",
+      "sections": [
+        {
+          "body": "A contiguous block is fastest and needs one free. An array of row pointers allows ragged rows but costs `rows + 1` allocations and frees.",
+          "code": "// contiguous: one block, index as m[r * cols + c]\nint *m = malloc(rows * cols * sizeof *m);\n\n// array of row pointers: m[r][c] syntax, rows can differ in length\nint **g = malloc(rows * sizeof *g);\nfor (size_t r = 0; r < rows; r++) g[r] = calloc(cols, sizeof **g);\nfor (size_t r = 0; r < rows; r++) free(g[r]);\nfree(g);\n\n// pointer to VLA row: m[r][c] syntax and a single block (C99)\nint (*p)[cols] = malloc(rows * sizeof *p);"
+        },
+        {
+          "body": "Prefer the contiguous or pointer-to-array form for numeric work: better cache use, one allocation, one free."
         }
       ]
     },
     {
       "title": "How the allocator works",
-      "summary": "Why free needs no size.",
+      "summary": "Free lists, bins, brk and mmap.",
       "sections": [
         {
-          "body": "The allocator stores a small header before each block with its size, and keeps free blocks in bins or lists. glibc's ptmalloc uses arenas, and large requests use mmap. Metadata next to your data is why heap overflows are dangerous."
+          "body": "A glibc-style allocator keeps freed chunks in bins grouped by size. A request first checks the matching bin, then splits a bigger free chunk, and finally extends the heap with `brk`/`sbrk` (the program break moves up). Requests above a threshold (128 KiB by default) are served by `mmap` and returned to the kernel with `munmap` on free. Adjacent free chunks are coalesced to fight fragmentation. Each chunk carries a size header; freed chunks reuse their payload to store list pointers, which is why use-after-free corrupts the allocator itself.",
+          "bullets": [
+            "**Small block**: size class, per-thread cache, nanoseconds.",
+            "**Large block**: separate mapping, page-granular, costs a system call.",
+            "**Top of heap**: shrinking is only possible if the end of the heap is free, so a single live block can pin lots of memory."
+          ]
         }
       ]
     },
     {
       "title": "Alignment and special allocators",
-      "summary": "aligned_alloc and alloca.",
+      "summary": "Stricter alignment, pools and arenas.",
       "sections": [
         {
-          "body": "malloc returns memory aligned for any standard type. `aligned_alloc(alignment, size)` (C11) or `posix_memalign` provide stricter alignment (SIMD, page-aligned I/O). `alloca` allocates on the stack and is non-standard and risky."
+          "body": "Standard allocators return memory aligned for `max_align_t` (16 bytes on x86-64). For 64-byte cache lines or 4096-byte pages use `aligned_alloc(64, size)` where size is a multiple of 64. Pool allocators carve equal-size slots from one block and keep a free list, giving O(1) alloc and free with zero per-object header. Arenas hand out memory by bumping a pointer and release everything with one `free`, ideal when many small objects share one lifetime.",
+          "code": "void *p = aligned_alloc(64, 1024);     // 1024 is a multiple of 64\ntypedef struct { char *base; size_t used, cap; } Arena;\nvoid *arena_alloc(Arena *a, size_t n) {\n    n = (n + 15) & ~(size_t)15;        // keep 16-byte alignment\n    if (a->used + n > a->cap) return NULL;\n    void *r = a->base + a->used;\n    a->used += n;\n    return r;\n}"
         }
       ]
     },
     {
       "title": "Debugging heap bugs",
-      "summary": "Tools.",
+      "summary": "Tools that catch leaks and corruption.",
       "sections": [
         {
-          "body": "Compile with `-fsanitize=address -g` to catch overflows, use-after-free, and leaks; run under Valgrind for similar reports; `mtrace` and `MALLOC_CHECK_` are lightweight glibc aids."
+          "body": "Compile with `-g -fsanitize=address,undefined` and run: ASan reports heap overflow, use-after-free and double free with the allocation and free stack traces, and LeakSanitizer lists leaks at exit. Valgrind needs no recompile (`valgrind --leak-check=full ./a.out`) but is slower. glibc can also abort on corruption (`MALLOC_CHECK_=3`). When a crash appears inside `free` or `malloc`, suspect a buffer overrun elsewhere that trashed the metadata.",
+          "bullets": [
+            "`==ERROR: AddressSanitizer: heap-use-after-free`: touched a freed block.",
+            "`definitely lost`: no pointer to the block remains.",
+            "`Invalid write of size 4`: overran the block by one element or more."
+          ]
         }
       ]
     }
   ],
   "takeaways": [
-    "malloc: uninitialized; calloc: zeroed and overflow-safe; realloc: may move; free: once only.",
-    "Always check for NULL, and assign realloc to a temporary.",
-    "Use sizeof *p, set pointers to NULL after free.",
-    "Run sanitizers during testing."
+    "`malloc` returns uninitialized bytes, `calloc` returns zeroed bytes with overflow-checked sizing, `realloc` resizes, `free` releases.",
+    "Always check for `NULL`, write `p = malloc(n * sizeof *p)`, and free each block exactly once.",
+    "Resize with a temporary: `tmp = realloc(p, n); if (tmp) p = tmp;` so a failure does not leak the old block.",
+    "Doubling capacity makes growable-array append amortized O(1); fixed increments make it O(n^2) overall.",
+    "The three heap bugs are leak, use-after-free and double free; ASan and Valgrind find all three.",
+    "The heap here is the process memory region, unrelated to the priority-queue data structure."
+  ],
+  "practice": [
+    {
+      "title": "Read n then allocate, fill and sum n integers, handling NULL",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain and fix: p = realloc(p, n) leaks on failure",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Duplicate a string like strdup using malloc",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement a growable vector with push, pop and free",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Allocate a rows x cols matrix as one block and as an array of rows; free both",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the bug: malloc(n * sizeof(int)) with n from untrusted input",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Build a singly linked list from input and free it without a use-after-free",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a bump-pointer arena allocator with reset and 16-byte alignment",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Implement a fixed-size pool allocator with an embedded free list",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Predict what ASan reports for a program with an off-by-one heap write and a double free",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
     {
       "label": "Reference: Dynamic memory allocation in C (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/c/dynamic-memory-allocation-in-c-using-malloc-calloc-free-and-realloc/"
     },
     {
-      "label": "Linux man-pages: malloc(3)",
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, section 7.22.3 Memory management functions",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "malloc(3) Linux manual page",
       "url": "https://man7.org/linux/man-pages/man3/malloc.3.html"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Read n then allocate and sum n integers",
-      "difficulty": "Easy"
     },
     {
-      "title": "Implement a growable vector with push and pop",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Fix a realloc that leaks on failure",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Allocate and free a rows x cols matrix in one block",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Write strdup from scratch",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Build a memory pool that hands out fixed-size blocks",
-      "difficulty": "Hard"
+      "label": "Kernighan & Ritchie, The C Programming Language, 2nd ed., section 8.7",
+      "url": "https://en.wikipedia.org/wiki/The_C_Programming_Language"
     }
   ]
 }

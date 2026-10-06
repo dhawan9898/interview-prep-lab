@@ -1,119 +1,261 @@
 {
-  "summary": "A buffer overflow happens when a program writes more data into a fixed-size buffer than it can hold, spilling into adjacent memory. On the stack this can overwrite saved registers and the return address, handing control to an attacker.",
+  "summary": "A buffer overflow happens when a program writes past the end of a fixed-size block of memory, corrupting whatever lies next to it. In C it is possible because arrays carry no length and functions like `strcpy` and `gets` trust the caller. It is one of the oldest and most exploited classes of security bugs, behind the Morris worm, many remote code execution flaws and Heartbleed-style leaks, so every C programmer and every security-minded interviewer expects you to know how it works and how to prevent it.",
   "sections": [
     {
-      "heading": "What goes wrong",
-      "body": "C does no bounds checking. Writing past the end of an array silently corrupts whatever sits next to it: other locals, a saved frame pointer, or the return address.",
-      "code": "void vuln(const char *s) {\n  char buf[8];\n  strcpy(buf, s);   // no length check\n}"
+      "heading": "Overview",
+      "body": "A buffer is a region of memory that holds data for a while: a `char name[16]` on the stack, a `malloc(100)` block on the heap, a global array. The C language does not check that an access stays inside it. Writing byte 17 of a 16-byte array is undefined behavior, and in practice it silently overwrites the neighbor. If that neighbor is a return address, a function pointer, a flag such as `is_admin`, or the length field of another buffer, an attacker who controls the input can steer the program. This lesson explains the stack frame layout, how stack and heap overflows work, the mitigations that modern systems deploy (canaries, NX, ASLR) and how to write code that cannot overflow."
     },
     {
-      "heading": "Stack-based vs heap-based",
+      "heading": "Core Concepts",
       "bullets": [
-        "Stack-based: overflow a local buffer to reach the return address or function pointers. Most common and best understood.",
-        "Heap-based: overflow a heap block to corrupt allocator metadata or neighbouring objects. Harder, but real."
+        "**Buffer**: a contiguous region of memory with a fixed capacity, usually an array or an allocated block.",
+        "**Overflow (overrun)**: writing beyond the end. **Underflow (underrun)**: writing before the start. **Over-read**: reading beyond the end, which leaks data without corrupting it.",
+        "**Stack frame**: the per-call region holding locals, saved registers, the saved frame pointer and the return address.",
+        "**Return address**: where the CPU jumps when a function ends. Overwriting it hijacks control flow.",
+        "**Stack-based overflow**: the buffer lives on the stack, so overflow runs toward higher addresses into saved registers and the return address (the stack grows down on x86 and ARM, but arrays fill upward).",
+        "**Heap-based overflow**: the buffer is a `malloc` block. Neighbors are other blocks and allocator metadata such as chunk sizes and free-list pointers.",
+        "**Shellcode**: machine code supplied by the attacker as part of the input, which the overflow tries to execute.",
+        "**Canary**: a secret value placed between locals and the return address and checked before returning.",
+        "**NX / DEP**: hardware marking of the stack and heap as non-executable, so injected code cannot run.",
+        "**ASLR**: randomizing the base addresses of stack, heap and libraries on each run so the attacker cannot predict targets.",
+        "**Bounds checking**: any rule that ties every access to the real capacity, either by the programmer or by tools."
       ]
     },
     {
-      "heading": "How stack smashing works",
+      "heading": "How It Works",
+      "body": "Take a classic vulnerable function. The compiler lays out the frame so that `buf` sits below the saved return address. `strcpy` copies bytes until it sees a NUL, with no idea that `buf` holds only 8. A longer input walks past `buf`, past any padding and saved registers, and lands on the return address.",
+      "code": "#include <stdio.h>\n#include <string.h>\n\nvoid greet(const char *name) {\n    char buf[8];\n    strcpy(buf, name);              /* no length check */\n    printf(\"hello %s\\n\", buf);\n}\n\nint main(int argc, char **argv) {\n    if (argc > 1) greet(argv[1]);\n    return 0;\n}\n/* typical x86-64 frame of greet(), higher addresses at the top:\n     [ return address ]   8 bytes\n     [ saved rbp      ]   8 bytes\n     [ padding        ]\n     [ buf[8]         ]   <- strcpy writes upward from here\n*/"
+    },
+    {
+      "body": "Feed it 7 characters plus the terminator and everything is fine. Feed it 8 characters and the NUL lands one byte past `buf`: an off-by-one that may silently clobber a neighbor. Feed it 40 characters and you overwrite the saved frame pointer and the return address. When `greet` executes `ret`, the CPU jumps to whatever those 8 bytes say. With no protection and a known address, the attacker points it at shellcode in the buffer. With NX enabled they instead aim at existing code (return-to-libc or ROP). A stack canary stops the simple case: the function checks the canary before `ret` and aborts with `*** stack smashing detected ***` if the overflow changed it."
+    },
+    {
+      "body": "Note on sizes. A tutorial may claim that a `char buf[5]` only overflows past 8 bytes because the compiler rounds the allocation. That is a layout guess, not a rule. Writing the 6th byte is already undefined behavior. It may appear to work because of padding, crash on another compiler, or corrupt a neighbor on a third. Never reason about safety from observed padding."
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "A call pushes the return address; the callee allocates locals below it.",
-        "Input longer than the buffer climbs upward over saved registers.",
-        "The attacker chooses bytes that overwrite the return address.",
-        "On `ret`, the CPU jumps to the attacker's chosen address."
+        "**Stack smashing**: overwrite the return address (or saved frame pointer) as above.",
+        "**Data-only attacks**: change a nearby variable, such as `int authorized` or a buffer length, without touching control flow. Often enough to bypass checks.",
+        "**Function pointer and vtable overwrite**: replace a callback stored next to the buffer, in a struct or object.",
+        "**Heap overflow**: corrupt adjacent chunks or allocator metadata, producing arbitrary writes when the allocator later unlinks or reuses a chunk.",
+        "**Off-by-one**: a single byte (often the NUL) written past the end. Enough to change the saved frame pointer's low byte on some layouts.",
+        "**Integer overflow leading to buffer overflow**: `malloc(count * size)` wraps to a small value, then the loop writes `count` items. Always check multiplication.",
+        "**Format-string bugs**: `printf(user_input)` lets `%n` write to memory and `%x` read the stack. Not a buffer overflow strictly, but the same family.",
+        "**Buffer over-read**: Heartbleed (2014) trusted a length field in a TLS heartbeat message and returned up to 64 KiB of adjacent memory.",
+        "**Return-oriented programming (ROP)**: chain small existing code fragments ending in `ret` ('gadgets') to compute without injecting code, defeating NX."
       ]
     },
     {
-      "heading": "Dangerous functions",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "`gets` (removed from C11), `strcpy`, `strcat`, `sprintf`, `scanf(\"%s\")` do no length checking.",
-        "Safer: `fgets`, `snprintf`, `strncpy`/`strlcpy` (mind termination), `memcpy` with a verified length."
+        "A stack canary costs one store at function entry and one load plus compare at exit, a few cycles per protected function. GCC `-fstack-protector-strong` typically costs under 2% runtime on ordinary code.",
+        "A 64-bit canary has 56 bits of entropy (the low byte is zero to stop string functions from copying it), so blind guessing needs about 2^55 tries on average, unless a forking server restarts children with the same canary and lets an attacker brute-force one byte at a time in at most 7 * 256 attempts (the zero byte is known).",
+        "AddressSanitizer slows programs by about 2x and uses about 2x to 3x memory, which is fine for tests but not for most production.",
+        "Fortified libc (`-D_FORTIFY_SOURCE=2` with `-O2`) replaces calls like `memcpy` and `strcpy` with checked variants when the destination size is known at compile time. Overhead is usually negligible.",
+        "`strncpy` always writes exactly `n` bytes (padding with zeros), so copying a short string into a 4096-byte buffer costs a 4096-byte memset. It also does not NUL-terminate on truncation.",
+        "ASLR on 32-bit systems offers only about 8 to 16 bits of randomness for some regions, so brute force works. On 64-bit it offers about 28 to 30 bits for the stack and mmap area on Linux."
       ]
     },
     {
-      "heading": "Defences",
+      "heading": "Common Pitfalls & Gotchas",
       "bullets": [
-        "Stack canaries: a secret value before the return address, checked on return (`-fstack-protector`).",
-        "NX / DEP: stack and heap pages are not executable.",
-        "ASLR: randomize addresses so exploits cannot hard-code targets.",
-        "Bounds-safe code, fortify (`-D_FORTIFY_SOURCE=2`), and sanitizers (`-fsanitize=address`)."
+        "**Trusting `strncpy`**: it does not terminate the destination if the source is as long as `n`. Always set `dst[n-1] = '\\0'` after it.",
+        "**`strncat` size confusion**: its third argument is the maximum number of characters to append, not the buffer size. Pass remaining space minus one.",
+        "**Using `sizeof` on a pointer**: in `void f(char *p)`, `sizeof p` is 8, not the array size. A bound computed this way is wrong.",
+        "**Off-by-one with the terminator**: a 16-character string needs 17 bytes.",
+        "**`gets`**: cannot be used safely. Removed in C11. Use `fgets(buf, sizeof buf, stdin)`.",
+        "**`scanf(\"%s\")` and `sprintf` without limits**: use `%15s` and `snprintf`.",
+        "**`snprintf` return value**: it returns the length that would have been written, not what was written. Check `ret >= sizeof buf` to detect truncation.",
+        "**Signed length checks**: `if (len < sizeof buf)` with negative `len` converts to a huge unsigned value or passes the check. Use `size_t` for lengths and test before casting.",
+        "**Assuming mitigations make you safe**: canaries, NX and ASLR raise the cost of exploitation, but leaks and ROP defeat them. The bug must be fixed.",
+        "**Trusting length fields from the network**: validate every length against the real buffer before copying.",
+        "**Disabling protections** (`-fno-stack-protector`, `execstack`) to make a build pass: this reopens the door."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Morris worm (1988)** exploited a `gets` overflow in the `fingerd` daemon on VAX and Sun systems.",
+        "**Code Red and SQL Slammer (2001, 2003)**: stack overflows in IIS and SQL Server spread across the internet in minutes.",
+        "**Heartbleed (2014, CVE-2014-0160)**: a missing bounds check in OpenSSL's heartbeat extension leaked memory.",
+        "**Operating systems and browsers**: memory-safety bugs, with overflows prominent, are reported by Microsoft and Google as roughly 70% of their serious vulnerabilities.",
+        "**Defensive tooling**: compilers ship `-fstack-protector`, `-D_FORTIFY_SOURCE`, `-fsanitize=address`, and linkers ship `-z noexecstack` and PIE (`-fPIE -pie`) for ASLR of the program image.",
+        "**Safer languages and libraries**: Rust, Go and Java bounds-check every access. In C, projects use `snprintf`, `strlcpy`, length-carrying string types and fuzzers to reduce the risk."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is a buffer overflow?** Writing past the end of a buffer, corrupting adjacent memory. Undefined behavior in C.",
+        "**Why is it dangerous?** Overwriting the return address, a function pointer or security-relevant data gives the attacker control or leaks secrets.",
+        "**Why does `strcpy` cause it?** It copies until NUL without knowing the destination size.",
+        "**Name three mitigations.** Stack canaries, NX/DEP, ASLR. Also fortify source and bounds-checked code.",
+        "**Stack versus heap overflow?** Stack: hijack return address or locals. Heap: corrupt neighboring chunks or allocator metadata. Heap exploits are more allocator-specific.",
+        "**How would you fix `strcpy(buf, in)`?** Check `strlen(in) < sizeof buf` and copy with `memcpy`, or use `snprintf(buf, sizeof buf, \"%s\", in)` and test the result.",
+        "**Can ASLR plus NX be bypassed?** Yes, with an information leak plus ROP, which is why the root bug must be removed."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Worked example: 5-byte buffer",
-      "summary": "Why 9 bytes can crash and 8 may not.",
+      "title": "Anatomy of the stack frame",
+      "summary": "Locals, saved registers and the return address sit next to each other, and arrays grow toward them.",
       "sections": [
         {
-          "body": "Compilers pad stack buffers to the machine word. A `char buf[5]` may occupy 8 bytes, so 8 input bytes can seem fine while 9 clobber adjacent data and fault. The absence of a crash is not proof of safety; it is undefined behavior either way."
+          "body": "On x86-64 System V, a call pushes the return address, the callee pushes the old frame pointer, and then allocates space for locals by subtracting from the stack pointer. Since the stack grows toward lower addresses while an array fills toward higher ones, the end of a local array is closer to the return address than its start. The compiler may reorder locals (GCC puts character arrays above scalars when the protector is on) so that an overflow hits the canary before it can reach plain variables.",
+          "code": "/* addresses grow downward in this picture\n   high   +-------------------+\n          | return address    |  <- target of the classic attack\n          | saved frame ptr   |\n          | canary (if on)    |\n          | char buf[16]      |  <- fills upward through the above\n   low    +-------------------+ <- rsp\n*/"
+        }
+      ]
+    },
+    {
+      "title": "Worked example: a tiny overflow you can run",
+      "summary": "A program that corrupts a neighbor shows undefined behavior without any exploit.",
+      "sections": [
+        {
+          "body": "This program is for experiments on your own machine. Compile with `gcc -O0 -fno-stack-protector -o demo demo.c`. The output depends on the compiler's layout, which is the point: behavior is not defined.",
+          "code": "#include <stdio.h>\n#include <string.h>\n\nint main(void) {\n    struct { char name[8]; int is_admin; } u = { \"guest\", 0 };\n    strcpy(u.name, \"AAAAAAAAAAAA\");        /* 12 chars + NUL, buffer is 8 */\n    printf(\"is_admin = %d\\n\", u.is_admin);  /* very likely nonzero */\n    return 0;\n}"
+        },
+        {
+          "body": "The struct puts `is_admin` right after `name`, so the extra bytes `AAAA` become the integer 0x41414141. A real program that checks `if (u.is_admin)` would now grant privileges without any shellcode. Rebuild with `-fsanitize=address` and the first bad write is reported with a stack trace, which is how you find these bugs in practice."
+        }
+      ]
+    },
+    {
+      "title": "Safe string handling",
+      "summary": "Know the exact contract of each copy function, or use one that carries its own length.",
+      "sections": [
+        {
+          "bullets": [
+            "**`strcpy`, `strcat`, `sprintf`, `gets`**: unbounded. Avoid in new code.",
+            "**`strncpy`**: bounded but does not guarantee termination and pads with zeros. Intended for fixed-width records, not for strings.",
+            "**`snprintf(dst, size, \"%s\", src)`**: always terminates (when size > 0), returns the needed length, so truncation can be detected. The best general choice in portable C.",
+            "**`strlcpy` / `strlcat`**: BSD functions that terminate and return the source length, in glibc since 2.38. Also easy to write yourself.",
+            "**`memcpy`**: you must compute the length yourself; check it first.",
+            "**`strcpy_s` and friends (Annex K)**: optional, rarely implemented outside MSVC."
+          ],
+          "code": "char dst[16];\nint n = snprintf(dst, sizeof dst, \"%s\", src);\nif (n < 0 || (size_t)n >= sizeof dst) {\n    /* truncated or error: reject the input, do not use dst silently */\n}"
+        }
+      ]
+    },
+    {
+      "title": "Heap-based overflows",
+      "summary": "Overflowing a malloc block corrupts neighbors and allocator bookkeeping.",
+      "sections": [
+        {
+          "body": "A heap block is preceded by a small header with its size and flags, and free blocks hold list pointers in their payload. Writing past the end of one block can modify the next block's header or its data. Later `free` or `malloc` calls trust that metadata, so the corruption turns into a wild write or an arbitrary pointer being used. Modern allocators add integrity checks (safe unlinking, tcache key checks, size sanity), which make exploitation harder but not impossible. The fix is the same as on the stack: allocate the right size, check arithmetic, and bound each write.",
+          "code": "size_t count = n_from_network, item = 32;\nif (count > SIZE_MAX / item) return -1;      /* detect multiplication wrap */\nchar *p = malloc(count * item);\nif (!p) return -1;\nmemcpy(p, src, count * item);                /* now the size is guaranteed to fit */"
+        }
+      ]
+    },
+    {
+      "title": "Canaries, NX and ASLR",
+      "summary": "Three layered defenses that make exploitation harder but do not remove the bug.",
+      "sections": [
+        {
+          "bullets": [
+            "**Stack canary** (`-fstack-protector-strong`): a random value stored before the return address and verified on return. Defeated by leaks, by overwriting only locals, or by brute force against forking servers.",
+            "**NX / DEP** (`-z noexecstack`, enabled by default): pages are writable or executable, not both. Injected shellcode on the stack cannot run. Defeated by ROP and return-to-libc.",
+            "**ASLR** (`/proc/sys/kernel/randomize_va_space = 2`): randomizes stack, heap, mmap regions, and with PIE (`-fPIE -pie`) the executable itself. Defeated by an information leak.",
+            "**RELRO** (`-Wl,-z,relro,-z,now`): makes the GOT read-only after startup.",
+            "**Control-flow integrity and shadow stacks** (Intel CET, ARM PAC and BTI): hardware or compiler checks that returns and indirect calls land at valid targets."
+          ]
         }
       ]
     },
     {
       "title": "Return-oriented programming",
-      "summary": "Beating NX.",
+      "summary": "Reuse existing code snippets ending in ret to bypass non-executable memory.",
       "sections": [
         {
-          "body": "When the stack is non-executable, attackers chain short existing code snippets ('gadgets') ending in `ret`, built by controlling the stack. ASLR and CFI make this harder."
+          "body": "When the stack is not executable, the attacker overwrites the return address and what follows with a chain of addresses. Each points at a 'gadget' such as `pop rdi; ret` somewhere in the program or libc. Each `ret` pops the next address, so the chain loads registers and eventually calls a function like `system(\"/bin/sh\")`. No new code is injected; existing code is rearranged. Defenses include ASLR (gadget addresses unknown), CET shadow stacks (return address compared to a protected copy), and avoiding the bug in the first place."
         }
       ]
     },
     {
-      "title": "Off-by-one and format-string bugs",
-      "summary": "Related memory-safety classes.",
+      "title": "Detecting overflows: sanitizers, fuzzing, static analysis",
+      "summary": "Find the bug before an attacker does.",
       "sections": [
         {
-          "body": "Writing `buf[n]` for a size-`n` array, or `printf(user_input)`, can be as exploitable as a large overflow. Always pass a constant format string.",
-          "code": "printf(\"%s\", user);   // good\nprintf(user);          // bad"
-        }
-      ]
-    },
-    {
-      "title": "Detecting overflows",
-      "summary": "Tools you should use.",
-      "sections": [
-        {
-          "body": "AddressSanitizer reports stack and heap overflows at run time with a precise location. Valgrind finds heap overruns. Static analyzers and compiler warnings (`-Wall -Wextra -Warray-bounds`) catch many at build time."
+          "bullets": [
+            "**AddressSanitizer** (`-fsanitize=address -g`): shadow memory marks redzones around stack, heap and globals, and reports the exact access, size and allocation site.",
+            "**Valgrind memcheck**: no recompilation, slower (10x to 30x), good for heap errors. Weaker for stack and global arrays.",
+            "**Fuzzing** (libFuzzer, AFL++): feeds mutated inputs to your parser with ASan enabled and finds crashes automatically.",
+            "**Static analysis**: `-Wall -Wextra -Warray-bounds -Wstringop-overflow`, `clang-tidy`, Coverity, CodeQL flag unsafe calls and provable overruns.",
+            "**Hardened libc**: `-D_FORTIFY_SOURCE=2` (or 3) turns many overflows into immediate aborts."
+          ],
+          "code": "$ gcc -g -fsanitize=address -fno-omit-frame-pointer demo.c -o demo\n$ ./demo AAAAAAAAAAAA\n==1234==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7ffc...\nWRITE of size 13 at 0x7ffc... thread T0\n    #0 strcpy ...\n    #1 greet demo.c:6"
         }
       ]
     }
   ],
   "takeaways": [
-    "C will not stop you writing past a buffer; you must bound every copy.",
-    "Stack overflows can overwrite the return address and redirect execution.",
-    "Prefer length-aware APIs and verify sizes.",
-    "Layer defences: canaries, NX, ASLR, sanitizers."
+    "A buffer overflow writes past a buffer's end; in C it is undefined behavior because arrays carry no length and the compiler does not check.",
+    "On the stack the overflow runs toward the return address and saved registers, so a long input can redirect execution.",
+    "`strcpy`, `gets`, `sprintf` and `scanf(\"%s\")` are unbounded; use `fgets`, `snprintf` and explicit width limits.",
+    "`strncpy` does not always NUL-terminate and `snprintf` returns the would-be length, so truncation must be checked.",
+    "Canaries, NX and ASLR raise the cost of exploitation but are bypassed by leaks and ROP; only fixing the bug removes the risk.",
+    "Integer overflow in a size computation (`count * size`) is a common root cause of heap overflows; check before multiplying.",
+    "Test with AddressSanitizer and fuzzers, and compile with warnings and `-D_FORTIFY_SOURCE=2` plus `-fstack-protector-strong`."
+  ],
+  "practice": [
+    {
+      "title": "Find the overflow in `char b[8]; strcpy(b, argv[1]);` and fix it two ways",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Explain why `gets` was removed from the C standard",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Why does `sizeof` on an array parameter give the wrong bound?",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Show how `strncpy` can leave a string unterminated and write a safe copy helper",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Describe the stack layout of a function call and which bytes an attacker overwrites",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the integer overflow in `malloc(n * sizeof(struct item))` and patch it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain how a stack canary detects an overflow and one way it can be bypassed",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Explain return-oriented programming and why NX alone is not enough",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Explain Heartbleed as a bounds bug and write the missing check",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: Buffer overflow attack with example (GeeksforGeeks)",
+      "label": "GeeksforGeeks: Buffer Overflow Attack with Example",
       "url": "https://www.geeksforgeeks.org/c/buffer-overflow-attack-with-example/"
     },
     {
       "label": "CWE-121: Stack-based Buffer Overflow",
       "url": "https://cwe.mitre.org/data/definitions/121.html"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Spot the overflow in a strcpy/gets snippet and fix it with snprintf",
-      "difficulty": "Easy"
     },
     {
-      "title": "Compile with and without -fstack-protector and compare behaviour",
-      "difficulty": "Medium"
+      "label": "CWE-122: Heap-based Buffer Overflow",
+      "url": "https://cwe.mitre.org/data/definitions/122.html"
     },
     {
-      "title": "Use AddressSanitizer to locate a heap overflow",
-      "difficulty": "Medium"
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
     },
     {
-      "title": "Write a bounded string copy that always NUL-terminates",
-      "difficulty": "Medium"
+      "label": "AddressSanitizer documentation",
+      "url": "https://clang.llvm.org/docs/AddressSanitizer.html"
     }
   ]
 }

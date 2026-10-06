@@ -1,135 +1,282 @@
 {
-  "summary": "Bitwise operators work directly on the individual bits of integers. They are the toolkit for flags, masks, packing data, hardware registers, and fast arithmetic tricks, and they underlie protocol headers and permissions.",
+  "summary": "Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`) act on every bit of an integer in parallel and compile to single CPU instructions. They let you pack many flags into one word, read and write hardware register fields, build compact sets and hashes, and solve a large family of interview puzzles. Knowing two's complement, integer promotion and the undefined-behaviour rules for shifts keeps these tricks correct.",
   "sections": [
     {
-      "heading": "The six operators",
-      "code": "a = 0b0111 (7), b = 0b0100 (4)\na & b  = 0b0100 (4)   AND: 1 only if both bits are 1\na | b  = 0b0111 (7)   OR : 1 if either is 1\na ^ b  = 0b0011 (3)   XOR: 1 if bits differ\n~b     = ...11111011  NOT: flips every bit  (~4 == -5 in two's complement)\na << 2 = 0b11100 (28) shift left : multiply by 2^n\na >> 1 = 0b0011 (3)  shift right: divide by 2^n (unsigned / non-negative)"
-    },
-    {
-      "heading": "Shift rules",
+      "heading": "Overview",
+      "body": "Bitwise operators work on the individual bits of integer values instead of treating them as whole numbers. C gives you six: `&` (AND), `|` (OR), `^` (XOR), `~` (NOT), `<<` (shift left) and `>>` (shift right). They map to single CPU instructions, so they are the fastest operations available and the natural tool for flags, masks, hardware registers, compact sets, hashing and many classic interview puzzles. Mastering them means being fluent in two's complement, integer promotion and the few undefined-behaviour traps around shifts.",
       "bullets": [
-        "Shifting by a negative amount or by >= the type's width is undefined behavior.",
-        "Left-shifting a negative value, or shifting a 1 into the sign bit of a signed type, is undefined or problematic.",
-        "Right shift of a negative signed value is implementation-defined (usually arithmetic, copying the sign bit).",
-        "Prefer unsigned types for bit manipulation; use `1u << n` rather than `1 << n`."
+        "**Problem they solve**: store and test many yes/no facts in one word, talk to hardware at bit granularity, and multiply or divide by powers of two cheaply.",
+        "**Operands**: integer types only (including `char`, `_Bool`, enums). Floating-point values need a cast through `memcpy` or a union.",
+        "**Not the same as logical operators**: `&&`, `||` and `!` work on truth values and short-circuit; `&`, `|` and `~` work on every bit and always evaluate both sides."
       ]
     },
     {
-      "heading": "Core bit idioms",
-      "body": "With `n` the bit index (0 = least significant):",
-      "code": "x |=  (1u << n);    // set bit n\nx &= ~(1u << n);    // clear bit n\nx ^=  (1u << n);    // toggle bit n\nint on = (x >> n) & 1u;   // test bit n"
+      "heading": "Core Concepts",
+      "bullets": [
+        "**AND `a & b`**: result bit is 1 only when both bits are 1. Used to **clear** bits and to **test** bits (masking).",
+        "**OR `a | b`**: result bit is 1 when either bit is 1. Used to **set** bits.",
+        "**XOR `a ^ b`**: result bit is 1 when the bits differ. Used to **toggle** bits, and `x ^ x == 0`, `x ^ 0 == x`.",
+        "**NOT `~a`**: flips every bit. For unsigned types `~a == MAX - a`; in two's complement `~a == -a - 1`.",
+        "**Left shift `a << n`**: moves bits toward the high end and fills with zeros. Equals multiplication by 2^n when no bit is lost.",
+        "**Right shift `a >> n`**: for unsigned values fills with zeros (logical shift, floor division by 2^n). For negative signed values the result is implementation-defined; nearly all compilers use an arithmetic shift that copies the sign bit.",
+        "**Mask**: a constant whose set bits select the bits of interest, such as `0x0F` for the low nibble.",
+        "**Two's complement**: the representation of signed integers; negation is invert and add one, so `-x == ~x + 1`. C23 makes it mandatory.",
+        "**Integer promotion**: operands narrower than `int` are widened to `int` before the operation, which affects `~` and shifts on `char` and `short`."
+      ]
     },
     {
-      "heading": "Useful tricks",
+      "heading": "How It Works",
+      "body": "Every operator acts on all bit positions in parallel. Take a = 0b1100 (12) and b = 0b1010 (10). Then a & b = 0b1000 (8), a | b = 0b1110 (14), a ^ b = 0b0110 (6), and ~a on an 8-bit unsigned value is 0b11110011 (243). Shifting 0b0011 left by 2 gives 0b1100. The four fundamental bit manipulations follow directly: to set bit k use `x |= (1u << k)`, to clear use `x &= ~(1u << k)`, to toggle use `x ^= (1u << k)`, and to test use `(x >> k) & 1u`.",
+      "code": "#include <stdio.h>\n#include <stdint.h>\n\n#define BIT(k)        (1u << (k))\n#define SET(x, k)     ((x) |= BIT(k))\n#define CLEAR(x, k)   ((x) &= ~BIT(k))\n#define TOGGLE(x, k)  ((x) ^= BIT(k))\n#define TEST(x, k)    (((x) >> (k)) & 1u)\n\nint main(void) {\n    uint32_t x = 0;\n    SET(x, 3); SET(x, 0);              /* 0b1001 = 9 */\n    TOGGLE(x, 1);                      /* 0b1011 = 11 */\n    CLEAR(x, 0);                       /* 0b1010 = 10 */\n    printf(\"%u %u %u\\n\", x, TEST(x, 3), TEST(x, 2));  /* 10 1 0 */\n\n    /* extract a w-bit field starting at bit s */\n    uint32_t reg = 0xABCD1234u;\n    unsigned s = 8, w = 8;\n    printf(\"%x\\n\", (reg >> s) & ((1u << w) - 1u));      /* 12 */\n    return 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Is power of two: `x && !(x & (x - 1))`.",
-        "Clear lowest set bit: `x & (x - 1)` (loop gives popcount, Kernighan's method).",
-        "Isolate lowest set bit: `x & -x`.",
-        "Even/odd: `x & 1`.",
-        "Swap without a temporary: `a ^= b; b ^= a; a ^= b;` (educational; fails if a and b alias).",
-        "Single unique number among pairs: XOR everything."
-      ],
-      "code": "int popcount(unsigned x) { int c = 0; while (x) { x &= x - 1; c++; } return c; }"
+        "**Compound assignment**: `&=`, `|=`, `^=`, `<<=`, `>>=` modify the left operand in place.",
+        "**Rotate**: bits shifted out re-enter on the other side. C has no operator; write `(x << n) | (x >> (32 - n))` with `n` limited to 1..31 or masked as `n & 31`. GCC and Clang recognise the idiom and emit a single `rol`.",
+        "**Logical versus arithmetic shift**: choose unsigned types when you want zero fill. Cast a signed value to unsigned before shifting when you only care about bit patterns.",
+        "**Builtins**: `__builtin_popcount`, `__builtin_clz`, `__builtin_ctz`, `__builtin_parity` (GCC and Clang) compile to hardware instructions where available. C23 adds `<stdbit.h>` with `stdc_count_ones`, `stdc_leading_zeros` and friends.",
+        "**Fixed-width types**: `uint8_t`, `uint32_t`, `uint64_t` from `<stdint.h>` give predictable widths. Use `1ULL << k` for bits above 31.",
+        "**Bit-fields**: language-level named bit groups in structs. Convenient but layout is implementation-defined, so masks are safer for portable code."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Single operations**: AND, OR, XOR, NOT and shifts take one cycle on mainstream CPUs and need no memory access.",
+        "**Word-parallel work**: one 64-bit operation processes 64 flags at once, so set union is one OR per 64 elements instead of 64 comparisons.",
+        "**Popcount**: Kernighan's loop `while (x) { x &= x - 1; n++; }` runs once per set bit, O(k) for k set bits, at most 32 or 64 iterations. The hardware `popcnt` instruction is O(1).",
+        "**Space**: a set over a universe of n small integers costs n bits, so 1,000,000 flags fit in 125 KB instead of 1 MB for `char` flags and 4 MB for `int`.",
+        "**Compilers**: `x * 8`, `x / 8` (unsigned) and `x % 8` (unsigned) are already turned into shifts and masks, so hand-writing them rarely helps; write the clearer form unless you need bit semantics."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Precedence**: `==` binds tighter than `&`, `^` and `|`. `if (x & 4 == 4)` means `x & (4 == 4)`, so write `(x & 4) == 4`. Shifts bind tighter than `&`, and `+` binds tighter than `<<`.",
+        "**Shift count out of range**: shifting by a negative count or by a count greater than or equal to the type width is undefined behaviour. `1u << 32` on a 32-bit `unsigned` is UB, which also breaks `(1u << w) - 1` when w equals 32.",
+        "**Signed shifts**: left-shifting a negative value is undefined, and shifting a value so the result does not fit the signed type is undefined unless the result is representable. Use unsigned operands.",
+        "**Right shift of negative numbers**: implementation-defined. Do not rely on it for portability; use division or an unsigned type.",
+        "**Promotion surprise**: `unsigned char c = 0x0F; if (~c == 0xF0)` is false, because `~c` is computed on an `int` and equals 0xFFFFFFF0. Cast the result back: `(unsigned char)~c`.",
+        "**Signed overflow in masks**: `1 << 31` is `int` and may overflow. Use `1u << 31` or `UINT32_C(1) << 31`.",
+        "**`&` versus `&&`**: `if (flags & MASK)` is intended; `flags && MASK` only tests that both are nonzero.",
+        "**XOR swap**: `a ^= b; b ^= a; a ^= b;` zeroes both when a and b alias the same object. A temporary is clearer and usually as fast."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Flags and permissions**: Unix file modes (`0644`, `S_IRUSR`), `open()` flags such as `O_RDWR | O_CREAT`, and `mmap` protections are bit sets combined with `|` and tested with `&`.",
+        "**Hardware registers**: embedded code sets control bits and polls status bits with masks and shifts, often through `volatile` pointers.",
+        "**Networking**: subnet masks (`ip & mask` gives the network address), IP header fields, TCP flag bits and checksums are bitwise operations. Byte order conversion is covered in its own lesson.",
+        "**Hashing and crypto**: XOR, rotates and shifts mix bits in FNV, xorshift generators, SHA and ChaCha. CRC is XOR with a polynomial.",
+        "**Data structures**: Bloom filters, bitmaps, bitboards in chess engines, Fenwick trees (`i & -i`) and bitmask dynamic programming.",
+        "**Kernel and allocators**: page-table entries pack address and permission bits; the buddy allocator uses XOR to find a block's buddy; `ffs`/`__builtin_ctz` pick the first free slot in a bitmap."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Is `n` a power of two?** `n > 0 && (n & (n - 1)) == 0`. A power of two has a single set bit; subtracting one flips it and all lower bits.",
+        "**Count set bits?** Loop with `x &= x - 1` (Kernighan), or use a lookup table per byte, or `__builtin_popcount`.",
+        "**Isolate the lowest set bit?** `x & -x`. Clear it with `x & (x - 1)`.",
+        "**Swap without a temp?** Three XORs. Mention the aliasing bug.",
+        "**Find the single non-repeated number in an array where all others appear twice?** XOR everything; pairs cancel.",
+        "**Multiply by 10 without `*`?** `(x << 3) + (x << 1)`.",
+        "**Check signs differ?** `(a ^ b) < 0`.",
+        "**Why is `1 << 31` risky?** It overflows a signed `int`; use `1u << 31`."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Masks and flags",
-      "summary": "Packing booleans into one integer.",
+      "title": "Set, clear, toggle and test",
+      "summary": "The four bread-and-butter bit manipulations.",
       "sections": [
         {
-          "body": "Define one bit per option and combine with OR; test with AND. This is how file permissions, socket options, and many APIs work.",
-          "code": "enum { F_READ = 1u << 0, F_WRITE = 1u << 1, F_EXEC = 1u << 2 };\nunsigned perm = F_READ | F_WRITE;\nif (perm & F_WRITE) puts(\"writable\");\nperm &= ~F_WRITE;   // drop write"
+          "body": "Build a one-bit mask with `1u << k`. OR it in to set, AND its complement to clear, XOR it to toggle, AND it and compare to test. Wrap them in macros or `static inline` functions so the intent is readable. For 64-bit data use `1ULL << k`, otherwise the constant is only 32 bits wide and the result for k >= 32 is undefined.",
+          "code": "static inline uint64_t set64(uint64_t x, unsigned k)   { return x |  (1ULL << k); }\nstatic inline uint64_t clr64(uint64_t x, unsigned k)   { return x & ~(1ULL << k); }\nstatic inline int      test64(uint64_t x, unsigned k)  { return (x >> k) & 1; }"
         }
       ]
     },
     {
-      "title": "Extracting fields",
-      "summary": "Shift then mask.",
+      "title": "Masks and bit-field extraction",
+      "summary": "Reading and writing multi-bit fields inside a word.",
       "sections": [
         {
-          "body": "To read an N-bit field starting at bit s: `(x >> s) & ((1u << N) - 1)`. Example: the IPv4 IHL is the low nibble of the first byte, `b & 0x0F`, and the version is `b >> 4`.",
-          "code": "uint8_t b = 0x45;\nunsigned version = b >> 4;      // 4\nunsigned ihl     = b & 0x0F;    // 5"
+          "body": "To extract a field of width w starting at bit s: `(x >> s) & ((1u << w) - 1)`. To insert a value v: clear the field with `x & ~(mask << s)`, then OR in `(v & mask) << s`. This is how device registers, instruction encodings and packed headers are decoded. Remember that w = 32 breaks the mask expression for a 32-bit type; special-case it or build the mask with `~0u >> (32 - w)` for w from 1 to 32.",
+          "code": "uint32_t get(uint32_t x, unsigned s, unsigned w) {\n    return (x >> s) & (~0u >> (32 - w));\n}\nuint32_t put(uint32_t x, unsigned s, unsigned w, uint32_t v) {\n    uint32_t m = (~0u >> (32 - w)) << s;\n    return (x & ~m) | ((v << s) & m);\n}"
         }
       ]
     },
     {
-      "title": "Why signed bit ops are risky",
-      "summary": "Integer promotion.",
+      "title": "Shifts, multiplication and signed behaviour",
+      "summary": "What shifting really means for signed and unsigned values.",
       "sections": [
         {
-          "body": "Operands narrower than int are promoted to int, so `~uint8_t_value` becomes a negative int and comparisons surprise you. Cast the result back: `(uint8_t)~b`. Prefer fixed-width unsigned types such as uint32_t."
+          "body": "`x << n` equals `x * 2^n` for unsigned values modulo 2^width. `x >> n` equals floor(x / 2^n) for unsigned values. For negative signed values, an arithmetic right shift rounds toward negative infinity (-5 >> 1 is -3), while `/ 2` truncates toward zero (-5 / 2 is -2), so the two differ. Left shifting a negative number is undefined. Prefer unsigned types for bit work and convert explicitly."
+        },
+        {
+          "heading": "Rotation",
+          "code": "static inline uint32_t rotl32(uint32_t x, unsigned n) {\n    n &= 31;\n    return (x << n) | (x >> ((32 - n) & 31));\n}"
         }
       ]
     },
     {
-      "title": "Bit manipulation in hardware",
-      "summary": "Registers and volatile.",
+      "title": "Two's complement tricks",
+      "summary": "Identities that follow from -x == ~x + 1.",
       "sections": [
         {
-          "body": "Memory-mapped registers are read, masked, modified, and written back. Mark them `volatile` so the compiler does not remove or merge accesses, and use read-modify-write only when the register allows it.",
-          "code": "#define REG (*(volatile uint32_t *)0x40021000)\nREG |= (1u << 5);"
+          "body": "Because negation inverts and adds one, `x & -x` isolates the lowest set bit (everything below it is zero in both x and -x, the bit itself is one in both, everything above differs). `x & (x - 1)` clears the lowest set bit. `x | (x - 1)` sets all bits below the lowest set bit. These three identities power Fenwick trees, power-of-two tests, popcount loops and subset iteration.",
+          "bullets": [
+            "`x & -x`: lowest set bit, for example 0b01101000 gives 0b00001000.",
+            "`x & (x - 1)`: clear lowest set bit.",
+            "`~x + 1 == -x`: negation.",
+            "`(a & b) + ((a ^ b) >> 1)`: average of two unsigned values without overflow."
+          ]
         }
       ]
     },
     {
-      "title": "Endianness and byte extraction",
-      "summary": "Portable byte access.",
+      "title": "Counting and scanning bits",
+      "summary": "Popcount, leading and trailing zeros, parity.",
       "sections": [
         {
-          "body": "Extract bytes with shifts, `(x >> 8) & 0xFF`, rather than casting pointers, so the result does not depend on host byte order."
+          "body": "Kernighan's popcount repeatedly clears the lowest set bit, so it costs one loop pass per set bit. A 256-entry table does it in four lookups for 32 bits. A SWAR version sums bits in parallel with masks 0x55555555, 0x33333333 and 0x0F0F0F0F, then multiplies by 0x01010101 and shifts right 24. In practice call `__builtin_popcount`, which becomes the `popcnt` instruction when compiled with `-mpopcnt` or a suitable `-march`. `__builtin_ctz(x)` gives the index of the lowest set bit and `__builtin_clz(x)` the number of leading zeros; both are undefined for x == 0.",
+          "code": "int popcount(uint32_t x) {\n    int n = 0;\n    while (x) { x &= x - 1; n++; }\n    return n;\n}\nint ilog2(uint32_t x) { return 31 - __builtin_clz(x); }  /* x > 0 */"
+        }
+      ]
+    },
+    {
+      "title": "XOR properties and puzzles",
+      "summary": "XOR is its own inverse and commutative, which solves many puzzles.",
+      "sections": [
+        {
+          "body": "Because `a ^ a == 0`, `a ^ 0 == a`, and XOR is associative and commutative, XOR-ing all elements cancels pairs. Uses: find the single unpaired element in an array; find the missing number in 1..n by XOR-ing indices and values; detect the one differing bit between two values with `a ^ b`; build a simple parity checksum; implement a doubly linked list with one pointer per node (XOR linked list). XOR is also the core of one-time-pad and stream ciphers: `cipher = plain ^ key` and `plain = cipher ^ key`.",
+          "code": "int single(const int *a, int n) {\n    int r = 0;\n    for (int i = 0; i < n; i++) r ^= a[i];\n    return r;\n}"
+        },
+        {
+          "body": "XOR of every element cancels values that occur an even number of times. For {12, 12, 14, 90, 14, 14, 14} the 12s cancel and the four 14s cancel, so the result is 90, the one value with an odd count. For two missing numbers x and y from 1..n, XOR all array elements with 1..n to get x ^ y, pick any set bit of it, split both the array and the range by that bit, and XOR each group separately to recover x and y."
+        }
+      ]
+    },
+    {
+      "title": "Bitmask sets and subset enumeration",
+      "summary": "Represent a small set as the bits of an integer.",
+      "sections": [
+        {
+          "body": "For a universe of up to 64 elements, one `uint64_t` is a set: union is `|`, intersection `&`, difference `a & ~b`, membership is a bit test, and size is popcount. To enumerate all subsets of a mask `m`, use the loop below, which visits every subset exactly once in decreasing order and finishes at 0. Dynamic programming over subsets (travelling salesman in O(2^n * n^2)) uses the same representation for n up to about 20.",
+          "code": "for (uint32_t sub = m; ; sub = (sub - 1) & m) {\n    /* use sub */\n    if (sub == 0) break;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Flags, enums and portable bit sets",
+      "summary": "Designing flag constants that combine safely.",
+      "sections": [
+        {
+          "body": "Define each flag as a distinct power of two using shifts so that the values never overlap, group them in an enum or `#define`s, and combine with `|`. Keep flag variables unsigned. Provide a mask for the whole group to clear it at once. Never use `==` against a combined value when testing a single flag: use `(flags & FLAG_X) != 0`.",
+          "code": "enum { F_READ = 1u << 0, F_WRITE = 1u << 1, F_EXEC = 1u << 2 };\nunsigned perm = F_READ | F_WRITE;\nif (perm & F_WRITE) perm &= ~F_WRITE;   /* drop write */"
+        }
+      ]
+    },
+    {
+      "title": "Worked examples of each operator",
+      "summary": "Binary arithmetic for 7 and 4, and for shifts and NOT.",
+      "sections": [
+        {
+          "body": "Let a = 7 (0b111) and b = 4 (0b100). AND keeps only the bit both share: 7 & 4 = 0b100 = 4. OR keeps any set bit: 7 | 4 = 0b111 = 7. XOR keeps bits that differ: 7 ^ 4 = 0b011 = 3. NOT on a 32-bit int flips all 32 bits, so ~4 is 0xFFFFFFFB, which is -5 in two's complement. Shifting 5 (0b101) left by 2 gives 0b10100 = 20, which is 5 * 4. Shifting 16 (0b10000) right by 2 gives 0b100 = 4, which is 16 / 4. A shift by 0 changes nothing.",
+          "code": "printf(\"%d %d %d %d %d %d\\n\", 7 & 4, 7 | 4, 7 ^ 4, ~4, 5 << 2, 16 >> 2);\n/* 4 7 3 -5 20 4 */"
+        },
+        {
+          "body": "The lowest bit tells parity: `x & 1` is 1 for odd and 0 for even. A power of two has exactly one set bit, so `x && !(x & (x - 1))` is true exactly for 1, 2, 4, 8 and so on. Subtracting one flips the lowest set bit and every zero below it, so AND-ing with the original leaves zero only when no other bit was set."
+        }
+      ]
+    },
+    {
+      "title": "OR, addition and carries",
+      "summary": "How OR relates to plus.",
+      "sections": [
+        {
+          "body": "OR equals addition when the operands share no set bits, because no carry is generated: 8 | 2 = 10 = 8 + 2. When bits overlap, the carry is the AND part. The general identity is `a + b == (a | b) + (a & b)`, and also `a + b == (a ^ b) + 2 * (a & b)`. The second one is the basis of adding with bitwise operators: XOR gives the sum without carries, AND shifted left by one gives the carries, and you repeat until the carry is zero.",
+          "code": "int add(int a, int b) {\n    while (b) {\n        unsigned c = (unsigned)(a & b) << 1;\n        a ^= b; b = (int)c;\n    }\n    return a;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Protocol fields and pixel packing",
+      "summary": "Real bit-field decoding and encoding.",
+      "sections": [
+        {
+          "body": "The first byte of an IPv4 header packs the version in the high nibble and the header length in words in the low nibble. For 0x45, version = `b >> 4` = 4 and IHL = `b & 0x0F` = 5, i.e. a 20-byte header. A 16-bit RGB565 pixel stores 5 bits of red, 6 of green, 5 of blue: `(r5 << 11) | (g6 << 5) | b5`, and unpacking uses shifts and masks `0x1F`, `0x3F`, `0x1F`. Swapping odd and even bits of a 32-bit word uses two masks: `((x & 0xAAAAAAAA) >> 1) | ((x & 0x55555555) << 1)`.",
+          "code": "uint8_t b = 0x45;\nunsigned version = b >> 4, ihl = b & 0x0F;          /* 4, 5 */\nuint16_t px = (uint16_t)((r >> 3) << 11 | (g >> 2) << 5 | (b8 >> 3));"
         }
       ]
     }
   ],
   "takeaways": [
-    "& masks, | sets, ^ toggles, ~ inverts, << and >> scale by powers of two.",
-    "Use unsigned types and avoid out-of-range or signed shifts (UB).",
-    "Set, clear, toggle, test: |= 1<<n, &= ~(1<<n), ^= 1<<n, (x>>n)&1.",
-    "x & (x-1) clears the lowest set bit; this drives many tricks."
-  ],
-  "references": [
-    {
-      "label": "ISO/IEC 9899:2011 (C11) draft N1570",
-      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
-    },
-    {
-      "label": "Reference: Bitwise operators in C (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/c/bitwise-operators-in-c-cpp/"
-    },
-    {
-      "label": "Bit Twiddling Hacks (Stanford)",
-      "url": "https://graphics.stanford.edu/~seander/bithacks.html"
-    }
+    "`&` clears or tests, `|` sets, `^` toggles, `~` inverts; shifts scale by powers of two.",
+    "Use unsigned types for bit work: shifts of negative values are undefined or implementation-defined.",
+    "A shift count of at least the type width is undefined behaviour, so `1u << 32` and `(1u << 32) - 1` are bugs.",
+    "`==` has higher precedence than `&`: always parenthesize `(x & m) == m`.",
+    "`x & (x - 1)` clears the lowest set bit and `x & -x` isolates it; both follow from two's complement.",
+    "XOR cancels equal values, giving the single-number, missing-number and swap tricks.",
+    "Narrow types are promoted to int, so cast the result of `~` and shifts back to the narrow type before comparing."
   ],
   "practice": [
     {
-      "title": "Check whether a number is a power of two",
+      "title": "Check whether a number is a power of two, and explain why n & (n-1) works",
       "difficulty": "Easy"
     },
     {
-      "title": "Count set bits two ways",
+      "title": "Count set bits with Kernighan's loop and with __builtin_popcount",
       "difficulty": "Easy"
     },
     {
-      "title": "Find the single non-repeating element with XOR",
+      "title": "Set, clear, toggle and test bit k using macros",
       "difficulty": "Easy"
+    },
+    {
+      "title": "Find the single element in an array where every other element appears twice",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Extract and insert a bit field of width w at position s without UB when w is 32",
+      "difficulty": "Medium"
     },
     {
       "title": "Reverse the bits of a 32-bit integer",
       "difficulty": "Medium"
     },
     {
-      "title": "Swap odd and even bits",
+      "title": "Find the missing number in 0..n using XOR",
       "difficulty": "Medium"
     },
     {
-      "title": "Pack and unpack an RGB565 color",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Find the two missing numbers using XOR",
+      "title": "Enumerate all subsets of a bitmask and solve a subset-sum with bitmask DP",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Implement a bitmap allocator that finds the first free block with ctz in O(words)",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Add two integers using only bitwise operators and a loop",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Bitwise operators in C/C++ (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/c/bitwise-operators-in-c-cpp/"
+    },
+    {
+      "label": "ISO/IEC 9899:2011 (C11) draft N1570, 6.5.7 Bitwise shift operators",
+      "url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "label": "Bit Twiddling Hacks, Sean Eron Anderson",
+      "url": "https://graphics.stanford.edu/~seander/bithacks.html"
     }
   ]
 }
