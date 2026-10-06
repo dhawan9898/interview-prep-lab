@@ -1,131 +1,222 @@
 {
-  "summary": "Heap sort turns the array into a max-heap, then repeatedly swaps the largest element (the root) to the end of the array and restores the heap on the remaining prefix. It sorts in place in O(n log n) worst-case time but is not stable.",
+  "summary": "Heap sort turns the array into a max-heap, then repeatedly swaps the largest element to the end and restores the heap on the shrinking prefix. It sorts in place with a guaranteed O(n log n) worst case and O(1) extra space, which no other common comparison sort offers together. It is not stable and has poor cache behavior, so it is mostly used as the safety net inside introsort and in memory-constrained or real-time code.",
   "sections": [
     {
-      "heading": "Algorithm",
-      "bullets": [
-        "Build a max-heap from the array (heapify from the last parent down to index 0).",
-        "Swap the root (maximum) with the last element of the heap.",
-        "Shrink the heap by one and sift the new root down.",
-        "Repeat until the heap has one element."
-      ],
-      "code": "void sift_down(int a[], int n, int i) {\n  for (;;) {\n    int l = 2*i + 1, r = l + 1, big = i;\n    if (l < n && a[l] > a[big]) big = l;\n    if (r < n && a[r] > a[big]) big = r;\n    if (big == i) return;\n    swap(&a[i], &a[big]); i = big;\n  }\n}\nvoid heap_sort(int a[], int n) {\n  for (int i = n/2 - 1; i >= 0; i--) sift_down(a, n, i);\n  for (int end = n - 1; end > 0; end--) { swap(&a[0], &a[end]); sift_down(a, end, 0); }\n}"
+      "heading": "Overview",
+      "body": "Heap sort was published by J. W. J. Williams, and Robert Floyd quickly gave the linear-time heap construction used today. It is selection sort made fast: selection sort repeatedly finds the maximum of the unsorted part with a linear scan, while heap sort keeps the unsorted part in a max-heap so the maximum is always at index 0 and can be removed in O(log n).\n\nThe heap lives inside the array itself, using the implicit layout of a complete binary tree: the children of index i are at 2i + 1 and 2i + 2, and the parent is at (i - 1) / 2. No pointers and no extra memory are needed. Phase one builds a max-heap from the unsorted array. Phase two swaps the root (the maximum) with the last element of the heap, shrinks the heap by one, and sifts the new root down to restore the heap property. The sorted region grows from the right end while the heap shrinks.\n\nThe guaranteed bound and O(1) space are the selling points. The drawbacks are that it is unstable and that sift-down hops between distant indexes, so it is typically 2 to 3 times slower than quick sort on large arrays."
     },
     {
-      "heading": "Why it works",
-      "body": "The max-heap invariant puts the largest remaining value at index 0. Moving it to the end places it in its final position, and the shrinking heap region holds the unsorted rest. Each of the n extractions costs O(log n)."
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Build-heap: O(n).",
-        "n sift-downs: O(n log n).",
-        "Total: O(n log n) in best, average, and worst cases.",
-        "Space: O(1) with the iterative sift-down (O(log n) if recursive).",
-        "Not stable: swapping the root to the end reorders equal keys."
+        "**Complete binary tree**: every level is full except possibly the last, which is filled from the left. This is what allows the array representation.",
+        "**Max-heap property**: every parent is greater than or equal to its children, so the root is the maximum.",
+        "**Index arithmetic**: with 0-based indexes, left(i) = 2i + 1, right(i) = 2i + 2, parent(i) = (i - 1) / 2.",
+        "**Heapify (sift-down)**: fix a node that may violate the heap property by swapping it with its larger child, repeating down the tree. Costs O(height) = O(log n).",
+        "**Build-heap**: call heapify on every internal node from the last one, n/2 - 1, down to 0. Costs O(n) in total.",
+        "**Extract-max**: swap root with the last heap element, shrink the heap by one, heapify the root.",
+        "**Heap size versus array size**: the heap occupies the prefix a[0..size-1] and the sorted tail is a[size..n-1].",
+        "**Min-heap for ascending output?** Sorting ascending in place uses a max-heap, so that each extracted maximum lands at the end. A min-heap would give descending order in place."
       ]
     },
     {
-      "heading": "Heap sort versus quick and merge sort",
+      "heading": "How It Works",
+      "body": "Step 1, build the max-heap. The last internal node is at index n/2 - 1, because leaves have no children and are heaps already. Run sift-down on that node, then on each node before it down to the root. Step 2, sort. Swap a[0] with a[size-1], decrement size, and sift down a[0] within the smaller heap. Repeat until size is 1.\n\nWorked example on [4, 10, 3, 5, 1]. n = 5, so the last internal node is index 1. Sift down index 1 (value 10): its children are 5 and 1, 10 is larger, nothing moves. Sift down index 0 (value 4): children 10 and 3, the larger is 10, so swap, giving [10, 4, 3, 5, 1]; 4 now at index 1 has children 5 and 1, so swap with 5, giving [10, 5, 3, 4, 1]. This is the max-heap. Extract: swap 10 with 1 giving [1, 5, 3, 4, | 10], sift down 1: larger child 5, swap, then children of index 1 are 4, swap, giving [5, 4, 3, 1 | 10]. Swap 5 with 1, giving [1, 4, 3 | 5, 10], sift down gives [4, 1, 3 | 5, 10]. Swap 4 with 3, [3, 1 | 4, 5, 10], and it is a heap. Swap 3 with 1, [1 | 3, 4, 5, 10]. Sorted: [1, 3, 4, 5, 10].",
+      "code": "static void swap(int *x, int *y) { int t = *x; *x = *y; *y = t; }\n\n/* Sift a[i] down within the heap a[0..size-1] */\nstatic void heapify(int a[], int size, int i) {\n    for (;;) {\n        int largest = i, l = 2 * i + 1, r = 2 * i + 2;\n        if (l < size && a[l] > a[largest]) largest = l;\n        if (r < size && a[r] > a[largest]) largest = r;\n        if (largest == i) return;           /* heap property holds */\n        swap(&a[i], &a[largest]);\n        i = largest;\n    }\n}\n\nvoid heap_sort(int a[], int n) {\n    for (int i = n / 2 - 1; i >= 0; i--)    /* build max-heap in O(n) */\n        heapify(a, n, i);\n    for (int end = n - 1; end > 0; end--) { /* move max to the end */\n        swap(&a[0], &a[end]);\n        heapify(a, end, 0);                 /* heap is now a[0..end-1] */\n    }\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Worst case beats quick sort's O(n²) and needs no extra memory unlike merge sort.",
-        "In practice it is 2-3x slower than a good quick sort because it jumps around memory (poor cache locality).",
-        "Used as the fallback in introsort when quick sort recursion gets too deep."
+        "**Iterative sift-down** (shown above) avoids recursion and its stack use; the recursive form is equivalent but uses O(log n) stack.",
+        "**Bottom-up heap sort** (Wegener): sift the hole down along the path of larger children to a leaf, then bubble the value back up. Uses noticeably fewer comparisons than the classic version.",
+        "**Floyd's build-heap** (bottom-up): O(n). Building by repeated insertion (sift-up) is O(n log n) worst case.",
+        "**Min-heap sort**: yields descending order in place, or ascending order with an output buffer.",
+        "**d-ary heap sort**: nodes have d children, which makes the tree shallower and improves cache use for d of 4 or so.",
+        "**Smoothsort**: Dijkstra's heap sort variant based on Leonardo heaps. O(n) on sorted input, O(n log n) worst case, still in place, but complex.",
+        "**Weak-heap sort**: uses a weaker invariant to approach n log n - 0.9 n comparisons.",
+        "**Partial heap sort**: stop after k extractions to get the k largest in O(n + k log n). C++ `std::partial_sort` does this.",
+        "**Introsort fallback**: quick sort that switches to heap sort for deep recursion."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Time**: O(n log n) in the best, average and worst case. Build-heap is O(n), then n - 1 extractions at O(log n) each.",
+        "**Why build-heap is linear**: a node at height h costs h swaps and there are at most n / 2^(h+1) nodes at that height, so the total is the sum of h n / 2^(h+1), which is at most n.",
+        "**Comparisons**: about 2 n log2 n for the classic sift-down, since each level costs two comparisons (find the larger child, compare with the node).",
+        "**Space**: O(1) auxiliary with the iterative heapify.",
+        "**Stability**: not stable. Swapping the root with the last element jumps over equal keys.",
+        "**Adaptivity**: not adaptive. Sorted input still costs about n log n.",
+        "**Cache behavior**: sift-down touches indexes i, 2i, 4i, ..., so once the heap exceeds cache each level is a likely miss. This is the main reason it loses to quick sort and merge sort in practice."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Starting the build at n / 2 instead of n / 2 - 1** (0-based). Starting at n / 2 is harmless but wasteful; starting at n / 2 + 1 or higher skips a node and breaks the heap.",
+        "**Using 1-based formulas on a 0-based array**: children at 2i and 2i + 1 are wrong when indexes start at 0. Use 2i + 1 and 2i + 2.",
+        "**Sifting within the whole array** instead of the shrinking heap: pass the current heap size to heapify, otherwise sorted elements get pulled back in.",
+        "**Forgetting the right child bounds check**: `r < size` must be tested before reading `a[r]`.",
+        "**Assuming it is stable** or that it is faster than quick sort. It has the better worst case, not the better typical speed.",
+        "**Confusing the heap with a binary search tree**: a heap orders only parent against child, never left against right.",
+        "**Building the heap by n inserts** and claiming O(n): that costs O(n log n); only the bottom-up build is linear."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Introsort**: C++ `std::sort` and others fall back to heap sort when quick sort recursion gets too deep.",
+        "**Embedded and real-time systems**: guaranteed time and no extra memory make it attractive where worst-case behavior must be predictable.",
+        "**Kernels and small runtimes**: some implementations choose heap sort because it needs no recursion or allocation.",
+        "**Top-k queries**: a partial heap sort or a size-k heap gives the k largest items from a stream.",
+        "**Priority queues**: the same sift-up and sift-down code powers schedulers, Dijkstra, Huffman coding and event simulation.",
+        "**Security-sensitive code**: no adversarial input can trigger quadratic time."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Time and space?** O(n log n) always, O(1) extra space.",
+        "**Is it stable?** No.",
+        "**Why is build-heap O(n) and not O(n log n)?** Most nodes are near the leaves and sift down only a few levels.",
+        "**Heap sort or quick sort?** Quick sort is faster on average; heap sort when you need a worst-case guarantee with no extra memory.",
+        "**Difference between a heap and a BST?** A heap is only partially ordered along root-to-leaf paths and is stored implicitly in an array.",
+        "**How would you find the k largest of n numbers?** A min-heap of size k, O(n log k), or build-heap and k extractions.",
+        "**Why use a max-heap to sort ascending?** The maximum is swapped to the end of the array, which is the correct place for it."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Why build-heap is O(n)",
-      "summary": "The sum converges.",
+      "title": "The array as a complete binary tree",
+      "summary": "Index arithmetic replaces pointers.",
       "sections": [
         {
-          "body": "Sifting down from the last parent, most nodes are near the leaves and move a few levels at most. The total work is bounded by O(n), not O(n log n), which is why starting from the middle is faster than inserting n items."
+          "body": "Put the array elements into a tree level by level, left to right. Index 0 is the root, indexes 1 and 2 are its children, indexes 3 to 6 are the next level, and so on. For a 0-based index i the parent is (i - 1) / 2 with integer division, the left child is 2i + 1 and the right child is 2i + 2. A complete tree of n nodes has height floor(log2 n), and the internal nodes are exactly indexes 0 to n/2 - 1. Because the tree is complete, the array has no holes and the layout wastes no memory. This is why heaps are the standard in-array structure for priority queues."
         }
       ]
     },
     {
-      "title": "Min-heap variant",
-      "summary": "Sorting descending.",
+      "title": "Heapify and sift-down",
+      "summary": "The one operation everything is built on.",
       "sections": [
         {
-          "body": "Use a min-heap and the same extraction step to produce a descending array, or build a max-heap for ascending order. The choice only flips comparisons."
+          "body": "Heapify assumes the two subtrees of node i are already heaps and that only a[i] may be out of place. Find the largest among a[i] and its children. If a[i] is largest, stop. Otherwise swap with the larger child and continue from that child, because the swapped value may now violate the property one level down. Each step goes one level deeper, so the cost is O(log n). Stopping early when the property holds is what makes the average cost lower than the worst case for the build phase. The counterpart, sift-up, moves a newly appended element upward and is used for insertion into a heap."
         }
       ]
     },
     {
-      "title": "Heap sort for top-k",
-      "summary": "Partial sorting.",
+      "title": "Building the heap in linear time",
+      "summary": "Why Floyd's method is O(n).",
       "sections": [
         {
-          "body": "To get the k largest items, keep a min-heap of size k and push each element, popping the smallest when the heap exceeds k. That is O(n log k), cheaper than a full sort."
+          "body": "Leaves are one-element heaps, so start at the last internal node and move toward the root. Sifting a node at height h takes at most h swaps. Level sizes halve going up: about n/2 nodes at height 0, n/4 at height 1, n/8 at height 2. The total is the sum of h * n / 2^(h+1) over all h, and that series converges to at most n. Contrast with inserting elements one by one with sift-up: most nodes are near the bottom and each may climb log n levels, which gives n log n in the worst case."
+        },
+        {
+          "code": "for (int i = n / 2 - 1; i >= 0; i--)\n    heapify(a, n, i);       /* linear total: O(n) */"
         }
       ]
     },
     {
-      "title": "Smoothsort and weak heaps",
-      "summary": "Variants.",
+      "title": "Extraction phase step by step",
+      "summary": "Shrinking the heap, growing the sorted tail.",
       "sections": [
         {
-          "body": "Smoothsort adapts heap sort to run in O(n) on nearly sorted input. Weak-heap sort reduces comparisons. Both trade code complexity for speed on special inputs."
+          "body": "After the heap is built, a[0] is the global maximum. Swap it with a[n-1]; now the largest element is in its final slot and the heap is a[0..n-2], with a possibly broken root. Sift the root down in the smaller heap. The next maximum is again at a[0]; swap it with a[n-2], and so on. After n - 1 rounds the array is sorted ascending. Every round does one swap and one sift-down of at most log2 of the current heap size, so the total is below n log2 n swaps. The invariant is that a[end+1..n-1] holds the largest elements in sorted order and a[0..end] is a valid heap of the rest."
         }
       ]
     },
     {
-      "title": "Choosing a sort",
-      "summary": "Decision guide.",
+      "title": "Bottom-up heap sort",
+      "summary": "Fewer comparisons per sift-down.",
       "sections": [
         {
-          "bullets": [
-            "Need stability: merge sort or Timsort.",
-            "Need worst-case guarantee in O(1) space: heap sort.",
-            "Fastest in practice on arrays: introsort or quick sort.",
-            "Tiny arrays: insertion sort."
-          ]
+          "body": "Classic sift-down spends two comparisons per level: larger child against the other child, then the larger child against the sifted value. Bottom-up heap sort notices that the value being sifted came from the bottom of the heap, so it usually ends up near the bottom again. It therefore walks down along the larger children all the way to a leaf using one comparison per level, then climbs back up to find the right place for the value. The comparison count drops substantially, which helps when comparisons are expensive, such as string keys."
+        }
+      ]
+    },
+    {
+      "title": "Heap sort versus quick sort and merge sort",
+      "summary": "What you pay for the guarantee.",
+      "sections": [
+        {
+          "body": "On random integer arrays quick sort typically beats heap sort by a factor of two or three because it scans memory sequentially while heap sort hops between parent and child far apart in memory. Merge sort is also faster than heap sort when memory is available, and it is stable. Heap sort wins when the worst-case bound must hold with no extra space: a bounded-time embedded task, a kernel routine that cannot allocate, or a safety net against adversarial inputs. In practice the sensible default is introsort, which gets quick sort's speed and heap sort's bound."
+        }
+      ]
+    },
+    {
+      "title": "Top-k and priority queues",
+      "summary": "The heap beyond sorting.",
+      "sections": [
+        {
+          "body": "To find the k largest of a stream of n items, keep a min-heap of size k: for each new item bigger than the heap's minimum, replace the root and sift down. The total cost is O(n log k) and memory is O(k). To get the k largest of an array already in memory, build a max-heap in O(n) and extract k times for O(n + k log n). Dijkstra, Prim, A*, Huffman coding, task schedulers and event-driven simulators all use the same structure. Languages expose it as `heapq` in Python, `PriorityQueue` in Java and `std::priority_queue` in C++."
+        }
+      ]
+    },
+    {
+      "title": "Sorting in descending order and with custom keys",
+      "summary": "Small changes to the same code.",
+      "sections": [
+        {
+          "body": "To sort descending in place, flip the comparisons so the heap is a min-heap, which pushes the smallest remaining element to the end. For records, compare keys through a function pointer instead of with `<` and `>`. Because the algorithm is not stable, if the original order of equal keys matters, sort pairs of (key, original index) and break ties on the index. The sift-down logic is unchanged either way."
         }
       ]
     }
   ],
   "takeaways": [
-    "Build a max-heap, then repeatedly move the root to the end and sift down.",
-    "O(n log n) worst case, O(1) space, not stable.",
-    "Poor cache locality makes it slower than quick sort in practice.",
-    "Heaps give O(n log k) top-k selection."
+    "Build a max-heap in O(n), then repeatedly swap the root to the end and sift down.",
+    "Always O(n log n), in place with O(1) extra space; the only common sort with both guarantees.",
+    "Not stable and not adaptive; slower than quick sort in practice because of poor cache locality.",
+    "For 0-based arrays: left = 2i + 1, right = 2i + 2, parent = (i - 1) / 2, last internal node = n/2 - 1.",
+    "Bottom-up build-heap is linear because most nodes sit near the leaves.",
+    "Introsort uses heap sort as a fallback so quick sort never degrades to O(n^2).",
+    "The same heap gives priority queues and O(n log k) top-k selection."
+  ],
+  "practice": [
+    {
+      "title": "Implement heap sort in place with an iterative sift-down",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Given a 0-based array index i, compute parent and children and check all bounds",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Prove that building a heap bottom-up takes O(n)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the k largest elements in a stream using a min-heap",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort a nearly sorted array where each element is at most k places from its position",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Merge k sorted arrays with a heap",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Implement bottom-up heap sort and count comparisons versus the classic version",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Check whether a given array represents a valid max-heap",
+      "difficulty": "Easy"
+    }
   ],
   "references": [
     {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "label": "CLRS: Introduction to Algorithms, 4th ed. (Chapter 6)",
       "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
     },
     {
-      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
-      "url": "https://algs4.cs.princeton.edu/home/"
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed. (Priority Queues and Heapsort)",
+      "url": "https://algs4.cs.princeton.edu/24pq/"
     },
     {
       "label": "Reference: Heap sort (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/heap-sort/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Implement heap sort in place",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Sort an array in descending order using a min-heap",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Find the k-th largest element with a size-k heap",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Sort a nearly sorted (k-sorted) array in O(n log k)",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Explain why heap sort is not stable with an example",
-      "difficulty": "Easy"
     }
   ]
 }

@@ -1,126 +1,210 @@
 {
-  "summary": "Jump search finds a target in a sorted array by jumping ahead in fixed-size blocks of about √n until it passes the target, then scanning linearly inside the last block. It takes O(√n) time: between linear and binary search.",
+  "summary": "Jump search finds a value in a sorted array by leaping ahead in fixed blocks of about sqrt(n) elements until it overshoots the target, then scanning linearly inside the last block. It does O(sqrt n) comparisons, which beats linear search but not binary search. Its value is that it only ever moves forward by a bounded step, which suits media where going backward is expensive, and it is a good example of balancing two costs by choosing the step size.",
   "sections": [
     {
-      "heading": "Algorithm",
-      "bullets": [
-        "Choose a block size m = √n.",
-        "Jump forward m positions at a time while a[min(step, n) - 1] < target.",
-        "When the block that could contain the target is found, scan it linearly.",
-        "Return the index or -1."
-      ],
-      "code": "int jump_search(const int a[], int n, int x) {\n  int step = (int)sqrt(n), prev = 0;\n  while (a[(step < n ? step : n) - 1] < x) {\n    prev = step; step += (int)sqrt(n);\n    if (prev >= n) return -1;\n  }\n  for (int i = prev; i < (step < n ? step : n); i++)\n    if (a[i] == x) return i;\n  return -1;\n}"
+      "heading": "Overview",
+      "body": "Linear search is simple but slow, and binary search is fast but needs to leap back and forth across the array. Jump search sits between them. It treats the sorted array as blocks of size m. First it hops through block boundaries a[0], a[m], a[2m] and so on, one comparison per hop, until it reaches a block whose end value is at least the target. Then it scans that single block linearly, from its start, to see whether the target is in it.\n\nThe skipped elements cost nothing, because sortedness guarantees that if a[km] is still smaller than the target, everything before it is smaller too. After the hop phase you know the target, if present, must lie in the one block between the last boundary that was too small and the first boundary that was not. Scanning that block takes at most m - 1 more comparisons.\n\nPicking m is the interesting part. Big blocks make the hop phase short but the scan long; small blocks do the reverse. The sum is smallest when the two phases cost the same, which happens at m = sqrt(n). That gives about 2 sqrt(n) comparisons in the worst case, for example about 2,000 for a million elements, compared with 20 for binary search and up to 1,000,000 for linear search. Like binary search, it requires sorted data, but unlike it, it never moves backwards by more than one block."
     },
     {
-      "heading": "Why √n",
-      "body": "With block size m, the cost is about n/m jumps plus up to m-1 linear steps. n/m + m is minimized when m = √n, giving roughly 2√n comparisons in the worst case."
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Time: O(√n).",
-        "Space: O(1).",
-        "Requires a sorted array.",
-        "Ordering of speed: linear O(n) > jump O(√n) > binary O(log n)."
+        "**Block size (step) m**: the number of elements skipped per jump. The best value is about sqrt(n).",
+        "**Jump phase**: probe a[m-1], a[2m-1], ... (or a[m], a[2m], ...) until a probed value is greater than or equal to the target, or the end of the array is passed.",
+        "**Linear phase**: scan the single block that might contain the target, from the previous boundary forward.",
+        "**Prev and curr pointers**: prev is the start of the candidate block, step is the end of it.",
+        "**Sorted precondition**: the array must be sorted ascending (or the comparison reversed for descending).",
+        "**Worst case comparisons**: n/m jumps plus m - 1 scan steps, minimized at m = sqrt(n).",
+        "**Forward-only motion**: the algorithm never needs to jump back more than one block, unlike binary search, which bounces around.",
+        "**Two-level (multi-level) jump search**: apply the idea recursively, with sqrt(n) at the top, then jump again inside the block."
       ]
     },
     {
-      "heading": "When it makes sense",
+      "heading": "How It Works",
+      "body": "Compute step = floor(sqrt(n)). Set prev = 0. While the last element of the current block, a[min(step, n) - 1], is less than the target, set prev = step and advance step by sqrt(n); if prev has moved past n, the target is larger than everything, so return -1. When the loop ends, the target can only be inside [prev, min(step, n)). Scan from prev while a[prev] is less than the target; if prev reaches the end of the block (or n), return -1. Finally, if a[prev] equals the target, return prev, else -1.\n\nWorked example. Array of 16 values [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610], target 55. sqrt(16) = 4, so blocks are indexes 0 to 3, 4 to 7, 8 to 11, 12 to 15. Check the last element of block 0: a[3] = 2 is less than 55, hop. a[7] = 13 is less, hop. a[11] = 89 is not less than 55, so the target is in block 8 to 11. Scan: a[8] = 21, a[9] = 34, a[10] = 55 found at index 10. Total: 3 jump comparisons plus 3 scan comparisons.",
+      "code": "#include <math.h>\n\n/* Sorted ascending a[0..n-1]. Returns index of x or -1. */\nint jump_search(const int a[], int n, int x) {\n    if (n == 0) return -1;\n    int m = (int)sqrt((double)n);          /* block size */\n    if (m < 1) m = 1;\n    int prev = 0, step = m;\n    while (a[(step < n ? step : n) - 1] < x) {\n        prev = step;\n        step += m;\n        if (prev >= n) return -1;          /* x is larger than all */\n    }\n    int end = step < n ? step : n;\n    while (prev < end && a[prev] < x)      /* linear scan inside block */\n        prev++;\n    return (prev < end && a[prev] == x) ? prev : -1;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Jumping backward is expensive (e.g. tape or some storage), so jump search moves forward only except for one short scan.",
-        "Simpler to implement than binary search.",
-        "Otherwise binary search is almost always better on arrays."
+        "**Classic single-level jump search**: sqrt(n) blocks, then a linear scan. O(sqrt n).",
+        "**Multi-level jump search**: use blocks of n^(1/2), then within a block jump again by n^(1/4), and so on. With k levels the cost is O(k * n^(1/k)). At log2 n levels with block size 2 it is binary search.",
+        "**Jump then binary search**: after finding the block, binary search inside it instead of scanning. Cost O(sqrt n) for the hops plus O(log n); worth it only if the hop phase dominates.",
+        "**Descending arrays**: flip the comparisons.",
+        "**Exponential search**: grows the jump geometrically (1, 2, 4, 8 ...) and then binary searches, with O(log n) cost.",
+        "**Fibonacci search**: uses Fibonacci numbers as jump sizes, so that the split uses only addition and subtraction.",
+        "**Skip lists**: a probabilistic multi-level jump structure for linked data with O(log n) expected search.",
+        "**Block (index) searches in files**: sparse index into a sorted file, then a scan of one block, which is jump search implemented on disk."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Time (worst case)**: about n/m + m - 1 comparisons, which is minimized at m = sqrt(n), giving about 2 sqrt(n) - 1. This is O(sqrt n).",
+        "**Examples**: n = 100 gives block size 10 and about 19 comparisons; n = 1,000,000 gives 1,000 and about 2,000; n = 10^9 gives about 63,000.",
+        "**Best case**: O(1), the target is in the first block's first position, or in the first probed position.",
+        "**Space**: O(1).",
+        "**Preprocessing**: the array must already be sorted, at O(n log n) if it is not.",
+        "**Why sqrt**: let f(m) = n/m + m. Setting the derivative -n/m^2 + 1 to zero gives m^2 = n.",
+        "**Ordering of the three**: linear O(n) is slower than jump O(sqrt n), which is slower than binary O(log n). On most modern hardware, binary search is faster than jump search even with the cost of cache misses; jump search wins only when random access or backward movement is costly."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Overrunning the array**: the last block may be shorter than m. Clamp the probe index with min(step, n) - 1.",
+        "**Forgetting the exit when prev passes n**: the loop would otherwise read outside the array when the target is larger than every element.",
+        "**Integer truncation of sqrt**: use an integer cast and make sure the step is at least 1 for tiny arrays.",
+        "**Using it on unsorted data**: the hop phase will skip over the target without noticing.",
+        "**Duplicates**: because the hop stops at the first block whose last element is not less than the target, and the scan starts at that block, the result is the first occurrence. Probing with `<` against the block end, as above, is what guarantees this.",
+        "**Using floating-point sqrt carelessly**: casts of large n to float can lose precision. Use double or an integer sqrt.",
+        "**Expecting it to beat binary search**: it does not, in comparisons or in time on arrays."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Sequential media**: tapes, optical discs and streamed data, where skipping ahead is cheap and seeking backward is expensive.",
+        "**Sparse indexes**: a file with an index every k records, followed by a short scan of the data block, is jump search in practice, as in ISAM-style stores and SSTable block indexes.",
+        "**Linked structures with express lanes**: skip lists and the skip pointers in search-engine posting lists are multi-level jump search.",
+        "**Teaching**: a clean illustration of optimizing the step size by balancing two costs.",
+        "**Small embedded systems**: a tiny, branch-light routine where binary search's backward seeks are costly, for example on flash with slow random reads."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is the best block size?** sqrt(n), found by minimizing n/m + m.",
+        "**Complexity?** O(sqrt n) time, O(1) space.",
+        "**Compared with binary search?** Slower, O(sqrt n) against O(log n), but it only moves forward.",
+        "**Does the array need to be sorted?** Yes.",
+        "**When would you use jump search?** When going backwards is expensive, such as on tapes, or when you keep a sparse index.",
+        "**What happens in the last block?** It may be smaller than m, so clamp indexes to n.",
+        "**How do you generalize it?** Multi-level jump search, which approaches binary search as the number of levels grows."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Walkthrough",
-      "summary": "Find 55 in [0,1,1,2,3,5,8,13,21,34,55,89,144,233,377,610].",
+      "title": "Why the block size is sqrt(n)",
+      "summary": "Balancing the hop cost against the scan cost.",
       "sections": [
         {
-          "body": "n = 16, step 4. Check a[3]=2 < 55, a[7]=13 < 55, a[11]=89 >= 55. Scan indices 8..11: 21, 34, 55 found at index 10. About 3 jumps plus 3 linear steps."
+          "body": "The worst case has two parts. The hop phase makes at most n/m comparisons, one per block. The scan phase makes at most m - 1 comparisons inside the final block. Their sum is f(m) = n/m + m - 1. Increasing m makes the first term smaller and the second larger, so there is a single best point, where the two terms are equal: n/m = m, so m = sqrt(n). At that value the total is about 2 sqrt(n) - 1. Sanity check with n = 100: m = 10 costs at most 10 + 9 = 19. m = 5 costs 20 + 4 = 24, and m = 20 costs 5 + 19 = 24, both worse. The same trick of equalizing two competing costs appears in sqrt decomposition and in baby-step giant-step algorithms."
         }
       ]
     },
     {
-      "title": "Comparison with binary and interpolation search",
-      "summary": "Which to choose.",
+      "title": "Worked example with a miss",
+      "summary": "Tracing a failed search.",
       "sections": [
         {
-          "bullets": [
-            "Binary search: O(log n), needs random access.",
-            "Interpolation search: O(log log n) average on uniformly distributed keys, O(n) worst.",
-            "Jump search: O(√n), forward-only friendly."
-          ]
+          "body": "Search for 100 in the same 16-element array [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610]. Block size is 4. a[3] = 2 is less than 100, a[7] = 13 is less, a[11] = 89 is less, so prev becomes 12 and step becomes 16. a[15] = 610 is not less than 100, so the hop phase stops with prev = 12. The scan looks at a[12] = 144, which is not less than 100, so the scan stops immediately and a[12] is not 100, so the answer is -1. We used 4 probes and 1 scan comparison. Now search for 1000: after the hop at a[15] = 610 is still less than 1000, so prev becomes 16, which is at least n, and the function returns -1 without scanning."
+        },
+        {
+          "code": "/* Trace for x = 100, n = 16, m = 4\n   probe a[3]=2 < 100 -> prev=4,  step=8\n   probe a[7]=13 < 100 -> prev=8, step=12\n   probe a[11]=89 < 100 -> prev=12, step=16\n   probe a[15]=610 >= 100 -> stop hopping\n   scan from prev=12: a[12]=144 >= 100 -> stop, 144 != 100 -> return -1 */"
         }
       ]
     },
     {
-      "title": "Two-level and exponential variants",
-      "summary": "Reducing the linear phase.",
+      "title": "Jump search versus linear and binary search",
+      "summary": "Where it fits.",
       "sections": [
         {
-          "body": "Applying jump search inside each block (a multi-level jump) approaches binary search's cost. Exponential (galloping) search doubles the step until it overshoots, then binary searches the last interval."
+          "body": "With n = 1,000,000 sorted values, worst-case comparisons are about 1,000,000 for linear search, about 2,000 for jump search and about 20 for binary search. Jump search always loses to binary search on comparison count. It is chosen when its access pattern matters: it moves forward in strides and then reads a short contiguous block, which is friendly to prefetching and to sequential media, and it never needs the data to be addressable at arbitrary midpoints. If you can afford random access, use binary search. If the data is unsorted, use linear search."
         }
       ]
     },
     {
-      "title": "Block devices",
-      "summary": "A practical angle.",
+      "title": "Multi-level jump search",
+      "summary": "Recursing on the block structure.",
       "sections": [
         {
-          "body": "On disks or tapes where sequential reads of a block are cheap and seeks are costly, skipping ahead in blocks and scanning one block mirrors how index structures like B-trees work."
+          "body": "One level of jumping leaves a linear scan of sqrt(n) elements. Replace that scan with another jump search of its own, with step n^(1/4), and the cost drops to O(n^(1/3)) comparisons for three phases of n^(1/3) each. In general, k levels cost about k * n^(1/k) comparisons, with each level using step n^(1/k). Taking k = log2 n gives block size 2 at every level, which is exactly binary search with cost 2 log2 n. So binary search can be seen as the limit of multi-level jump search, and skip lists are the pointer-based version of the same idea."
         }
       ]
     },
     {
-      "title": "Edge cases",
-      "summary": "Things that break implementations.",
+      "title": "Jump search followed by binary search",
+      "summary": "A hybrid.",
       "sections": [
         {
-          "bullets": [
-            "Clamp the jump to n - 1.",
-            "Handle empty arrays.",
-            "Use integer sqrt and avoid floating error for large n.",
-            "Target larger than every element."
-          ]
+          "body": "Once the hop phase locates the block, the block is itself a sorted array of at most m elements, so binary search can replace the scan. The cost becomes about sqrt(n) hops plus log2(sqrt n) = (log2 n) / 2 steps. This helps little because the hop phase already dominates at sqrt(n), so the saving is small. It makes sense only when scanning elements inside the block is expensive, for example if each element is a large record or a disk read."
+        },
+        {
+          "code": "/* after the hop phase: block is [prev, end) */\nint lo = prev, hi = end - 1;\nwhile (lo <= hi) {\n    int mid = lo + (hi - lo) / 2;\n    if (a[mid] == x) return mid;\n    if (a[mid] < x) lo = mid + 1; else hi = mid - 1;\n}\nreturn -1;"
+        }
+      ]
+    },
+    {
+      "title": "Jump search on blocks of records and files",
+      "summary": "The idea in storage systems.",
+      "sections": [
+        {
+          "body": "A sorted data file is often divided into fixed-size blocks, with a small in-memory index holding the first key of each block. A lookup first jumps through the index to find the one candidate block, then reads that block and scans it. This is jump search with the sparse index playing the role of the hop phase and a disk block read being the linear phase. SSTable-based stores such as LevelDB and RocksDB, ISAM files and many on-disk dictionaries follow this plan, usually with binary search over the in-memory index instead of a linear hop."
+        }
+      ]
+    },
+    {
+      "title": "Implementation checks",
+      "summary": "Boundary cases to test.",
+      "sections": [
+        {
+          "body": "Test n = 0 and n = 1 (step must be at least 1). Test a target smaller than a[0], equal to a[0], equal to a[n-1], larger than a[n-1], and a missing value between two block boundaries. Test sizes that are not perfect squares, such as 10, 15 and 17, where the last block is shorter. Test arrays with duplicates, including runs that cross a block boundary, and confirm the function returns a valid matching index. Compare results against a plain linear search on random sorted arrays to catch off-by-one errors."
         }
       ]
     }
   ],
   "takeaways": [
-    "Jump ahead by √n, then scan the block linearly.",
-    "O(√n) time, O(1) space, sorted input only.",
-    "Faster than linear, slower than binary search.",
-    "Useful when moving backward is costly."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Jump search (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/jump-search/"
-    }
+    "Jump ahead by about sqrt(n) until you pass the target, then scan the last block linearly.",
+    "The best step is sqrt(n): it balances n/m jumps against m - 1 scan steps.",
+    "Worst case O(sqrt n) time, O(1) space; better than linear, worse than binary search.",
+    "Needs a sorted array, but unlike binary search it moves only forward.",
+    "Clamp the probe index to n - 1 and exit when prev passes n to avoid reading out of range.",
+    "Multi-level jump search tends toward binary search; skip lists and sparse indexes use the same idea.",
+    "For n = 1,000,000: about 2,000 comparisons for jump search against 20 for binary search."
   ],
   "practice": [
     {
-      "title": "Implement jump search on a sorted array",
+      "title": "Implement jump search for a sorted int array and return the index or -1",
       "difficulty": "Easy"
     },
     {
-      "title": "Find the optimal block size and verify with a count",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Compare comparison counts of linear, jump, and binary search",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Handle a target larger than every element",
+      "title": "Trace jump search for x = 23 on a 25-element sorted array and count comparisons",
       "difficulty": "Easy"
+    },
+    {
+      "title": "Prove that the optimal block size is sqrt(n)",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Modify jump search to return the first occurrence among duplicates",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement jump search on a descending array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement jump search followed by binary search inside the block",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Build a two-level jump search and compare comparison counts with the single-level version",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a sparse index for a sorted file of one million records and compute lookup cost",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Jump search (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/jump-search/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed. (Searching)",
+      "url": "https://algs4.cs.princeton.edu/home/"
     }
   ]
 }

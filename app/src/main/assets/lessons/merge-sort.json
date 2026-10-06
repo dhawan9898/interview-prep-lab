@@ -1,121 +1,194 @@
 {
-  "summary": "Merge sort is a stable divide-and-conquer sort: split the array in half, sort each half recursively, then merge the two sorted halves. It guarantees O(n log n) time in every case at the cost of O(n) extra space.",
+  "summary": "Merge sort is a stable divide-and-conquer sort: split the array in half, sort each half recursively, then merge the two sorted halves into one. It guarantees O(n log n) time in the best, average and worst case, at the price of O(n) auxiliary space for arrays. It is the sort you reach for when you need stability, a guaranteed worst case, linked lists, or data too large for memory, and its merge step is the heart of Timsort, database sorts and map-reduce shuffles.",
   "sections": [
     {
-      "heading": "The three steps",
+      "heading": "Overview",
+      "body": "Merge sort was described by John von Neumann in the mid 1940s, which makes it one of the oldest algorithms still in daily use. The idea is that combining two already sorted sequences is cheap: a single pass over both, comparing only their front elements, produces a sorted result in linear time. So instead of sorting a big array directly, you keep halving it until every piece has one element (trivially sorted), then merge pieces back together on the way up the recursion.\n\nThe recursion tree has about log2(n) levels, and every level touches all n elements exactly once while merging. That gives n times log n work no matter how the input is arranged. Unlike quick sort, there is no bad pivot and no adversarial input, and unlike heap sort, equal elements keep their original relative order. The cost is memory: the merge needs somewhere to write its output, so an array version needs a buffer as large as the input.\n\nIn the larger picture merge sort is the canonical example of divide and conquer with a nontrivial combine step. Quick sort puts the work in the divide step (partition) and has a free combine; merge sort has a free divide (just the midpoint) and puts the work in the combine step."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Divide: split the array at the middle.",
-        "Conquer: recursively sort each half (a single element is already sorted).",
-        "Combine: merge the two sorted halves into one sorted run."
-      ],
-      "code": "sort(a, lo, hi):\n  if hi - lo < 2: return\n  mid = (lo + hi) / 2\n  sort(a, lo, mid); sort(a, mid, hi)\n  merge(a, lo, mid, hi)"
-    },
-    {
-      "heading": "The merge procedure",
-      "body": "Walk both halves with two indexes, always copying the smaller front element to a temporary buffer; when one side is exhausted copy the rest. Taking from the left half on ties keeps equal elements in their original order, which makes the sort stable.",
-      "code": "void merge(int a[], int tmp[], int lo, int mid, int hi) {\n  int i = lo, j = mid, k = lo;\n  while (i < mid && j < hi) tmp[k++] = (a[i] <= a[j]) ? a[i++] : a[j++];\n  while (i < mid) tmp[k++] = a[i++];\n  while (j < hi)  tmp[k++] = a[j++];\n  for (k = lo; k < hi; k++) a[k] = tmp[k];\n}"
-    },
-    {
-      "heading": "Walkthrough",
-      "body": "[38, 27, 43, 10] splits into [38, 27] and [43, 10], then into singletons. Merging gives [27, 38] and [10, 43], and the final merge produces [10, 27, 38, 43]."
-    },
-    {
-      "heading": "Complexity",
-      "bullets": [
-        "Time: O(n log n) best, average, and worst: log n levels, O(n) merging per level.",
-        "Space: O(n) for the temporary buffer (plus O(log n) recursion).",
-        "Stable: yes.",
-        "Not in place, and not adaptive in the basic form."
+        "**Divide and conquer**: solve a problem by splitting it into smaller copies of itself, solving those, and combining the answers.",
+        "**Base case**: a range of 0 or 1 elements is already sorted, so the recursion stops there.",
+        "**Merge**: combine two sorted runs into one sorted run by repeatedly taking the smaller of the two front elements.",
+        "**Run**: a maximal sorted stretch of elements. Merge sort starts with runs of length 1 and doubles the run length at each level.",
+        "**Stable**: elements that compare equal keep their input order. Merge sort is stable if the merge takes from the left run on ties.",
+        "**Auxiliary buffer**: scratch space of size n used so a merge never overwrites elements it has not read yet.",
+        "**Recurrence**: T(n) = 2T(n/2) + Theta(n), which solves to Theta(n log n) by the Master theorem (case 2).",
+        "**Inversion**: a pair i < j with a[i] > a[j]. Merging removes inversions between the two halves, which is how you can count them for free.",
+        "**Out-of-place**: the sorted output lives in a different buffer than the input for at least part of the algorithm."
       ]
     },
     {
-      "heading": "Strengths and weaknesses",
+      "heading": "How It Works",
+      "body": "The algorithm has three steps. Divide: pick the midpoint of the current range. Conquer: recursively sort the left half and the right half. Combine: merge the two sorted halves. The merge uses two indexes, one at the front of each half. At every step it copies the smaller of the two front elements to the output and advances that index. When one half runs out, the rest of the other half is copied as is.\n\nWorked example on [38, 27, 43, 3, 9, 82, 10]. Split into [38, 27, 43, 3] and [9, 82, 10]. The left splits into [38, 27] and [43, 3], then into singletons. Merge [38] and [27]: 27 is smaller, then 38, giving [27, 38]. Merge [43] and [3] giving [3, 43]. Merge [27, 38] with [3, 43]: take 3, then 27, then 38, then 43, giving [3, 27, 38, 43]. The right half [9, 82, 10] splits into [9] and [82, 10]; [82, 10] becomes [10, 82], and merging with [9] gives [9, 10, 82]. The final merge of [3, 27, 38, 43] and [9, 10, 82] takes 3, 9, 10, 27, 38, 43, 82 in that order, which is the sorted array.\n\nBelow is a complete top-down version in C. The range is half open, [lo, hi), so the midpoint is lo + (hi - lo) / 2, which cannot overflow the way (lo + hi) / 2 can for huge arrays. The `<=` in the merge is what makes the sort stable.",
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n\nstatic void merge(int a[], int tmp[], int lo, int mid, int hi) {\n    int i = lo, j = mid, k = lo;\n    while (i < mid && j < hi)\n        tmp[k++] = (a[i] <= a[j]) ? a[i++] : a[j++];   /* <= keeps it stable */\n    while (i < mid) tmp[k++] = a[i++];\n    while (j < hi)  tmp[k++] = a[j++];\n    for (k = lo; k < hi; k++) a[k] = tmp[k];\n}\n\nstatic void sort_range(int a[], int tmp[], int lo, int hi) {\n    if (hi - lo < 2) return;                 /* 0 or 1 element: done */\n    int mid = lo + (hi - lo) / 2;\n    sort_range(a, tmp, lo, mid);\n    sort_range(a, tmp, mid, hi);\n    merge(a, tmp, lo, mid, hi);\n}\n\nvoid merge_sort(int a[], int n) {\n    int *tmp = malloc(n * sizeof *tmp);\n    if (!tmp) return;                        /* real code would report the error */\n    sort_range(a, tmp, 0, n);\n    free(tmp);\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Predictable worst-case performance and stability.",
-        "Excellent for linked lists (merging needs no extra array) and for external sorting of data larger than memory.",
-        "Parallelizes naturally, since halves are independent.",
-        "Slower than quick sort on arrays in practice because of the copying and extra memory traffic."
+        "**Top-down (recursive)**: the textbook form shown above. Easy to read, uses O(log n) stack.",
+        "**Bottom-up (iterative)**: merge runs of width 1, then 2, then 4 and so on with plain loops. No recursion, same O(n log n).",
+        "**Natural merge sort**: first detect the runs already present in the input and merge those, so sorted or nearly sorted data takes O(n).",
+        "**Linked-list merge sort**: split with slow and fast pointers and relink nodes during the merge. No buffer is needed, only O(log n) stack.",
+        "**Cutoff to insertion sort**: below roughly 7 to 16 elements, switch to insertion sort. This cuts the overhead of tiny recursive calls and is used in most library versions.",
+        "**Timsort**: natural runs plus insertion sort plus galloping merges, used by Python, Java for objects, Android and V8. Stable, O(n) on sorted input.",
+        "**K-way merge**: merge k runs at once using a min-heap, in O(n log k). Used for external sorting.",
+        "**Parallel merge sort**: the two recursive calls are independent, so they can run on different threads. The merge itself can also be parallelized with a binary-search based split.",
+        "**In-place merge variants**: block merge sort and rotation based merges reach O(1) extra space but are far more complicated and slower in practice."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Time**: Theta(n log n) in the best, average and worst case. There are about log2(n) levels and each level does at most n comparisons.",
+        "**Comparisons**: between (n log2 n) / 2 and n log2 n minus n + 1, which is close to the information-theoretic lower bound of log2(n!) comparisons.",
+        "**Space**: O(n) for the buffer, plus O(log n) call stack. The linked-list version needs only O(log n).",
+        "**Stability**: stable when the merge prefers the left run on ties.",
+        "**Adaptivity**: the plain version is not adaptive and does the same work on sorted input. Adding a check `if a[mid-1] <= a[mid]` skip the merge makes sorted input O(n).",
+        "**Memory traffic**: every level reads and writes all n elements, so for ints that is about 2n memory operations per level and 20 levels for a million elements. This is why a well tuned quick sort often wins on arrays by a constant factor.",
+        "**Cache behavior**: merging is sequential in both inputs and the output, so it is friendly to hardware prefetchers and works well for disk and tape."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Allocating the buffer inside the merge**: a malloc per call turns a fast sort into an allocator benchmark. Allocate one buffer once and pass it down.",
+        "**Using `<` instead of `<=`** in the comparison of the two front elements. That takes the right element on ties and silently breaks stability.",
+        "**Integer overflow in `(lo + hi) / 2`**: use `lo + (hi - lo) / 2`.",
+        "**Off by one at the midpoint**: mixing inclusive and half-open ranges is the most common source of infinite recursion (a range of size 2 that never shrinks). Pick one convention and stick to it.",
+        "**Forgetting the tail copy**: after the main loop one side still has elements, and they must be copied.",
+        "**Claiming O(1) space**: the recursion stack alone is O(log n), and the array version needs an O(n) buffer. Stating O(n) space is the expected answer.",
+        "**Sorting linked lists by converting to arrays**: unnecessary. Merging relinks nodes with no copying."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Standard libraries**: Python `sorted` and `list.sort` (Timsort), Java `Arrays.sort` for objects and `Collections.sort` (Timsort), the C++ `std::stable_sort` (typically merge based), and Perl and GNU `sort` (merge based).",
+        "**Linux kernel**: `list_sort` is a merge sort for linked lists, chosen for its worst-case bound and low comparison count.",
+        "**Databases**: external merge sort backs ORDER BY, merge joins, and index builds when data exceeds memory.",
+        "**MapReduce and Spark**: the shuffle sorts map output into runs and merges them on the reduce side.",
+        "**Version control and diff tools**: stable ordering of entries and merging of sorted streams.",
+        "**Counting inversions** in ranking and recommendation metrics such as Kendall tau distance."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Why is merge sort O(n log n) always?** The split is always in the middle, so the depth is log n, and each level merges n elements in total.",
+        "**Is it stable? In place?** Stable yes, in place no. It needs O(n) extra space for arrays.",
+        "**Merge sort or quick sort for arrays?** Quick sort is usually faster and in place; merge sort when you need stability or a worst-case guarantee.",
+        "**Why for linked lists?** Random access is not needed, and merging relinks nodes with O(1) extra space.",
+        "**How do you sort 100 GB with 4 GB of RAM?** Sort 4 GB chunks, write sorted runs, then k-way merge them with a heap.",
+        "**Recurrence?** T(n) = 2T(n/2) + n.",
+        "**Count inversions in O(n log n)?** Count, during each merge, how many left elements remain when a right element is taken."
       ]
     }
   ],
   "subtopics": [
     {
       "title": "Bottom-up merge sort",
-      "summary": "Iterative, no recursion.",
+      "summary": "Iterative version with no recursion.",
       "sections": [
         {
-          "body": "Start with runs of length 1 and repeatedly merge adjacent runs, doubling the run length each pass (1, 2, 4, ...). Same O(n log n), but no call stack and easy to adapt for linked lists and external files."
-        }
-      ]
-    },
-    {
-      "title": "Counting inversions",
-      "summary": "A classic use.",
-      "sections": [
+          "body": "Start with every element as a run of width 1. In each pass, merge neighbouring pairs of runs of width w into runs of width 2w, then double w. Stop when w is at least n. The last run of a pass may be shorter or unpaired, so clamp the right bound with a min. The total work is the same, O(n log n), but there is no call stack, which helps on embedded targets and makes it easy to drive from a loop with progress reporting."
+        },
         {
-          "body": "An inversion is a pair i < j with a[i] > a[j]. During a merge, when an element from the right half is taken before remaining left elements, it forms inversions with all of them. Summing these counts inversions in O(n log n), versus O(n²) by brute force."
+          "code": "void merge_sort_bu(int a[], int tmp[], int n) {\n    for (int w = 1; w < n; w *= 2) {\n        for (int lo = 0; lo < n - w; lo += 2 * w) {\n            int mid = lo + w;\n            int hi = (lo + 2 * w < n) ? lo + 2 * w : n;\n            merge(a, tmp, lo, mid, hi);   /* same merge as above */\n        }\n    }\n}"
         }
       ]
     },
     {
       "title": "Merge sort on linked lists",
-      "summary": "No extra array needed.",
+      "summary": "Relink nodes, no buffer needed.",
       "sections": [
         {
-          "body": "Find the middle with fast/slow pointers, split, recursively sort both halves, and merge by relinking nodes. Space is O(log n) for recursion only, and this is the standard way to sort a linked list."
+          "body": "Find the middle with a slow and a fast pointer, cut the list there, sort both halves recursively and merge by relinking nodes behind a dummy head. Because nodes are only relinked, space is O(log n) for recursion, and the sort is stable if you take from the left list on ties. This is the standard answer to sort a linked list in O(n log n) and the algorithm behind the Linux `list_sort`."
+        },
+        {
+          "code": "struct node { int v; struct node *next; };\n\nstatic struct node *merge_lists(struct node *a, struct node *b) {\n    struct node dummy = {0, NULL}, *t = &dummy;\n    while (a && b) {\n        if (a->v <= b->v) { t->next = a; a = a->next; }\n        else              { t->next = b; b = b->next; }\n        t = t->next;\n    }\n    t->next = a ? a : b;\n    return dummy.next;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Counting inversions",
+      "summary": "A free by-product of merging.",
+      "sections": [
+        {
+          "body": "An inversion is a pair where a larger element appears before a smaller one, so a sorted array has 0 and a reversed array has n(n-1)/2. During a merge, if you take an element from the right run while k elements remain in the left run, that right element is smaller than all k of them, which adds k inversions. Summing over all merges counts every inversion exactly once in O(n log n), against O(n^2) for brute force. The same pattern counts reverse pairs, smaller elements to the right, and similar problems. Use a 64-bit counter: n = 100000 reversed gives about 5 billion."
         }
       ]
     },
     {
       "title": "External sorting",
-      "summary": "Data bigger than RAM.",
+      "summary": "Sorting data larger than memory.",
       "sections": [
         {
-          "body": "Sort chunks that fit in memory, write them as sorted runs to disk, then k-way merge the runs with a heap, reading each run sequentially. This is how databases sort huge tables."
+          "body": "Phase one reads as much data as fits in memory, sorts it, and writes it as a sorted run on disk. Phase two merges the runs. With k runs you keep one input buffer per run and a min-heap of their current front elements, so a single pass over all data costs O(n log k) comparisons and reads each byte once, sequentially. If there are too many runs for the available buffers, you merge in several passes. Replacement selection can make initial runs about twice as long as memory on random data. This is the foundation of database sorts and of the map-reduce shuffle."
         }
       ]
     },
     {
-      "title": "Timsort",
-      "summary": "Merge sort in the real world.",
+      "title": "Timsort and library sorts",
+      "summary": "Merge sort adapted to real data.",
       "sections": [
         {
-          "body": "Python and Java use Timsort: it finds naturally ordered runs, extends short ones with insertion sort, and merges them with galloping. It is stable and runs in O(n) on already sorted data."
+          "body": "Timsort scans for natural runs (ascending, or strictly descending and then reversed). Runs shorter than a minimum length, usually 32 to 64, are extended with binary insertion sort. Run lengths are pushed on a stack and merged under invariants that keep the merge tree balanced. When one run keeps winning during a merge, galloping mode uses exponential search to skip ahead. The result is stable, O(n) on sorted or reverse sorted data, and O(n log n) worst case. It was written by Tim Peters for CPython and later adopted by Java, Android and V8."
+        }
+      ]
+    },
+    {
+      "title": "Merge sort versus quick sort and heap sort",
+      "summary": "Choosing the right O(n log n) sort.",
+      "sections": [
+        {
+          "body": "Quick sort is in place and the fastest on random arrays in practice, but has O(n^2) worst case and is not stable. Heap sort is in place with a guaranteed O(n log n) but has poor cache behavior and is not stable. Merge sort is stable with a guaranteed O(n log n) and sequential access, but needs O(n) extra space on arrays. Pick merge sort for objects when stability matters, for linked lists, for external data and for parallel or streaming merges. Pick quick sort (introsort) for primitive arrays in memory. Pick heap sort when memory is tight and the worst case must be bounded."
+        }
+      ]
+    },
+    {
+      "title": "Optimizations",
+      "summary": "Cheap tricks that give real speedups.",
+      "sections": [
+        {
+          "body": "Three changes help most. First, cut over to insertion sort for ranges under about 10 to 20 elements. Second, skip the merge when a[mid-1] <= a[mid], because the halves are already in order, which makes presorted input linear. Third, avoid copying back: alternate the roles of the input and the buffer at each level, so each merge writes directly into the other array. That halves the memory traffic of the copy-back loop. A single buffer allocated up front, and a sentinel-free merge as shown, round out the list."
+        },
+        {
+          "code": "if (a[mid - 1] <= a[mid]) return;    /* halves already in order: skip merge */"
+        }
+      ]
+    },
+    {
+      "title": "Merging two sorted arrays in place from the back",
+      "summary": "A classic interview variant.",
+      "sections": [
+        {
+          "body": "Given a with room for m + n elements, where the first m are sorted, and a sorted b of length n, fill a from the end. Compare the last unplaced elements of each and write the larger at position m + n - 1, moving down. No element of a is overwritten before it is read, because the write index is always at or ahead of the read index. This runs in O(m + n) time and O(1) space, and it is the same merge step turned around."
         }
       ]
     }
   ],
   "takeaways": [
-    "Split, sort halves, merge: O(n log n) always.",
-    "Stable and predictable, but needs O(n) extra space.",
-    "Ideal for linked lists and external sorting.",
-    "Merging counts inversions as a by-product."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Sedgewick & Wayne: Algorithms, 4th ed.",
-      "url": "https://algs4.cs.princeton.edu/home/"
-    },
-    {
-      "label": "Reference: Merge sort (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/merge-sort/"
-    }
+    "Split in half, sort each half, merge: Theta(n log n) in every case.",
+    "Merging two sorted runs takes one linear pass using two indexes.",
+    "Stable if the merge takes from the left run on ties (use <=).",
+    "Arrays need O(n) extra space; linked lists need none beyond the stack.",
+    "Best choice for stability, worst-case guarantees, linked lists and external sorting.",
+    "Timsort is merge sort tuned for real data and is O(n) on sorted input.",
+    "Counting inversions falls out of the merge step in O(n log n)."
   ],
   "practice": [
     {
-      "title": "Implement top-down merge sort",
+      "title": "Implement top-down merge sort with one shared buffer",
       "difficulty": "Easy"
     },
     {
-      "title": "Merge two sorted arrays in place from the back",
-      "difficulty": "Medium"
+      "title": "Merge two sorted arrays into the first one from the back",
+      "difficulty": "Easy"
     },
     {
-      "title": "Sort a linked list with merge sort",
+      "title": "Sort a linked list in O(n log n) time and O(1) extra space",
       "difficulty": "Medium"
     },
     {
@@ -123,12 +196,34 @@
       "difficulty": "Medium"
     },
     {
-      "title": "Merge k sorted lists using a heap",
+      "title": "Count reverse pairs where a[i] > 2 * a[j] with i < j",
       "difficulty": "Hard"
     },
     {
-      "title": "Implement bottom-up merge sort",
+      "title": "Merge k sorted lists using a min-heap",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Implement bottom-up merge sort and compare timing with top-down",
       "difficulty": "Medium"
+    },
+    {
+      "title": "Sort an array of strings stably by length, then verify stability",
+      "difficulty": "Easy"
+    }
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed. (Chapter 2 and Chapter 4)",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed. (Mergesort)",
+      "url": "https://algs4.cs.princeton.edu/22mergesort/"
+    },
+    {
+      "label": "Reference: Merge sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/merge-sort/"
     }
   ]
 }

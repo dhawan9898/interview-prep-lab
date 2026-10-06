@@ -1,136 +1,236 @@
 {
-  "summary": "Binary search finds a target in a sorted array by repeatedly halving the search range. Each comparison discards half of the remaining elements, giving O(log n) time.",
+  "summary": "Binary search finds a target in a sorted array by repeatedly comparing it with the middle element and discarding the half that cannot contain it. Each step halves the search space, so it needs only about log2(n) comparisons: 20 for a million items, 30 for a billion. It underlies lower_bound and upper_bound, searching on the answer, database indexes and git bisect, and it is famous for how easy it is to get wrong by one.",
   "sections": [
     {
-      "heading": "Preconditions",
+      "heading": "Overview",
+      "body": "Think of looking up a name in a printed phone book. You open near the middle, see whether the name comes before or after that page, and discard the other half. Binary search is exactly that procedure on a sorted array. It needs two things from the data: the elements are in sorted order, and you can reach any index in constant time (random access).\n\nThe payoff is dramatic. Linear search on a million sorted numbers makes up to a million comparisons. Binary search makes at most 20, because 2^20 is just over a million. The cost grows only by one comparison each time the data doubles.\n\nThe idea is simple but the details are not. Jon Bentley reported that most professional programmers in his courses could not write a correct binary search in a couple of hours, and a bug in the Java library version survived for nine years. The usual traps are the midpoint overflow, off-by-one bounds, infinite loops from a midpoint that does not move, and mishandling duplicates. This lesson gives you one reliable template and shows how to bend it into lower bound, upper bound and answer search."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Data must be sorted (or the predicate must be monotonic).",
-        "Random access in O(1), such as an array; on a linked list it loses its advantage."
+        "**Search space**: the index range [lo, hi] that could still contain the target. Each iteration shrinks it by about half.",
+        "**Midpoint**: mid = lo + (hi - lo) / 2. Written this way it cannot overflow, unlike (lo + hi) / 2.",
+        "**Invariant**: if the target is present, it lies within [lo, hi]. Every correct version maintains this.",
+        "**Precondition**: the array is sorted under the same ordering the comparison uses. On unsorted data, the result is meaningless.",
+        "**Random access**: needed to jump to the middle in O(1). Linked lists do not qualify.",
+        "**Closed versus half-open interval**: [lo, hi] with `lo <= hi`, or [lo, hi) with `lo < hi`. Choose one and keep the update rules consistent.",
+        "**Lower bound**: the first index whose value is not less than the target.",
+        "**Upper bound**: the first index whose value is greater than the target.",
+        "**Monotonic predicate**: a yes or no test over the index range that is false up to some point and true afterwards. Binary search finds the boundary, which is the generalization behind searching on the answer."
       ]
     },
     {
-      "heading": "Iterative algorithm",
-      "bullets": [
-        "Maintain lo and hi, the inclusive bounds of the candidate range.",
-        "mid = lo + (hi - lo) / 2.",
-        "If a[mid] == target, return mid.",
-        "If a[mid] < target, set lo = mid + 1; otherwise hi = mid - 1.",
-        "If lo > hi, the target is absent."
-      ],
-      "code": "int bsearch(const int a[], int n, int target) {\n  int lo = 0, hi = n - 1;\n  while (lo <= hi) {\n    int mid = lo + (hi - lo) / 2;   // avoids (lo + hi) overflow\n    if (a[mid] == target) return mid;\n    if (a[mid] < target) lo = mid + 1; else hi = mid - 1;\n  }\n  return -1;\n}"
+      "heading": "How It Works",
+      "body": "Set lo = 0 and hi = n - 1. While lo <= hi, compute mid. If a[mid] equals the target, return mid. If a[mid] is less than the target, the target must be to the right, so set lo = mid + 1. Otherwise it must be to the left, so set hi = mid - 1. When the range becomes empty (lo > hi), the target is not present, so return -1.\n\nWorked example. Search 23 in [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]. Step 1: lo = 0, hi = 9, mid = 4, a[4] = 16 is less than 23, so lo = 5. Step 2: lo = 5, hi = 9, mid = 7, a[7] = 56 is greater, so hi = 6. Step 3: lo = 5, hi = 6, mid = 5, a[5] = 23. Found at index 5 after 3 comparisons, while linear search would need 6. For a miss, say 20: after a[4] = 16 we get lo = 5; mid 7 gives hi = 6; mid 5 gives a[5] = 23 greater than 20, so hi = 4. Now lo > hi and the answer is -1.\n\nThe iterative version below uses constant space. The recursive version uses O(log n) stack for the same logic and is rarely better.",
+      "code": "/* Iterative, closed interval [lo, hi]. Returns index or -1. */\nint binary_search(const int a[], int n, int target) {\n    int lo = 0, hi = n - 1;\n    while (lo <= hi) {\n        int mid = lo + (hi - lo) / 2;      /* no overflow */\n        if (a[mid] == target)      return mid;\n        else if (a[mid] < target)  lo = mid + 1;\n        else                       hi = mid - 1;\n    }\n    return -1;\n}\n\n/* Recursive version, same invariant */\nint bs_rec(const int a[], int lo, int hi, int target) {\n    if (lo > hi) return -1;\n    int mid = lo + (hi - lo) / 2;\n    if (a[mid] == target) return mid;\n    if (a[mid] < target)  return bs_rec(a, mid + 1, hi, target);\n    return bs_rec(a, lo, mid - 1, target);\n}"
     },
     {
-      "heading": "Complexity",
+      "heading": "Variants & Types",
       "bullets": [
-        "Time: O(log n); about log2(n) + 1 comparisons.",
-        "Best case O(1) when the middle element matches.",
-        "Space: O(1) iterative; O(log n) recursive because of the call stack."
+        "**Iterative and recursive**: same O(log n) time; iterative has O(1) space, recursive has O(log n) stack.",
+        "**Lower bound (first not less than)**: returns the insertion point and the first occurrence of a duplicate. C++ `std::lower_bound`.",
+        "**Upper bound (first greater than)**: returns the position after the last duplicate. C++ `std::upper_bound`.",
+        "**First and last occurrence**: lower bound and upper bound minus one. The count of a value is upper - lower.",
+        "**Search insert position**: the lower bound, which is where the value belongs to keep the array sorted.",
+        "**Binary search on the answer**: search a numeric range with a monotonic feasibility test, such as the smallest capacity that ships all packages in D days.",
+        "**Rotated sorted array search**: at each step one half is sorted; check whether the target lies in that half.",
+        "**Peak finding**: compare a[mid] with a[mid + 1] to decide which side must contain a peak. Works without sorting.",
+        "**Floating-point binary search**: loop a fixed number of times (such as 100) instead of testing equality, for square roots and similar.",
+        "**Interpolation and exponential (galloping) search**: guess better than the middle, or double an index until you overshoot, then binary search."
       ]
     },
     {
-      "heading": "The overflow bug",
-      "body": "Writing `(lo + hi) / 2` overflows when lo + hi exceeds INT_MAX. This bug lived in the JDK's binary search for years. `lo + (hi - lo) / 2` is always safe."
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Time**: O(log n). The range shrinks from n to n/2 to n/4 and so on, so at most floor(log2 n) + 1 iterations: 10 for 1,000, 20 for 1,000,000, 30 for 1,000,000,000.",
+        "**Best case**: O(1), the target is the first midpoint.",
+        "**Space**: O(1) iterative, O(log n) recursive.",
+        "**Recurrence**: T(n) = T(n/2) + O(1), which solves to O(log n).",
+        "**Precondition cost**: sorting costs O(n log n) once. Binary search is worthwhile only when you search more than a handful of times, or the data is already sorted.",
+        "**Cache behavior**: the first probes jump across the array, touching a different cache line each time. For huge arrays this makes binary search slower than the comparison count suggests, and layouts like Eytzinger order or B-trees improve it.",
+        "**Branch cost**: the comparison is nearly 50 percent unpredictable, so branchy loops mispredict about once per step. Branchless versions using conditional moves can be about twice as fast."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Midpoint overflow**: `(lo + hi) / 2` overflows for int when lo + hi exceeds 2^31 - 1. This bug sat in the JDK `Arrays.binarySearch` for years before it was noticed. Use `lo + (hi - lo) / 2`.",
+        "**Infinite loop**: with `lo = mid` or `hi = mid` in a closed-interval loop the range may stop shrinking. Always move past mid with mid + 1 or mid - 1, or use the half-open template.",
+        "**Wrong loop condition**: `lo < hi` skips the case lo == hi in a closed interval; `lo <= hi` with half-open bounds reads out of range.",
+        "**Unsorted input**: the algorithm silently returns wrong answers. Sort first or verify.",
+        "**Duplicates**: plain binary search returns some match, not necessarily the first. Use lower bound for the first one.",
+        "**Comparator mismatch**: the order used to sort must match the order used to search (case sensitivity, signed versus unsigned, locale).",
+        "**Empty array**: with n = 0, hi = -1 and the loop never runs; if the length is unsigned, n - 1 wraps to a huge value. Use signed ints or check n == 0.",
+        "**Searching a linked list**: finding the middle costs O(n), which erases the benefit."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Standard libraries**: C `bsearch`, C++ `std::binary_search`, `lower_bound`, `upper_bound`, Java `Arrays.binarySearch` and `Collections.binarySearch`, Python `bisect`.",
+        "**Databases and file systems**: searching sorted pages and index blocks; B-trees binary search inside each node.",
+        "**git bisect**: binary search over commit history to find the commit that introduced a bug in about log2 of the commit count steps.",
+        "**Debugging and tuning**: bisecting a config, a failing input, or a performance threshold.",
+        "**Systems code**: looking up an address in a sorted table, such as the kernel exception table, symbol tables, or memory map ranges.",
+        "**Algorithms**: minimum capacity problems, square roots, the k-th element in a multiplication table, and as a building block in the Longest Increasing Subsequence algorithm."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Complexity?** O(log n) time, O(1) space iterative.",
+        "**What does it require?** Sorted data and O(1) random access.",
+        "**Why `lo + (hi - lo) / 2`?** To prevent integer overflow of lo + hi.",
+        "**How do you find the first occurrence of a duplicate?** On a hit, keep searching left by setting hi = mid - 1 and remembering mid; or use lower bound.",
+        "**How do you search a rotated sorted array?** At each mid, determine which half is sorted and test whether the target falls inside it.",
+        "**What is binary search on the answer?** Pick a numeric range and a monotonic check; the smallest value for which the check passes is the result.",
+        "**Can it work on a linked list?** Not efficiently; middle access is O(n).",
+        "**How many comparisons for n = 1,000,000?** At most 20."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Lower and upper bound",
-      "summary": "First/last occurrence and insertion points.",
+      "title": "Lower bound and upper bound",
+      "summary": "Boundary searches that handle duplicates.",
       "sections": [
         {
-          "body": "lower_bound returns the first index with a[i] >= target; upper_bound the first with a[i] > target. Their difference counts duplicates, and lower_bound is where to insert to stay sorted.",
-          "code": "int lower_bound(const int a[], int n, int x) {\n  int lo = 0, hi = n;          // half-open [lo, hi)\n  while (lo < hi) { int m = lo + (hi - lo) / 2;\n    if (a[m] < x) lo = m + 1; else hi = m; }\n  return lo;\n}"
+          "body": "Lower bound returns the first index i with a[i] >= target, or n if there is none. Upper bound returns the first index with a[i] > target. They use a half-open range [lo, hi) and never return early: whenever the midpoint satisfies the predicate, the answer is at mid or to its left, so hi = mid, otherwise lo = mid + 1. The loop ends when lo == hi, and that index is the boundary. The count of a value is upper minus lower, and the value exists iff lower < n and a[lower] == target."
+        },
+        {
+          "code": "/* first index with a[i] >= target, in [0, n] */\nint lower_bound(const int a[], int n, int target) {\n    int lo = 0, hi = n;                   /* half-open [lo, hi) */\n    while (lo < hi) {\n        int mid = lo + (hi - lo) / 2;\n        if (a[mid] < target) lo = mid + 1;\n        else                 hi = mid;\n    }\n    return lo;\n}\n\n/* first index with a[i] > target: same loop with <= in the test */\nint upper_bound(const int a[], int n, int target) {\n    int lo = 0, hi = n;\n    while (lo < hi) {\n        int mid = lo + (hi - lo) / 2;\n        if (a[mid] <= target) lo = mid + 1;\n        else                  hi = mid;\n    }\n    return lo;\n}"
         }
       ]
     },
     {
       "title": "Binary search on the answer",
-      "summary": "Search a monotonic predicate.",
+      "summary": "Search a value range with a monotonic check.",
       "sections": [
         {
-          "body": "When a yes/no property is monotonic in a numeric parameter (e.g. 'can we ship within D days with capacity C?'), binary search the smallest C that works, even though there is no array. Common in interview problems."
+          "body": "When a question asks for the smallest or largest value satisfying some condition, and the condition flips only once as the value grows, you can binary search the value itself instead of an array. Example: ship packages in at most D days; the minimum ship capacity lies between the heaviest package and the total weight. For a candidate capacity, a greedy pass checks feasibility in O(n). Since larger capacities are never worse, the check is monotonic. The whole solution is O(n log(total)). Other examples are splitting an array into k parts with the smallest maximum sum, Koko eating bananas, the aggressive cows problem, and integer square root."
+        },
+        {
+          "code": "/* smallest capacity so all weights ship in <= days */\nint can_ship(const int w[], int n, int cap, int days) {\n    int need = 1, cur = 0;\n    for (int i = 0; i < n; i++) {\n        if (cur + w[i] > cap) { need++; cur = 0; }\n        cur += w[i];\n    }\n    return need <= days;\n}\n/* lo = max(w), hi = sum(w): same lower_bound loop, using can_ship */"
         }
       ]
     },
     {
-      "title": "Rotated sorted arrays",
-      "summary": "Still O(log n).",
+      "title": "Rotated sorted array",
+      "summary": "Binary search when the array is cut and shifted.",
       "sections": [
         {
-          "body": "At each step one half is guaranteed sorted. Check whether the target lies in that sorted half and discard the other. Handles searching and finding the minimum."
+          "body": "A sorted array rotated at an unknown pivot, such as [6, 7, 8, 1, 2, 3, 4, 5], is no longer globally sorted, but at every midpoint at least one half is. If a[lo] <= a[mid], the left half is sorted; check if the target lies between a[lo] and a[mid], and go left if so, otherwise right. If the left half is not sorted, the right half is; apply the symmetric test. This keeps O(log n). With duplicates, a[lo] == a[mid] == a[hi] can hide which side is sorted, and the only safe move is to shrink the range by one on each side, giving O(n) in the worst case. Finding the minimum of a rotated array uses the same logic: compare a[mid] with a[hi]."
         }
       ]
     },
     {
-      "title": "Where binary search shows up",
-      "summary": "Real systems.",
+      "title": "Peak finding and unsorted-but-structured data",
+      "summary": "Binary search needs structure, not always sortedness.",
       "sections": [
         {
-          "bullets": [
-            "Database and B-tree indexes.",
-            "git bisect to find the commit that introduced a bug.",
-            "Routing-table and IP range lookups.",
-            "Library functions: `bsearch`, `std::lower_bound`, `Arrays.binarySearch`."
-          ]
+          "body": "The requirement is a predicate that lets you discard half the range. To find a peak (an element not smaller than its neighbors) in an array, compare a[mid] with a[mid + 1]. If a[mid] is smaller, there must be a peak to the right, since going uphill must either end in a peak or reach the boundary. Otherwise a peak exists at mid or to its left. This takes O(log n) on arrays that are not sorted at all. The same idea finds the maximum of a unimodal sequence and the point where a bitonic array changes direction."
         }
       ]
     },
     {
-      "title": "Recursive version",
-      "summary": "Clear but costs stack.",
+      "title": "Floating-point and numeric search",
+      "summary": "Square roots and tolerance-based searching.",
       "sections": [
         {
-          "body": "The recursive form searches (lo, hi) by calling itself on one half. It has the same O(log n) time but uses O(log n) stack frames; the iterative loop uses O(1) space and is the better default.",
-          "code": "int bs(const int a[], int lo, int hi, int x) {\n  if (lo > hi) return -1;\n  int mid = lo + (hi - lo) / 2;\n  if (a[mid] == x) return mid;\n  return a[mid] < x ? bs(a, mid + 1, hi, x) : bs(a, lo, mid - 1, x);\n}"
+          "body": "For real-valued answers you cannot test equality and cannot stop at lo > hi. Instead, iterate while the interval is wider than the required tolerance, or run a fixed number of iterations: 50 to 100 halvings reach the limit of double precision. Always check the invariant that the answer stays inside [lo, hi]. For the square root of x >= 1, start with [1, x] and compare mid * mid with x."
+        },
+        {
+          "code": "double my_sqrt(double x) {               /* x >= 1 */\n    double lo = 1.0, hi = x;\n    for (int i = 0; i < 100; i++) {\n        double mid = lo + (hi - lo) / 2;\n        if (mid * mid < x) lo = mid; else hi = mid;\n    }\n    return lo;\n}"
         }
       ]
     },
     {
-      "title": "Unbounded (exponential) search",
-      "summary": "When the size is unknown.",
+      "title": "Interpolation and exponential search",
+      "summary": "Two relatives with different guesses.",
       "sections": [
         {
-          "body": "Double an index 1, 2, 4, 8, ... until the value there reaches the target or the end, then binary search the last interval. Costs O(log p) where p is the target's position, useful for infinite streams and very large sorted sources."
+          "body": "Interpolation search guesses the position proportional to the value: pos = lo + (target - a[lo]) * (hi - lo) / (a[hi] - a[lo]). On uniformly distributed keys it takes about log log n steps, but it degrades to O(n) on skewed data. Exponential (galloping) search tests indexes 1, 2, 4, 8 and so on until it passes the target, then binary searches inside the last interval. It takes O(log i) for a target at position i, which is ideal for unbounded or very large arrays and for merging, and it is used inside Timsort's galloping mode."
+        }
+      ]
+    },
+    {
+      "title": "Binary search versus hashing and trees",
+      "summary": "Picking the right lookup structure.",
+      "sections": [
+        {
+          "body": "A sorted array with binary search gives O(log n) lookups, no extra memory beyond the array, and cheap range queries (everything between two keys is a contiguous slice). A hash table gives O(1) average lookups but no ordering and no range queries. A balanced tree supports O(log n) lookups together with O(log n) inserts and deletes, which sorted arrays cannot do (inserting into an array is O(n)). Choose binary search when the data is built once and read many times, such as lookup tables, dictionaries and read-only indexes."
+        }
+      ]
+    },
+    {
+      "title": "Writing it correctly",
+      "summary": "A checklist for the bugs people actually make.",
+      "sections": [
+        {
+          "body": "Decide the interval convention first: closed [lo, hi] with `lo <= hi`, or half-open [lo, hi) with `lo < hi`. Write down the invariant in one sentence, such as, the answer is in [lo, hi). Compute the midpoint without overflow. Make sure each branch strictly shrinks the range. Test with n = 0, n = 1, n = 2, the target smaller than all elements, larger than all elements, and duplicates at both ends. If you stay with one template and only change the predicate, most variants become a one-line change."
         }
       ]
     }
   ],
   "takeaways": [
-    "Requires sorted data and O(1) access.",
-    "O(log n) time, O(1) space iteratively.",
-    "Use `lo + (hi - lo)/2` to avoid overflow.",
-    "Learn lower/upper bound and binary search on the answer."
+    "Halve the range each step by comparing the target with the middle element: O(log n).",
+    "Requires sorted data and O(1) random access; it fails silently on unsorted input.",
+    "Use mid = lo + (hi - lo) / 2 to avoid overflow, and keep the interval convention consistent.",
+    "Lower bound and upper bound handle duplicates, insert positions and counts.",
+    "Binary search on the answer works for any monotonic yes or no predicate over a numeric range.",
+    "Works on rotated arrays and peak finding because it only needs a way to discard half the range.",
+    "For n = 1,000,000 it takes at most 20 comparisons; a linear scan may take a million."
+  ],
+  "practice": [
+    {
+      "title": "Implement iterative binary search returning the index or -1",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the insert position of a target in a sorted array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Find the first and last position of a target in a sorted array with duplicates",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Compute the integer square root of a non-negative integer without sqrt",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Search a target in a rotated sorted array",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the minimum in a rotated sorted array",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Split array into k subarrays minimizing the largest sum",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Find the median of two sorted arrays in O(log(min(m, n)))",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Find a peak element in O(log n)",
+      "difficulty": "Medium"
+    }
   ],
   "references": [
     {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "label": "CLRS: Introduction to Algorithms, 4th ed. (Chapter 2 exercises)",
       "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed. (Binary Search)",
+      "url": "https://algs4.cs.princeton.edu/11model/"
     },
     {
       "label": "Reference: Binary search (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/binary-search/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Search a sorted array iteratively",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Compute integer square root with binary search",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Find first and last position of a target",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Search in a rotated sorted array",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Minimum ship capacity to deliver within D days",
-      "difficulty": "Hard"
     }
   ]
 }

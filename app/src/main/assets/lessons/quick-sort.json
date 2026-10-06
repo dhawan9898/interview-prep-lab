@@ -1,145 +1,230 @@
 {
-  "summary": "Quick sort is a divide-and-conquer sort: pick a pivot, partition the array so smaller values are on its left and larger on its right, then recursively sort both sides. Average O(n log n) with excellent cache behaviour makes it the default in many standard libraries.",
+  "summary": "Quick sort is an in-place divide-and-conquer sort: pick a pivot, partition the array so smaller elements sit left of it and larger ones right, then sort each side recursively. It averages O(n log n) with tiny constants and excellent cache behavior, which is why it is the default for primitive arrays in most standard libraries. Its weakness is an O(n^2) worst case on bad pivots, which good pivot selection or introsort removes.",
   "sections": [
     {
-      "heading": "The idea",
+      "heading": "Overview",
+      "body": "Tony Hoare invented quick sort around 1960. The idea is to avoid the merge step by doing the hard work up front. You choose one element, the pivot, and rearrange the array so that everything smaller than the pivot is on its left and everything larger is on its right. After that single pass the pivot is in its final sorted position, and the two sides can be sorted independently, with nothing to combine afterwards.\n\nThe work per level is a linear scan, and if the pivot splits the range reasonably evenly the depth is about log n, giving O(n log n). If the pivot is always the smallest or largest element, the depth becomes n and the total is O(n^2). Everything interesting about quick sort, from pivot rules to introsort, is about avoiding that bad case cheaply.\n\nQuick sort sorts in place with only a recursion stack, touches memory sequentially in two directions, and does few moves per element. That combination makes it faster in practice than merge sort or heap sort on arrays in memory, despite the weaker worst case. It is not stable."
+    },
+    {
+      "heading": "Core Concepts",
       "bullets": [
-        "Choose a pivot element.",
-        "Partition: rearrange so elements < pivot come before it and elements > pivot after it. The pivot is now in its final position.",
-        "Recurse on the left and right parts.",
-        "Base case: a part with 0 or 1 element is already sorted."
+        "**Pivot**: the element used to split the range. After partitioning it is in its final position.",
+        "**Partition**: the step that rearranges the range so that elements less than or equal to the pivot come before those greater than it.",
+        "**Lomuto scheme**: one forward scan with a boundary index for the small side. Simple, but does more swaps.",
+        "**Hoare scheme**: two indexes that start at the ends and move toward each other, swapping out-of-place pairs. About three times fewer swaps than Lomuto.",
+        "**Recursion depth**: log n expected, n worst case. Recursing into the smaller side first and looping on the larger bounds the stack at O(log n).",
+        "**Unbalanced split**: a partition that leaves almost everything on one side. Sorted input with a first or last element pivot does this.",
+        "**In place**: only O(1) extra data besides the stack; elements are swapped inside the array.",
+        "**Unstable**: partitioning swaps far apart elements, so equal keys can change relative order.",
+        "**Introsort**: quick sort that switches to heap sort when recursion gets too deep, guaranteeing O(n log n)."
       ]
     },
     {
-      "heading": "Lomuto partition",
-      "body": "Scan left to right keeping `i` as the boundary of the 'smaller than pivot' region. Simple to write, a few more swaps than Hoare.",
-      "code": "int partition(int a[], int lo, int hi) {\n  int pivot = a[hi], i = lo - 1;\n  for (int j = lo; j < hi; j++)\n    if (a[j] <= pivot) { i++; int t = a[i]; a[i] = a[j]; a[j] = t; }\n  int t = a[i + 1]; a[i + 1] = a[hi]; a[hi] = t;\n  return i + 1;\n}\nvoid quick_sort(int a[], int lo, int hi) {\n  if (lo < hi) { int p = partition(a, lo, hi);\n    quick_sort(a, lo, p - 1); quick_sort(a, p + 1, hi); }\n}"
+      "heading": "How It Works",
+      "body": "The recursive skeleton is short: if the range has fewer than two elements, return. Otherwise partition it, get the final index p of the pivot, then sort the range left of p and the range right of p. All the subtlety lives in partition.\n\nLomuto partition with the last element as pivot. Keep an index i that marks the end of the 'smaller than pivot' region, starting just before the range. Scan j from the start to the second to last element. Whenever a[j] is less than the pivot, advance i and swap a[i] with a[j]. At the end, swap the pivot into position i + 1. Worked example on [10, 80, 30, 90, 40, 50, 70] with pivot 70: scanning, 10 is smaller so it stays at the front; 80 and 90 are larger and are skipped; 30, 40 and 50 are each smaller and swapped into the small region, giving [10, 30, 40, 50, 80, 90, 70]; finally the pivot swaps with the first larger element, 80, giving [10, 30, 40, 50, 70, 90, 80]. The pivot 70 sits at index 4, final. Recurse on [10, 30, 40, 50] and [90, 80].",
+      "code": "static void swap(int *x, int *y) { int t = *x; *x = *y; *y = t; }\n\n/* Lomuto: pivot is a[hi]; returns the pivot's final index */\nstatic int partition(int a[], int lo, int hi) {\n    int pivot = a[hi];\n    int i = lo - 1;                      /* end of the \"< pivot\" region */\n    for (int j = lo; j < hi; j++)\n        if (a[j] < pivot)\n            swap(&a[++i], &a[j]);\n    swap(&a[i + 1], &a[hi]);\n    return i + 1;\n}\n\nvoid quick_sort(int a[], int lo, int hi) {   /* inclusive bounds */\n    if (lo >= hi) return;\n    int p = partition(a, lo, hi);\n    quick_sort(a, lo, p - 1);\n    quick_sort(a, p + 1, hi);\n}"
     },
     {
-      "heading": "Complexity",
+      "heading": "Variants & Types",
       "bullets": [
-        "Best and average: O(n log n) with balanced splits.",
-        "Worst: O(n²) when partitions are maximally lopsided (e.g. last-element pivot on sorted input).",
-        "Space: O(log n) stack on average, O(n) worst; recurse into the smaller side first to bound it to O(log n).",
-        "Not stable; in place."
+        "**Lomuto partition**: easy to write and prove, one index scans forward. Degrades badly on many equal keys.",
+        "**Hoare partition**: two crossing indexes, fewer swaps, handles equal keys well because both indexes stop on equals and split them evenly. The returned index is not the pivot position, only a split point.",
+        "**Three-way (Dutch national flag) partition**: splits into less than, equal to, and greater than the pivot, so runs of duplicates are done in one pass. Turns many-duplicates input from O(n^2) into O(n).",
+        "**Randomized pivot**: pick the pivot uniformly at random. No fixed input is bad, and the expected time is about 1.39 n log2 n comparisons.",
+        "**Median of three**: use the median of first, middle and last. Fixes sorted and reverse sorted input and cuts comparisons by roughly 5 percent.",
+        "**Ninther / pseudomedian of nine**: used on large ranges, as in many libc implementations.",
+        "**Dual-pivot quick sort**: two pivots and three regions. Used by Java's `Arrays.sort` for primitives since Java 7.",
+        "**Introsort**: quick sort, then heap sort when depth exceeds 2 log2 n, then insertion sort on small ranges. Used by C++ `std::sort`.",
+        "**Quickselect**: partition only into the side that holds the k-th element. Finds the k-th smallest in O(n) expected time."
       ]
     },
     {
-      "heading": "Choosing the pivot",
+      "heading": "Complexity & Costs",
       "bullets": [
-        "First or last element: simple, but quadratic on sorted input.",
-        "Random element: makes the worst case extremely unlikely.",
-        "Median of three (first, middle, last): cheap and robust against sorted input.",
-        "True median (e.g. median of medians): guaranteed O(n log n) but slower constant."
+        "**Best and average time**: O(n log n). The expected number of comparisons with a random pivot is about 2 n ln n, roughly 1.39 n log2 n.",
+        "**Worst time**: O(n^2), for example sorted input with the first or last element as pivot: n + (n-1) + ... + 1 comparisons.",
+        "**Space**: O(log n) stack expected. Worst case O(n) unless you recurse on the smaller side and loop on the larger, which caps the stack at log2 n frames.",
+        "**Recurrence**: balanced T(n) = 2T(n/2) + n, which gives n log n; worst T(n) = T(n-1) + n, which gives n^2.",
+        "**Stability**: not stable.",
+        "**Swaps**: Lomuto does about n/2 swaps per partition on random data, Hoare about n/6.",
+        "**Cache and branches**: the scan is sequential, so quick sort runs close to memory bandwidth. Branch mispredictions on the compare are the main cost, which is why branchless partition schemes exist."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Always taking the first or last element**: sorted, reverse sorted and constant arrays all become O(n^2) with stack depth n, which can overflow the stack with 100,000 or more elements.",
+        "**Many duplicates with two-way partition**: if all elements equal the pivot, each partition peels off one element. Use three-way partition or Hoare.",
+        "**Recursing into the larger half first**: loses the O(log n) stack guarantee.",
+        "**Hoare partition off-by-one**: recursing on [lo, p] and [p+1, hi] is correct for Hoare, but [lo, p-1] and [p+1, hi] is only correct for Lomuto. Mixing them causes infinite recursion or unsorted output.",
+        "**Assuming stability**: sorting records by a second key after a first key does not preserve the first ordering.",
+        "**Integer overflow in the midpoint** for median of three: use `lo + (hi - lo) / 2`.",
+        "**Adversarial input**: a predictable pivot rule can be attacked (algorithmic complexity denial of service). Randomization or introsort closes the hole."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**C library `qsort`**: implementations vary. Some libc versions use quick sort, others merge sort or introsort, so do not rely on its speed or stability.",
+        "**C++ `std::sort`**: introsort, which is quick sort plus heap sort fallback plus insertion sort.",
+        "**Java `Arrays.sort(int[])`**: dual-pivot quick sort. For objects it uses Timsort, because stability is required.",
+        "**Go and Rust**: `sort.Slice` and `sort_unstable` use pattern-defeating quick sort (pdqsort), an introsort refinement.",
+        "**Databases**: in-memory run generation for ORDER BY and index builds.",
+        "**Quickselect**: finding medians and percentiles, as in `std::nth_element`.",
+        "**Parallel sorting**: the two recursive calls are independent, so quick sort parallelizes naturally on multicore CPUs and GPUs."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**What is the worst case and when?** O(n^2) when every partition is maximally unbalanced, such as sorted input with an end pivot.",
+        "**How do you avoid it?** Random pivot, median of three, or introsort with a heap sort fallback.",
+        "**Why faster than merge sort in practice?** In place, sequential access, fewer moves, small constant factors.",
+        "**Is it stable?** No. Make it stable by sorting (key, original index) pairs, or use merge sort.",
+        "**Space complexity?** O(log n) average for the stack; recurse on the smaller side to keep the worst case O(log n).",
+        "**How do you find the k-th smallest element?** Quickselect: partition, then recurse on one side only. O(n) average.",
+        "**Sort an array of 0s, 1s and 2s?** Three-way partition in one pass."
       ]
     }
   ],
   "subtopics": [
     {
+      "title": "Choosing the pivot",
+      "summary": "The pivot rule decides everything.",
+      "sections": [
+        {
+          "body": "The fixed rules (first, last, middle) are simple but have bad inputs: first or last fails on sorted data, middle is fine on sorted data but still has adversarial inputs. A random index defeats any fixed input and makes the expected time O(n log n) regardless of the data. Median of three picks the median of the first, middle and last elements, which handles sorted, reverse sorted and organ-pipe inputs well. For large ranges libraries use a ninther, the median of three medians of three. True median selection with the median of medians algorithm guarantees O(n log n) worst case, but its constants are too large to be useful in practice. Introsort is the pragmatic answer."
+        }
+      ]
+    },
+    {
       "title": "Hoare partition",
-      "summary": "Two pointers from both ends.",
+      "summary": "Two indexes moving toward each other.",
       "sections": [
         {
-          "body": "Pointers move inward and swap out-of-place pairs. It does about three times fewer swaps than Lomuto and handles many equal keys better, but the returned index is a split point, not the pivot's final position."
+          "body": "Set i at the left end and j at the right end. Advance i while a[i] is less than the pivot, retreat j while a[j] is greater than the pivot, and if i has not passed j, swap and continue. Both indexes stop on equal elements, which splits runs of duplicates evenly. The scheme does far fewer swaps than Lomuto. Note that the returned index is a split point, not the pivot position, so the recursion is on [lo, p] and [p + 1, hi]. Use the middle element as the pivot to avoid infinite loops on sorted input."
+        },
+        {
+          "code": "static int hoare(int a[], int lo, int hi) {\n    int pivot = a[lo + (hi - lo) / 2];\n    int i = lo - 1, j = hi + 1;\n    for (;;) {\n        do { i++; } while (a[i] < pivot);\n        do { j--; } while (a[j] > pivot);\n        if (i >= j) return j;\n        int t = a[i]; a[i] = a[j]; a[j] = t;\n    }\n}\n/* caller: p = hoare(a, lo, hi); sort(lo, p); sort(p + 1, hi); */"
         }
       ]
     },
     {
-      "title": "Many duplicates: 3-way partition",
-      "summary": "Dutch national flag.",
+      "title": "Three-way partition",
+      "summary": "Handles duplicates in linear time.",
       "sections": [
         {
-          "body": "Partition into <, =, > regions so all pivot-equal keys are finished at once. This turns the O(n²) behaviour on all-equal input into O(n), and is the basis of Java's dual-pivot quicksort and many library variants."
+          "body": "Keep three regions with indexes lt, i and gt: a[lo..lt-1] is less than the pivot, a[lt..i-1] equals it, a[gt+1..hi] is greater, and a[i..gt] is unexamined. Look at a[i]: if smaller, swap it to lt and advance both; if equal, advance i; if larger, swap it to gt and shrink gt without advancing i. When i passes gt the equal block is finished and never visited again. With k distinct keys this runs in O(n log k), and it solves the Dutch national flag problem in one pass."
+        },
+        {
+          "code": "void quick3(int a[], int lo, int hi) {\n    if (lo >= hi) return;\n    int pivot = a[lo + (hi - lo) / 2];\n    int lt = lo, i = lo, gt = hi;\n    while (i <= gt) {\n        if (a[i] < pivot)      { int t = a[lt]; a[lt++] = a[i]; a[i++] = t; }\n        else if (a[i] > pivot) { int t = a[gt]; a[gt--] = a[i]; a[i] = t; }\n        else i++;\n    }\n    quick3(a, lo, lt - 1);\n    quick3(a, gt + 1, hi);\n}"
         }
       ]
     },
     {
-      "title": "Quickselect",
-      "summary": "k-th smallest in O(n) average.",
+      "title": "Bounding the stack depth",
+      "summary": "Recurse on the smaller side only.",
       "sections": [
         {
-          "body": "After partitioning, recurse only into the side that contains index k. Expected O(n), worst O(n²). Used for medians and top-k."
+          "body": "After partitioning, make the recursive call on the smaller part and handle the larger part by looping. Each recursive call works on at most half the range, so depth is at most log2 n even when partitions are terrible. This does not fix the O(n^2) time, only the memory. It is a cheap, standard safeguard against stack overflow."
+        },
+        {
+          "code": "void quick_sort2(int a[], int lo, int hi) {\n    while (lo < hi) {\n        int p = partition(a, lo, hi);\n        if (p - lo < hi - p) { quick_sort2(a, lo, p - 1); lo = p + 1; }\n        else                 { quick_sort2(a, p + 1, hi); hi = p - 1; }\n    }\n}"
         }
       ]
     },
     {
       "title": "Introsort",
-      "summary": "Quick sort with a safety net.",
+      "summary": "Quick sort with a guaranteed worst case.",
       "sections": [
         {
-          "body": "Start with quick sort, switch to heap sort if recursion depth exceeds about 2 log n, and use insertion sort for tiny ranges. This guarantees O(n log n) worst case; C++ `std::sort` is typically introsort."
+          "body": "David Musser proposed introsort. Start with quick sort and carry a depth budget of about 2 log2 n. If recursion exceeds the budget, the pivots are evidently bad, so switch that range to heap sort, which is O(n log n) in the worst case. Ranges smaller than about 16 elements are finished with insertion sort. The result is as fast as quick sort on typical data and has a hard O(n log n) bound, which is why C++ `std::sort` and the .NET sort use it. Pattern-defeating quick sort (pdqsort) adds pattern detection and branchless partitioning on top."
         }
       ]
     },
     {
-      "title": "Quick sort vs merge sort",
-      "summary": "Trade-offs.",
+      "title": "Quickselect",
+      "summary": "Find the k-th smallest without sorting.",
       "sections": [
         {
-          "bullets": [
-            "Quick: in place, cache friendly, not stable, O(n²) worst.",
-            "Merge: O(n log n) always, stable, needs O(n) extra space, good for linked lists and external sorting."
-          ]
+          "body": "Partition the array around a pivot. If the pivot lands at index k you are done. If k is smaller, continue in the left part, otherwise in the right part, and ignore the other side. The sizes shrink geometrically on average, so the expected time is n + n/2 + n/4 + ... = O(n). The worst case is O(n^2) without a good pivot rule, and the median of medians algorithm makes it O(n) worst case. Use it for medians, percentiles, top-k selection, and the k closest points problem."
         }
       ]
     },
     {
-      "title": "Naive partition",
-      "summary": "The simplest, memory-hungry scheme.",
+      "title": "Quick sort versus merge sort and heap sort",
+      "summary": "Know the trade-offs.",
       "sections": [
         {
-          "body": "Copy elements smaller than the pivot into a temporary array, then the pivot, then larger ones, and copy back. It is stable and easy to reason about but uses O(n) extra space per partition, which defeats quick sort's in-place advantage; Lomuto and Hoare avoid it."
+          "body": "Quick sort is in place, cache friendly and fastest on arrays, but unstable and with a bad worst case unless protected. Merge sort is stable and has a guaranteed bound, but needs O(n) extra space, and is better for linked lists and external data. Heap sort has the guaranteed bound and O(1) space, but jumps around memory, so it is typically two to three times slower than quick sort on arrays. For objects where stability matters, standard libraries choose a merge based sort such as Timsort. For primitives, they choose quick sort derivatives."
         }
       ]
     },
     {
-      "title": "Where quick sort is used",
-      "summary": "Applications.",
+      "title": "Optimizations in real implementations",
+      "summary": "What libraries add on top.",
       "sections": [
         {
-          "bullets": [
-            "C and C++ standard-library sorts (typically introsort variants).",
-            "Database record ordering and in-memory sorting.",
-            "K-th element selection through quickselect.",
-            "Preprocessing for binary search.",
-            "Geometry: convex hull algorithms sort points first."
-          ]
+          "body": "Insertion sort for ranges below 16 to 32 elements removes the most expensive part of the recursion. Median of three or ninther pivots improve balance. Tail recursion elimination bounds the stack. Branchless partitioning (computing swap decisions with arithmetic and processing in blocks) avoids branch mispredictions, which can give 2x speedups on random data. Detecting already sorted or reversed ranges makes common patterns linear. SIMD and sorting network kernels finish small ranges on modern CPUs."
         }
       ]
     }
   ],
   "takeaways": [
-    "Pick a pivot, partition, recurse; the pivot lands in its final place.",
-    "Average O(n log n); worst O(n²) with bad pivots, so randomize or use median-of-three.",
-    "In place and cache friendly, but not stable.",
-    "Use introsort-style safeguards in real code."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Quick sort algorithm (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
-    }
+    "Partition around a pivot so the pivot lands in its final place, then sort both sides.",
+    "Average O(n log n) with small constants; worst case O(n^2) from unbalanced pivots.",
+    "In place with O(log n) stack, but not stable.",
+    "Random or median-of-three pivots remove the common bad inputs; introsort removes all of them.",
+    "Three-way partition makes arrays with many duplicates run in linear-ish time.",
+    "Recurse on the smaller side and loop on the larger to bound the stack at log n.",
+    "Quickselect reuses partition to find the k-th element in O(n) expected time."
   ],
   "practice": [
     {
-      "title": "Implement Lomuto partition",
+      "title": "Implement quick sort with Lomuto partition",
       "difficulty": "Easy"
     },
     {
-      "title": "Sort colors with a three-way (Dutch flag) partition",
+      "title": "Sort an array of 0s, 1s and 2s in one pass",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement Hoare partition and explain why the recursion bounds differ",
       "difficulty": "Medium"
     },
     {
-      "title": "Find the k-th smallest element with quickselect",
+      "title": "Find the k-th largest element using quickselect",
       "difficulty": "Medium"
     },
     {
-      "title": "Bound the stack to O(log n) by recursing into the smaller side first",
+      "title": "Sort an array with many duplicates using three-way partition",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Make quick sort stable using extra O(n) space or index tagging",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Build an input that makes first-element-pivot quick sort take n^2 steps",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Implement introsort with a depth limit and heap sort fallback",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "CLRS: Introduction to Algorithms, 4th ed. (Chapter 7)",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed. (Quicksort)",
+      "url": "https://algs4.cs.princeton.edu/23quicksort/"
+    },
+    {
+      "label": "Reference: Quick sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/quick-sort-algorithm/"
     }
   ]
 }

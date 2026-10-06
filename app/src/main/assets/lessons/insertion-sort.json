@@ -1,124 +1,226 @@
 {
-  "summary": "Insertion sort builds a sorted prefix one element at a time, like sorting playing cards in your hand: take the next card and slide it left into its place. It is fast on small or nearly sorted input.",
+  "summary": "Insertion sort builds a sorted prefix one element at a time: it takes the next element and slides it left past every larger element until it fits, the way you sort playing cards in your hand. It runs in O(n^2) in the worst case but in O(n + inversions) time, so it is close to linear on nearly sorted data, and it is stable, in place and online. Because of its tiny constant factor it is the algorithm that production sorts such as Timsort, introsort and pdqsort use for small ranges, and it is the base case you are expected to know cold in interviews.",
   "sections": [
     {
-      "heading": "Algorithm",
-      "bullets": [
-        "Treat a[0] as a sorted prefix of length 1.",
-        "Take key = a[i] for i from 1 to n-1.",
-        "Shift every larger element in the prefix one slot right.",
-        "Drop the key into the gap."
-      ],
-      "code": "void insertion_sort(int a[], int n) {\n  for (int i = 1; i < n; i++) {\n    int key = a[i], j = i - 1;\n    while (j >= 0 && a[j] > key) { a[j + 1] = a[j]; j--; }\n    a[j + 1] = key;\n  }\n}"
+      "heading": "Overview",
+      "body": "Insertion sort treats the array as two parts: a sorted prefix on the left and an unsorted remainder on the right. It starts with a prefix of length 1 (a single element is always sorted). At each step it takes the first element of the remainder, called the **key**, and inserts it into the correct spot inside the sorted prefix by shifting larger elements one slot to the right. After `n-1` insertions the whole array is sorted. This is exactly how most people sort a hand of cards: pick up a new card, slide it left past larger cards, drop it in. The big difference from selection sort is where the work goes. Selection sort spends its effort finding the right element and then does one swap; insertion sort has the element already chosen (the next one in order) and spends its effort finding where it belongs. That difference makes insertion sort adaptive: if the key is already larger than everything in the prefix it costs one comparison and no moves."
     },
     {
-      "heading": "Walkthrough",
-      "body": "On [5, 2, 4, 1]: key 2 shifts 5 giving [2, 5, 4, 1]; key 4 shifts 5 giving [2, 4, 5, 1]; key 1 shifts 5, 4, 2 giving [1, 2, 4, 5]."
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Best (already sorted): O(n), one comparison per element.",
-        "Average and worst (reverse sorted): O(n²).",
-        "Space: O(1).",
-        "Stable (stop shifting on equal values, i.e. use `>`).",
-        "Adaptive: runs in O(n + d) where d is the number of inversions.",
-        "Online: can sort elements as they arrive."
+        "**Key**: the element `a[i]` being inserted in round `i`. It is saved in a temporary before shifting begins, because its slot will be overwritten.",
+        "**Sorted prefix**: `a[0..i-1]` is in non-decreasing order at the start of round `i`. It contains the original first `i` elements, not the `i` smallest overall.",
+        "**Shift**: moving `a[j]` to `a[j+1]` to open a hole. Shifting costs one assignment, cheaper than a three-assignment swap.",
+        "**Inversion**: a pair `i < j` with `a[i] > a[j]`. Each shift removes exactly one inversion, so total shifts equal the inversion count.",
+        "**Adaptive**: running time is Theta(n + d) where `d` is the number of inversions, so nearly sorted input is fast.",
+        "**Stable**: the inner loop stops when `a[j] <= key` (strict `>` for shifting), so equal elements keep their original order.",
+        "**Online**: it can sort data as it arrives, one element at a time, because the prefix is always sorted after each insertion.",
+        "**In place**: O(1) extra space, only the key and indexes."
       ]
     },
     {
-      "heading": "Why it matters in practice",
-      "body": "For small n the low overhead beats O(n log n) algorithms, so production sorts use it as a base case: Timsort and introsort switch to insertion sort on short runs (around 16-32 elements)."
+      "heading": "How It Works",
+      "body": "Sort `[12, 11, 13, 5, 6]`. The prefix starts as `[12]`. Round 1: key = 11. Compare with 12, which is larger, so shift 12 right, then place 11 in slot 0: `[11, 12, 13, 5, 6]`. Round 2: key = 13. Compare with 12; 12 is not larger, so stop. No shifts: the array is unchanged. Round 3: key = 5. Shift 13, 12 and 11 each one place right, then drop 5 in slot 0: `[5, 11, 12, 13, 6]`. Round 4: key = 6. Shift 13, 12 and 11 right, stop at 5 because 5 is not greater than 6, and put 6 in slot 1: `[5, 6, 11, 12, 13]`. The total number of shifts is 1 + 0 + 3 + 3 = 7, which equals the number of inversions in the original array: (12,11), (12,5), (12,6), (11,5), (11,6), (13,5), (13,6). Note that the inner loop checks the bound `j >= 0` first so it never reads `a[-1]`.",
+      "code": "void insertion_sort(int a[], int n) {\n    for (int i = 1; i < n; i++) {\n        int key = a[i];\n        int j = i - 1;\n        while (j >= 0 && a[j] > key) {   /* strict >: keeps it stable */\n            a[j + 1] = a[j];             /* shift right */\n            j--;\n        }\n        a[j + 1] = key;                  /* drop key into the hole */\n    }\n}"
+    },
+    {
+      "heading": "Variants & Types",
+      "bullets": [
+        "**Standard linear-scan insertion sort**: as above. O(n) best case, O(n^2) worst, O(1) space, stable.",
+        "**Binary insertion sort**: locate the insertion point with binary search over the sorted prefix (O(log i) comparisons), then shift with `memmove`. Comparisons drop to O(n log n) but shifting is still O(n^2) in the worst case, so it helps only when comparisons are expensive, as with strings or user-supplied comparators.",
+        "**Sentinel version**: first move the minimum to `a[0]` so the inner loop needs no `j >= 0` bound check. Saves one comparison per iteration at the cost of a pre-pass.",
+        "**Linked-list insertion sort**: insert each node into a growing sorted list. Finding the position is still linear, but there is no shifting; useful when elements cannot be moved cheaply.",
+        "**Shell sort**: runs insertion sort over elements `h` apart for a decreasing gap sequence ending at 1. Moves elements long distances early, breaking the O(n^2) barrier in practice.",
+        "**Library insertion sort**: used as the small-range base case, usually for ranges of 8 to 32 elements, inside introsort, pdqsort and Timsort (which uses binary insertion sort to extend runs to a minimum length of 32 to 64).",
+        "**Gap insertion sort (library sort)**: leaves gaps in the array so inserts shift fewer elements, achieving O(n log n) expected time. Mostly of theoretical interest."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Best case**: already sorted input, `n-1` comparisons and 0 shifts, so O(n).",
+        "**Worst case**: reverse-sorted input, `n(n-1)/2` comparisons and `n(n-1)/2` shifts, so O(n^2). For `n = 1000` that is 499,500 of each.",
+        "**Average case**: about `n^2/4` comparisons and `n^2/4` shifts on random permutations, since half of all pairs are inverted.",
+        "**Adaptive bound**: Theta(n + d) where `d` is the inversion count. If every element is at most `k` positions from its final place, `d <= nk` and the sort runs in O(nk).",
+        "**Space**: O(1) auxiliary, and it is stable.",
+        "**Binary insertion**: O(n log n) comparisons, still O(n^2) data movement in the worst case.",
+        "**Constant factors**: inner loop is a compare, a copy and a decrement. For `n` under roughly 16 to 32 it usually beats merge sort and quick sort because it has no recursion, no extra buffer and good branch prediction."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Bound check order**: `while (a[j] > key && j >= 0)` reads `a[-1]` when `j` reaches -1. Test `j >= 0` first so that the short-circuit protects the read.",
+        "**Unsigned index**: with `size_t j`, the condition `j >= 0` is always true and `j--` wraps around. Use a signed index, or the form `for (size_t j = i; j > 0 && a[j-1] > key; j--) a[j] = a[j-1];`.",
+        "**Overwriting the key**: forgetting to save `a[i]` in a temporary before the shift loop loses the value, since the first shift overwrites it.",
+        "**Non-strict comparison**: shifting while `a[j] >= key` moves equal elements past each other and breaks stability, and costs extra work.",
+        "**Dropping into the wrong slot**: after the loop the hole is at `j + 1`, not `j`. Writing `a[j] = key` is a classic off-by-one bug.",
+        "**Using it for large unsorted data**: 100,000 random elements need about 2.5 billion shifts; use an O(n log n) sort.",
+        "**Swapping instead of shifting**: the swap-based inner loop (swap while out of order) is correct but writes about three times as much as the shift version."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "body": "Insertion sort is the workhorse for small inputs inside real library sorts. C++ `std::sort` (introsort) finishes with an insertion pass over ranges of at most about 16 elements; Python's and Java's Timsort extends each natural run to a minimum length using binary insertion sort; Go's pdqsort and Rust's sort use insertion sort for short slices; and the Linux kernel and many embedded systems keep a small insertion sort for short lists. It is also the right choice when data arrives incrementally (maintaining a sorted list of the top few items, a sorted stream of timestamps that are mostly in order), and when data is known to be nearly sorted, such as appending a few new records to a sorted log or re-sorting a frame-to-frame sprite list that changes little. Its stability and O(1) memory also make it a good building block for sorting small groups of records by a secondary key."
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Complexity?** O(n) best, O(n^2) average and worst, O(1) space.",
+        "**Stable?** Yes, if the shift condition is a strict `>`.",
+        "**When is it better than quick sort?** Small `n` (under about 20) and nearly sorted data.",
+        "**What does adaptive mean here?** Running time is O(n + inversions), so fewer inversions means fewer steps.",
+        "**How many shifts does it do?** Exactly the number of inversions.",
+        "**Binary insertion sort: does it improve the bound?** Only the comparisons (O(n log n)). Shifts remain O(n^2) in the worst case.",
+        "**Why do hybrid sorts use it?** Low overhead, stable, fast on small or almost-ordered slices, no allocation.",
+        "**Is it online?** Yes, you can feed elements one by one and the prefix stays sorted."
+      ]
     }
   ],
   "subtopics": [
     {
+      "title": "Loop invariant and correctness",
+      "summary": "Why the prefix stays sorted.",
+      "sections": [
+        {
+          "body": "Invariant: at the start of round `i`, `a[0..i-1]` consists of the original first `i` elements in sorted order. Initialisation: for `i = 1` the prefix has one element and is sorted. Maintenance: the inner loop shifts every element larger than `key` one slot right, so a hole opens at exactly the position where all earlier elements are `<= key` and all later ones are `> key`. Placing `key` there makes `a[0..i]` sorted and contains the same elements. Termination: after the round with `i = n-1` the prefix is the entire array. Because shifting stops at the first element `<= key`, equal elements are never passed, which gives stability."
+        }
+      ]
+    },
+    {
+      "title": "Inversions and adaptivity",
+      "summary": "Why nearly sorted data is fast.",
+      "sections": [
+        {
+          "body": "Every shift in insertion sort cures exactly one inversion, and every comparison either causes a shift or ends the inner loop, so total work is `n - 1` plus the inversion count. A reversed array has `n(n-1)/2` inversions, a sorted array has 0, and a random one has `n(n-1)/4` on average. That is why insertion sort is the right tool when each element is at most `k` places from its final position: the inversion count is at most `n*k`, giving O(nk) time. Examples: a log file where a few late-arriving entries are slightly out of order, or an array that was sorted and then had a handful of values changed. The same property is why Timsort detects runs and uses insertion sort to finish them."
+        }
+      ]
+    },
+    {
       "title": "Binary insertion sort",
-      "summary": "Fewer comparisons.",
+      "summary": "Fewer comparisons, same shifting.",
       "sections": [
         {
-          "body": "Find the insertion point with binary search in O(log i) comparisons, then shift. Comparisons drop to O(n log n), but shifting still costs O(n²) moves, so total time stays O(n²)."
+          "body": "Since the prefix is sorted, the position of the key can be found with a binary search in about `log2(i)` comparisons. The shift of the block that follows is still needed, but it can be done with a single `memmove` call, which is much faster than an element-by-element loop in practice. To keep the sort stable, search for the **upper bound** (first element strictly greater than the key). The data movement is still O(n^2) in the worst case, so the total remains O(n^2), but for strings or complex comparators, where comparisons dominate, it can be a clear win. Timsort uses exactly this for short runs.",
+          "code": "#include <string.h>\n\nvoid binary_insertion_sort(int a[], int n) {\n    for (int i = 1; i < n; i++) {\n        int key = a[i];\n        int lo = 0, hi = i;              /* find first index with a > key */\n        while (lo < hi) {\n            int mid = lo + (hi - lo) / 2;\n            if (a[mid] <= key) lo = mid + 1;\n            else hi = mid;\n        }\n        memmove(&a[lo + 1], &a[lo], (size_t)(i - lo) * sizeof a[0]);\n        a[lo] = key;\n    }\n}"
         }
       ]
     },
     {
-      "title": "Shell sort",
-      "summary": "Insertion sort with gaps.",
+      "title": "Insertion sort on linked lists",
+      "summary": "No shifting, but a linear search per node.",
       "sections": [
         {
-          "body": "Run insertion sort on elements h apart for a decreasing sequence of h values, ending with h = 1. Far elements move quickly, and the final pass is nearly sorted. Typical running time is between O(n log² n) and O(n^1.5) depending on the gap sequence."
+          "body": "For a singly linked list, take each node from the unsorted input, walk the sorted output list until you reach the first node with a larger key, and splice the node in front of it. Splicing is O(1), so the cost is dominated by the walk, which keeps the overall time at O(n^2) with O(1) extra space. It stays stable if you stop at the first strictly greater node. A dummy head node removes the special case for inserting at the front. For lists with many elements you should prefer merge sort (O(n log n)), but insertion sort is a common interview exercise, for example LeetCode 147.",
+          "code": "struct node { int val; struct node *next; };\n\nstruct node *insertion_sort_list(struct node *head) {\n    struct node dummy = {0, NULL};          /* sorted output list */\n    while (head) {\n        struct node *next = head->next;\n        struct node *p = &dummy;\n        while (p->next && p->next->val <= head->val)\n            p = p->next;                    /* stop before first greater */\n        head->next = p->next;\n        p->next = head;\n        head = next;\n    }\n    return dummy.next;\n}"
         }
       ]
     },
     {
-      "title": "Linked-list insertion sort",
-      "summary": "No shifting needed.",
+      "title": "Insertion sort as the small-range base case",
+      "summary": "How hybrid sorts use it.",
       "sections": [
         {
-          "body": "On a linked list the 'shift' becomes a pointer splice, so each insertion needs no moves, but locating the position is still a linear scan, keeping O(n²)."
+          "body": "Divide-and-conquer sorts pay overhead per call: recursion, partitioning, merging buffers. For ranges of roughly 8 to 32 elements that overhead exceeds the savings from O(n log n), so libraries cut off and finish with insertion sort. Introsort (C++ `std::sort`) stops quicksort partitioning at about 16 elements and runs one insertion pass over the whole array at the end, which is cheap because every element is already within 16 places of its final position (the adaptive bound again). Timsort sorts runs of at least `minrun` elements (between 32 and 64) with binary insertion sort and then merges them. The best cutoff depends on the element size and the comparison cost, so libraries tune it empirically."
         }
       ]
     },
     {
-      "title": "Insertion vs bubble vs selection",
-      "summary": "How the three O(n²) sorts compare.",
+      "title": "Insertion sort versus shell sort",
+      "summary": "Same insertion step, with gaps.",
       "sections": [
         {
-          "bullets": [
-            "Insertion: best on nearly sorted data, stable, adaptive.",
-            "Bubble: stable and adaptive, but many more swaps.",
-            "Selection: fewest swaps, not adaptive, not stable."
-          ]
+          "body": "Insertion sort moves an element only one slot per shift, so an element starting far from its place takes many steps. Shell sort runs the same insertion routine on elements `gap` apart, first with a large gap that moves distant elements quickly, then with smaller gaps, finishing with gap 1, which is plain insertion sort on an almost-sorted array and therefore cheap. With a good gap sequence the time drops well below O(n^2) in practice (O(n^(4/3)) for Sedgewick's sequence). The trade-off is that shell sort loses stability. If you already understand insertion sort, shell sort is a one-line change: replace `1` by `gap` in the index arithmetic."
         }
       ]
     },
     {
-      "title": "Applications",
-      "summary": "Where it is used for real.",
+      "title": "Online and streaming use",
+      "summary": "Maintaining a sorted list as data arrives.",
       "sections": [
         {
-          "bullets": [
-            "Small or nearly sorted data.",
-            "Base case inside hybrid sorts such as Timsort and introsort.",
-            "Sub-step inside bucket sort for each bucket.",
-            "Online situations where items arrive one at a time."
-          ]
+          "body": "Because the prefix is always sorted, insertion sort can process a stream: each new value is inserted in its place immediately, and at any time the array is a valid sorted snapshot. This is how you would maintain a small leaderboard, a sorted window of the last `k` readings (to read off a median in O(1)), or a priority list of the top few matches. For `k` up to a few dozen, an array with insertion is faster than a balanced tree or heap because of cache locality. For larger sets, switch to a heap, balanced tree or skip list, where an insertion costs O(log n) instead of O(n)."
+        }
+      ]
+    },
+    {
+      "title": "Common interview variants",
+      "summary": "Problems that reduce to insertion sort.",
+      "sections": [
+        {
+          "body": "Sort a nearly sorted (k-sorted) array: insertion sort in O(nk), or a min-heap of size `k+1` in O(n log k). Sort a linked list with insertion sort (LeetCode 147). Count how many shifts the algorithm performs: equal to the inversion count, solved in O(n log n) with a merge-sort counter or a Fenwick tree. Sort an array of 0s, 1s and 2s: insertion works but a counting or Dutch-flag approach is O(n). Insert a value into an already sorted array: one round of insertion sort. In each case the key insight is that insertion sort cost equals the disorder in the input, so when the question promises a small amount of disorder, insertion sort is the intended answer."
+        }
+      ]
+    },
+    {
+      "title": "Worked example on five values",
+      "summary": "Pass by pass with the card-hand picture.",
+      "sections": [
+        {
+          "body": "Take `[23, 1, 10, 5, 2]`, and treat `[23]` as the already sorted hand. Pass 1 picks 1, compares it with 23, and inserts it in front: `[1, 23]`. Pass 2 picks 10, which is larger than 1 and smaller than 23, so it goes between them: `[1, 10, 23]`. Pass 3 picks 5, which belongs between 1 and 10: `[1, 5, 10, 23]`. Pass 4 picks 2, which belongs between 1 and 5: `[1, 2, 5, 10, 23]`. The shift counts are 1, 1, 2 and 3, a total of 7, matching the 7 inversions in the input. A sorted input shifts nothing and costs `n-1` comparisons, which is the O(n) best case. A beginner variant described in some texts compares the new element with its left neighbour and swaps repeatedly; it gives the same result but writes about three times as much as the shift version. Insertion sort is also the subroutine used inside bucket sort to order the small contents of each bucket, since buckets are tiny and often nearly sorted."
         }
       ]
     }
   ],
   "takeaways": [
-    "Insert each element into the sorted prefix by shifting larger ones right.",
-    "O(n) best, O(n²) worst, O(1) space, stable and adaptive.",
-    "Best simple sort for small or nearly sorted arrays.",
-    "Used inside hybrid sorts like Timsort."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Insertion sort algorithm (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
-    }
+    "Insertion sort grows a sorted prefix by inserting each next element into place, shifting larger elements one slot right.",
+    "Best case O(n) on sorted input, worst and average O(n^2), and O(n + inversions) in general.",
+    "It is stable when the shift test is a strict greater-than, in place, and online.",
+    "Each shift removes exactly one inversion, so the shift count equals the inversion count.",
+    "Check `j >= 0` before reading `a[j]`, and write the key to `a[j + 1]` after the loop.",
+    "Binary insertion cuts comparisons to O(n log n) but the shifting is still quadratic.",
+    "Hybrid library sorts (introsort, Timsort, pdqsort) use insertion sort for small or nearly sorted ranges."
   ],
   "practice": [
     {
-      "title": "Sort a nearly sorted array and count shifts",
+      "title": "Implement insertion sort and print the array after each insertion for [9, 5, 1, 4, 3].",
       "difficulty": "Easy"
     },
     {
-      "title": "Implement binary insertion sort",
+      "title": "How many shifts does insertion sort make on [3, 1, 2, 5, 4]? Verify by counting inversions.",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Sort an array in descending order with insertion sort and keep it stable for equal keys.",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement binary insertion sort with memmove and explain which cost it reduces.",
       "difficulty": "Medium"
     },
     {
-      "title": "Sort a linked list with insertion sort",
+      "title": "Sort a singly linked list using insertion sort and handle insertion at the head with a dummy node.",
       "difficulty": "Medium"
     },
     {
-      "title": "Build a merge sort that switches to insertion sort for short runs",
+      "title": "Given an array where each element is at most k positions from its sorted position, sort it in O(nk) and then in O(n log k).",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write an insertion sort that works with size_t indexes without ever underflowing.",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Count the exact number of inversions for an array of 100,000 elements efficiently and use it to predict the shifts insertion sort would make.",
       "difficulty": "Hard"
+    },
+    {
+      "title": "Choose the insertion-sort cutoff for a quicksort on 64-byte records. Describe an experiment and what factors move the optimum.",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Insertion Sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/insertion-sort-algorithm/"
+    },
+    {
+      "label": "Cormen, Leiserson, Rivest, Stein: Introduction to Algorithms, chapter 2",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick and Wayne: Algorithms, 4th ed., section 2.1 Elementary Sorts",
+      "url": "https://algs4.cs.princeton.edu/21elementary/"
     }
   ]
 }

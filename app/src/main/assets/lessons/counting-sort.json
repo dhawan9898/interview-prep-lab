@@ -1,123 +1,233 @@
 {
-  "summary": "Counting sort sorts integers without comparing them. It counts how many times each key occurs, turns the counts into positions with prefix sums, and places each element directly. Running time is O(n + k) for keys in the range 0..k, so it beats comparison sorts when k is small.",
+  "summary": "Counting sort sorts integers from a small known range [0, k] without comparing elements: it counts how many times each value occurs, turns the counts into starting positions with a prefix sum, and then places every element directly into its output slot. It runs in O(n + k) time and O(n + k) space, and the standard right-to-left placement makes it stable. That stability is what lets it serve as the digit-sorting step inside radix sort, and it is the textbook example of beating the O(n log n) lower bound for comparison sorts by exploiting extra knowledge about the keys.",
   "sections": [
     {
-      "heading": "Algorithm",
-      "bullets": [
-        "Find the maximum key k and make a count array of size k + 1, all zeros.",
-        "Count: for each x, count[x]++.",
-        "Prefix sums: count[i] += count[i-1], so count[x] is the number of elements <= x.",
-        "Place: walk the input from right to left; put x at output[--count[x]]."
-      ],
-      "code": "void counting_sort(const int in[], int out[], int n, int k) {\n  int *count = calloc(k + 1, sizeof *count);\n  for (int i = 0; i < n; i++) count[in[i]]++;\n  for (int v = 1; v <= k; v++) count[v] += count[v - 1];\n  for (int i = n - 1; i >= 0; i--) out[--count[in[i]]] = in[i];   // right to left = stable\n  free(count);\n}"
+      "heading": "Overview",
+      "body": "Every comparison-based sort needs Omega(n log n) comparisons in the worst case, because a decision tree that distinguishes n! orderings must have at least `log2(n!)` levels. Counting sort escapes that bound by not comparing elements at all. If you know every key is an integer between 0 and `k`, you can use the key itself as an array index. Count how many elements have each key value in a `count[0..k]` array. A running total over `count` then tells you, for each key, where its block of equal elements ends in the sorted output. Walking the input and dropping each element into its block yields the sorted array. The cost is one pass over the input to count, one pass over the key range for the prefix sums, and one pass over the input to place: O(n + k). When `k` is comparable to `n` this is linear. When `k` is huge compared with `n` (say sorting 100 numbers in the range 0 to a billion), the count array dominates and counting sort is the wrong tool."
     },
     {
-      "heading": "Why right to left",
-      "body": "Equal keys occupy a range of output positions. Scanning the input from the end and filling that range from its top keeps equal elements in their original order, so counting sort is stable. Stability is what lets it serve as the digit sort inside radix sort."
-    },
-    {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Time: O(n + k).",
-        "Space: O(n + k): the output array plus the counts.",
-        "Stable (with the right-to-left placement).",
-        "Not comparison-based, so the O(n log n) lower bound does not apply."
+        "**Key range `k`**: the maximum key value (or `max - min` after offsetting). The count array has `k + 1` entries.",
+        "**Count array**: `count[v]` stores how many input elements have key `v`. Building it is a single pass over the input.",
+        "**Prefix sum (cumulative count)**: after `count[v] += count[v-1]` for `v = 1..k`, `count[v]` is the number of elements with key `<= v`, which equals the one-past-the-end index of the block of key `v` in the output.",
+        "**Output array**: a separate array of `n` slots that receives each element. Counting sort is not in place in its stable form.",
+        "**Stable placement**: scanning the input from right to left and decrementing `count[key]` before writing places equal keys in their original relative order.",
+        "**Non-comparison sort**: it uses keys as indexes, so it is not bound by the Omega(n log n) lower bound.",
+        "**Offset**: for keys in `[min, max]` subtract `min` to index the count array, so negative numbers work.",
+        "**Integer keys only**: keys must map to a small range of integers, though records with such keys (like grades or ages) can be sorted too."
       ]
     },
     {
-      "heading": "Limits",
+      "heading": "How It Works",
+      "body": "Sort `[4, 2, 2, 8, 3, 3, 1]` with `k = 8`. **Step 1, count**: `count = [0, 1, 2, 2, 1, 0, 0, 0, 1]` for values 0 to 8 (one 1, two 2s, two 3s, one 4, one 8). **Step 2, prefix sums**: `count = [0, 1, 3, 5, 6, 6, 6, 6, 7]`. So `count[3] = 5` means five elements are `<= 3`, and the block of 3s ends at output index 4. **Step 3, place from the right**: take the last input element 1: `count[1]` is 1, decrement to 0, write 1 to `output[0]`. Next 3: decrement `count[3]` to 4, write to `output[4]`. Next 3: decrement to 3, write to `output[3]`. Then 8 goes to `output[6]`, then 2 to `output[2]`, then 2 to `output[1]`, then 4 to `output[5]`. The result is `[1, 2, 2, 3, 3, 4, 8]`. The two 3s landed in positions 3 and 4 in the same relative order as in the input (the first 3 in the input went to index 3), which is stability. The right-to-left scan matters: with a left-to-right scan the equal elements would end up reversed.",
+      "code": "#include <stdlib.h>\n#include <string.h>\n\n/* sorts a[0..n-1], all values in [0, k]; returns 0 on success */\nint counting_sort(int a[], int n, int k) {\n    int *count = calloc((size_t)k + 1, sizeof *count);\n    int *out = malloc((size_t)n * sizeof *out);\n    if (!count || !out) { free(count); free(out); return -1; }\n\n    for (int i = 0; i < n; i++) count[a[i]]++;           /* histogram */\n    for (int v = 1; v <= k; v++) count[v] += count[v - 1]; /* prefix */\n    for (int i = n - 1; i >= 0; i--)                     /* stable */\n        out[--count[a[i]]] = a[i];\n\n    memcpy(a, out, (size_t)n * sizeof *a);\n    free(count); free(out);\n    return 0;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Keys must be integers (or mappable to small integers).",
-        "A huge range k makes it slow and memory-hungry; sorting 10 numbers in 0..10^9 is a bad use.",
-        "Negative numbers need an offset by the minimum.",
-        "Not in place."
+        "**Simple (histogram) counting sort**: count occurrences, then rewrite the array by emitting each value `count[v]` times. Needs no output array and is very fast for plain integers, but loses the link to the original records, so it cannot sort records by key and is not meaningfully stable.",
+        "**Stable counting sort with prefix sums**: the version shown above. Needed for records and as a subroutine of radix sort.",
+        "**Counting sort with negative numbers**: compute `min` and `max`, use `count[x - min]`, size `max - min + 1`.",
+        "**Radix sort (LSD)**: sort by the least significant digit first using counting sort with `k = base - 1`, then the next digit, and so on. Total O(d * (n + base)) for `d` digits. Stability of counting sort is what makes it correct.",
+        "**Bucket sort**: spreads elements over buckets by value range and sorts each bucket separately; counting sort is the special case where each bucket holds a single key value.",
+        "**Pigeonhole sort**: like counting sort but keeps the actual items in each slot rather than counts. Works when the range is about the same as `n`.",
+        "**Parallel counting sort**: each thread builds its own histogram over a chunk of the input, then the histograms are merged by prefix sum so that each thread knows its output offsets. This is the basis of GPU radix sort."
+      ]
+    },
+    {
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Time**: Theta(n + k) in all cases. Three loops: count (n), prefix (k), place (n), plus a copy-back (n).",
+        "**Space**: O(n + k): the `n`-element output array and the `k + 1`-element count array. For `n = 1,000,000` and `k = 255` that is about 4 MB plus 1 KB.",
+        "**When it wins**: `k = O(n)`; a range beyond about `n log n` is better handled by a comparison sort. It beats comparison sorts when the key range is of the order of the number of items. For 100 numbers in a range of 10^9 it is a catastrophe: 4 GB of counts to sort 100 values.",
+        "**Radix sort cost**: sorting 32-bit integers with 8-bit digits takes 4 passes with `k = 255`, so about `4 * (n + 256)` work and 4 reads and writes of the array.",
+        "**Stability**: stable if you place from right to left. **In place**: no, in the stable form.",
+        "**Memory access**: the histogram updates are random accesses into a `k`-sized table. If the table fits in L1 or L2 cache (k up to about 64K entries) the sort is very fast; if it does not, cache misses dominate.",
+        "**Count width**: counts need to hold up to `n`; use a 32-bit or 64-bit type, not `char`, when `n` can be large."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Left-to-right placement**: scanning forward in the placement step reverses equal keys and breaks stability, which breaks radix sort silently.",
+        "**Key out of range**: any value `< 0` or `> k` writes outside `count`, which is undefined behaviour in C. Validate or compute `min` and `max` first.",
+        "**Forgetting the offset**: negative keys need `a[i] - min`. Indexing with a negative number corrupts memory.",
+        "**Huge key range**: allocating `k + 1` counters for a 32-bit key range needs 16 GB. Check that `k` is reasonable compared with `n` first, or switch to radix sort.",
+        "**Not zeroing the count array**: use `calloc` or `memset`. Stale counts give wrong output.",
+        "**Off-by-one in the prefix step**: the loop runs from `v = 1` to `k` inclusive, and the count array has `k + 1` entries.",
+        "**Sorting floats or strings directly**: counting sort needs integer keys. For strings use radix sort by character; for floats, map to an ordered integer representation first.",
+        "**Integer overflow in counts**: with 8-bit counts and more than 255 equal values the counter wraps silently."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "body": "Counting sort is used wherever keys live in a small known domain: sorting exam scores (0 to 100), ages (0 to 120), pixel intensities (0 to 255), characters of a string (0 to 255) or bytes in a packet. Image processing computes histograms and does histogram equalisation with the same counting pass. Radix sort, which is built on counting sort, is used for sorting 32 and 64-bit integers fast on CPUs and GPUs (for example in CUDA Thrust and CUB, and in database engines for integer columns), for sorting IP addresses, and for building suffix arrays (the prefix-doubling algorithm uses counting sort on rank pairs). Compression tools use counting to build frequency tables for Huffman coding. In interviews it is the answer to 'sort in linear time when the range is small', such as sorting colors or finding the k-th most frequent element."
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Complexity?** O(n + k) time and O(n + k) space.",
+        "**Why does it beat O(n log n)?** It does not compare elements, so the decision-tree lower bound does not apply; it uses the keys as array indexes.",
+        "**Is it stable?** Yes, when you scan the input right to left during placement.",
+        "**Is it in place?** Not the stable version; it needs an output array of size `n`.",
+        "**When is it a bad idea?** When `k` is much larger than `n`, or keys are not integers.",
+        "**Why is stability essential for radix sort?** Each pass must preserve the order from the previous pass among equal digits.",
+        "**How do you handle negative numbers?** Subtract the minimum so indexes start at 0.",
+        "**Count the occurrences and rewrite: is that counting sort?** Yes, the simple form, but it cannot carry satellite data with the keys."
       ]
     }
   ],
   "subtopics": [
     {
-      "title": "Walkthrough",
-      "summary": "Sorting [4, 2, 2, 8, 3, 3, 1].",
+      "title": "The comparison-sort lower bound",
+      "summary": "Why O(n log n) is the limit and how counting sort avoids it.",
       "sections": [
         {
-          "body": "Counts for 0..8: [0,1,2,2,1,0,0,0,1]. Prefix sums: [0,1,3,5,6,6,6,6,7]. Placing right to left yields [1, 2, 2, 3, 3, 4, 8]."
+          "body": "A comparison sort can be modelled as a binary decision tree: each internal node is a comparison, each leaf is one possible output order. To sort any input of `n` distinct elements the tree needs at least `n!` leaves, so its height is at least `log2(n!)`, which is about `n log2 n - 1.44 n`. Therefore every comparison sort takes Omega(n log n) comparisons in the worst case. Counting sort never asks whether one element is smaller than another; it reads the key as an address. The price is the assumption that keys are integers in a limited range. The lesson for interviews is that lower bounds apply to a model of computation, and changing the model (indexing by key) changes the bound."
         }
       ]
     },
     {
-      "title": "Radix sort",
-      "summary": "Sorting by digits.",
+      "title": "Prefix sums and stable placement",
+      "summary": "Why the right-to-left scan gives stability.",
       "sections": [
         {
-          "body": "Radix sort applies a stable counting sort to each digit from least to most significant. For d-digit numbers in base b it runs in O(d (n + b)), which can beat O(n log n) for fixed-width keys such as 32-bit integers (4 passes of base 256)."
+          "body": "After the prefix pass `count[v]` is the index just past the last slot for key `v`. Scanning from the end of the input and writing at `--count[key]` fills each key's block from its back to its front. The last input element with key `v` therefore gets the last slot of its block, the second last gets the slot before it, and so on, so the relative order of equal keys is preserved. If you instead keep `count[v]` as the **start** index (an exclusive prefix sum, shifting the array by one) you can scan left to right and write at `count[key]++`, which is also stable. Mixing the two conventions, for instance using inclusive counts with a forward scan, produces reversed duplicates, a frequent bug.",
+          "code": "/* alternative: exclusive prefix sums, forward scan, also stable */\nint start = 0;\nfor (int v = 0; v <= k; v++) {\n    int c = count[v];\n    count[v] = start;        /* first output index for key v */\n    start += c;\n}\nfor (int i = 0; i < n; i++)\n    out[count[a[i]]++] = a[i];"
         }
       ]
     },
     {
-      "title": "Bucket sort",
-      "summary": "The related idea for real numbers.",
+      "title": "Handling negative and offset keys",
+      "summary": "Mapping a range [min, max] to indexes.",
       "sections": [
         {
-          "body": "Distribute values into buckets by range, sort each bucket (often with insertion sort), and concatenate. Expected O(n) when input is uniformly distributed."
+          "body": "Scan the input once to find `min` and `max`, set `range = max - min + 1`, and use `a[i] - min` as the index. This makes counting sort work for negative numbers, and for ranges that do not start at 0, such as years 1900 to 2100 (range 201) or temperatures in minus 50 to 50. Check that `range` is reasonable before allocating, and guard against overflow when computing `max - min` for 32-bit extremes by using `long long`. The extra scan costs O(n) and does not change the asymptotic bound.",
+          "code": "int counting_sort_range(int a[], int n) {\n    int mn = a[0], mx = a[0];\n    for (int i = 1; i < n; i++) {\n        if (a[i] < mn) mn = a[i];\n        if (a[i] > mx) mx = a[i];\n    }\n    long long range = (long long)mx - mn + 1;\n    if (range > 100000000LL) return -2;          /* refuse huge tables */\n    int *count = calloc((size_t)range, sizeof *count);\n    int *out = malloc((size_t)n * sizeof *out);\n    if (!count || !out) { free(count); free(out); return -1; }\n    for (int i = 0; i < n; i++) count[a[i] - mn]++;\n    for (long long v = 1; v < range; v++) count[v] += count[v - 1];\n    for (int i = n - 1; i >= 0; i--) out[--count[a[i] - mn]] = a[i];\n    memcpy(a, out, (size_t)n * sizeof *a);\n    free(count); free(out);\n    return 0;\n}"
         }
       ]
     },
     {
-      "title": "Counting sort for frequencies",
-      "summary": "Not only sorting.",
+      "title": "Sorting records by key",
+      "summary": "Using the key as an index while carrying the payload.",
       "sections": [
         {
-          "body": "The counting phase alone gives character frequencies, histograms, and anagram checks in O(n), and the prefix sums answer 'how many elements are <= x?' queries instantly."
+          "body": "Real data are records, for example students with a grade field. The count and prefix steps use only the key; the placement step copies the whole record into the output array. This is why the stable output array matters: the histogram-rewrite shortcut would lose the other fields. Stability lets you sort first by name and then by grade, and the result is ordered by grade with ties in name order. For large records, sort an array of indices or pointers by key instead and avoid copying the payload more than once.",
+          "code": "struct rec { int grade; char name[16]; };\n\nvoid sort_by_grade(struct rec *in, struct rec *out, int n) {\n    int count[101] = {0};                     /* grades 0..100 */\n    for (int i = 0; i < n; i++) count[in[i].grade]++;\n    for (int g = 1; g <= 100; g++) count[g] += count[g - 1];\n    for (int i = n - 1; i >= 0; i--)\n        out[--count[in[i].grade]] = in[i];    /* copies whole record */\n}"
         }
       ]
     },
     {
-      "title": "Negative values and offsets",
-      "summary": "Handling a shifted range.",
+      "title": "Radix sort on top of counting sort",
+      "summary": "Extending the range with multiple stable passes.",
       "sections": [
         {
-          "body": "Subtract the minimum from every key, sort in 0..(max-min), and add it back on output. The count array then spans max - min + 1 entries.",
-          "code": "int off = min; count[in[i] - off]++;"
+          "body": "When `k` is too large for one counting pass, split each key into digits and run a stable counting sort on each digit from least to most significant. For 32-bit unsigned integers use four passes with base 256: each pass has `k = 255`, so the count array is 1 KB and fits in cache. Total work is `4 * (n + 256)`. Correctness depends on stability: after sorting on digit `d`, elements equal in digit `d` must stay in the order established by the less significant digits. The method is called LSD radix sort. MSD radix sort starts at the most significant digit and recurses on each bucket, which suits strings of varying length.",
+          "code": "void radix_sort_u32(unsigned a[], unsigned tmp[], int n) {\n    for (int shift = 0; shift < 32; shift += 8) {\n        int count[256] = {0};\n        for (int i = 0; i < n; i++) count[(a[i] >> shift) & 0xFF]++;\n        for (int v = 1; v < 256; v++) count[v] += count[v - 1];\n        for (int i = n - 1; i >= 0; i--)\n            tmp[--count[(a[i] >> shift) & 0xFF]] = a[i];\n        for (int i = 0; i < n; i++) a[i] = tmp[i];\n    }\n}"
+        }
+      ]
+    },
+    {
+      "title": "When counting sort is the wrong tool",
+      "summary": "Space blow-up and non-integer keys.",
+      "sections": [
+        {
+          "body": "The cost is `O(n + k)` space, so a sparse key range hurts. Sorting 1,000 values drawn from 0 to 2^31 would need an 8 GB count array, whereas quick sort needs none. Counting sort is also unsuitable for floating point numbers or arbitrary strings without conversion, and for data where the range is unknown until you have scanned it and the scan result is large. A rule of thumb: use counting sort when `k` is of the order of `n` and ideally under 65,536 so the table fits in cache; use radix sort when keys are fixed-width integers; use a comparison sort or a hash-based grouping when the key space is sparse."
+        }
+      ]
+    },
+    {
+      "title": "Counting techniques beyond sorting",
+      "summary": "Frequencies, histograms and range queries.",
+      "sections": [
+        {
+          "body": "The count and prefix-sum arrays are useful without ever producing a sorted output. The histogram answers frequency questions: the most common element, whether two strings are anagrams (compare two 26-slot arrays), the first non-repeating character. The prefix sums answer range questions in O(1): the number of elements in `[a, b]` is `count[b] - count[a-1]`. Sorting colours 0, 1, 2 with a three-slot count (LeetCode 75) is the simplest instance. Image histogram equalisation uses the cumulative distribution (the prefix sum) to remap pixel values. When you meet a problem where the values are small integers, think of a count array first."
+        }
+      ]
+    },
+    {
+      "title": "Parallel and GPU counting",
+      "summary": "How the histogram scales across threads.",
+      "sections": [
+        {
+          "body": "The three phases parallelise differently. The histogram step is a scatter with conflicts, so each thread (or thread block on a GPU) builds a private histogram over its slice of the input, avoiding atomic contention. The prefix step is a scan over `k` entries, and a parallel scan algorithm does it in O(log k) steps. For placement, each thread needs the starting offset of each key within its slice: this is the prefix sum across the per-thread histograms, ordered by key then by thread. That ordering preserves stability. This is exactly how GPU radix sorts in CUB and Thrust reach billions of keys per second, using 4-bit to 8-bit digits to keep per-block histograms in shared memory."
+        }
+      ]
+    },
+    {
+      "title": "Worked examples and the range rule of thumb",
+      "summary": "Two traces and when to stop using counting sort.",
+      "sections": [
+        {
+          "body": "For `[1, 4, 0, 2, 1, 1]` the size is 6 and the values run from 0 to 4, so the count array has 5 slots and the range is comparable to `n`: ideal. A second example: `[2, 5, 3, 0, 2, 3, 0, 3]` gives counts `[2, 0, 2, 3, 0, 1]` for values 0 to 5, and prefix sums `[2, 2, 4, 7, 7, 8]`. Scanning from the right, the last 3 goes to index `7 - 1 = 6`, the last 0 goes to index 1, the next 3 to index 5, the last 2 to index 3, the first 0 to index 0, the first 3 to index 4, the 5 to index 7 and the first 2 to index 2, giving `[0, 0, 2, 2, 3, 3, 3, 5]`. Why prefix sums at all? You could just count and write each value `count` times, but the prefix sums tell each element its exact output slot, and that is what makes the sort stable and lets whole records move. A practical rule from the reference: if the value range is much larger than `n log n`, a comparison sort such as merge sort is the better choice, because counting sort would spend more time and memory on the count array than a comparison sort spends on the data. Counting sort does not work on decimal values directly, and it is not in place."
         }
       ]
     }
   ],
   "takeaways": [
-    "Count occurrences, prefix-sum, place right to left.",
-    "O(n + k) time and space; stable.",
-    "Great for small integer ranges; poor for large ones.",
-    "Stable counting sort powers radix sort."
-  ],
-  "references": [
-    {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
-      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
-    },
-    {
-      "label": "Reference: Counting sort (GeeksforGeeks)",
-      "url": "https://www.geeksforgeeks.org/counting-sort/"
-    }
+    "Counting sort sorts integer keys in a known range [0, k] in O(n + k) time and O(n + k) space without comparing elements.",
+    "The three steps are histogram, prefix sum, and placement into an output array.",
+    "Placing elements from right to left makes it stable, and stability is required when it serves as the digit sort in radix sort.",
+    "It beats the Omega(n log n) comparison bound because it uses keys as array indexes, not comparisons.",
+    "Subtract the minimum to handle negative keys, and refuse a key range that is much larger than n.",
+    "Choose it when k is small compared with n; otherwise use radix sort for fixed-width integers or a comparison sort.",
+    "The same count and prefix arrays also solve frequency, anagram and range-count problems."
   ],
   "practice": [
     {
-      "title": "Sort characters of a string by frequency",
+      "title": "Implement counting sort for values 0 to 9 and show the count array after each of the three steps for [1, 4, 1, 2, 7, 5, 2].",
       "difficulty": "Easy"
     },
     {
-      "title": "Implement stable counting sort and verify stability",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Sort an array containing negative numbers",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Implement LSD radix sort with a counting-sort digit pass",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Sort 0s, 1s, and 2s in one pass",
+      "title": "Sort an array containing only 0s, 1s and 2s using counting.",
       "difficulty": "Easy"
+    },
+    {
+      "title": "Why does the placement loop run from right to left? Show what happens to two equal records if it runs left to right.",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Extend counting sort to work with negative numbers and with a range not starting at zero.",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Sort an array of records by an integer field in O(n + k) while keeping equal keys in input order.",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Given exam scores from 0 to 100 for one million students, return the median score in O(n + k) without a full sort.",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement LSD radix sort for 32-bit integers using counting sort with base 256, and count the memory passes.",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the maximum gap between successive elements in sorted order in O(n) time (using bucket or counting ideas).",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Prove that LSD radix sort is correct if and only if the per-digit sort is stable, and give a counterexample for an unstable digit sort.",
+      "difficulty": "Hard"
+    },
+    {
+      "title": "Design a parallel counting sort across 8 threads and explain how you keep it stable.",
+      "difficulty": "Hard"
+    }
+  ],
+  "references": [
+    {
+      "label": "Reference: Counting Sort (GeeksforGeeks)",
+      "url": "https://www.geeksforgeeks.org/counting-sort/"
+    },
+    {
+      "label": "Cormen, Leiserson, Rivest, Stein: Introduction to Algorithms, chapter 8 Sorting in Linear Time",
+      "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick and Wayne: Algorithms, 4th ed., key-indexed counting",
+      "url": "https://algs4.cs.princeton.edu/51radix/"
     }
   ]
 }

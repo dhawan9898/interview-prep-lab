@@ -1,123 +1,217 @@
 {
-  "summary": "Linear search checks elements one by one from the start until it finds the target or runs out. It needs no ordering and no random access, so it works on unsorted arrays and linked lists, at O(n) cost.",
+  "summary": "Linear search scans elements one at a time from the start until it finds the target or reaches the end. It needs no ordering, no index, and no random access, so it works on unsorted arrays, linked lists, files and streams, at O(n) cost. It is the baseline every other search is compared with, and for small or one-off searches it is often the fastest choice in practice.",
   "sections": [
     {
-      "heading": "Algorithm",
-      "bullets": [
-        "Start at index 0.",
-        "Compare the element with the target.",
-        "If equal, return the index.",
-        "Otherwise advance; if the end is reached, return -1."
-      ],
-      "code": "int linear_search(const int a[], int n, int target) {\n  for (int i = 0; i < n; i++)\n    if (a[i] == target) return i;\n  return -1;\n}"
+      "heading": "Overview",
+      "body": "Searching means answering: is this value in the collection, and where? Linear search, also called sequential search, answers it in the most direct way possible. Look at the first element, then the second, and keep going. Stop as soon as one matches, or report not found after the last element.\n\nThe method makes no assumptions about the data. It does not need the data sorted, it does not need indexing, and it does not need to jump to the middle, so it is the only option for a singly linked list, a stream, or a file you can only read forward. The price is time: the work grows in direct proportion to the number of elements. Doubling the data doubles the expected search time.\n\nFaster searches exist (binary search, hashing, trees), but each one pays a setup cost: sorting, building a hash table, or building a tree. If you search once, or the collection has a few dozen items, that setup costs more than it saves. This is why linear search is not just a teaching example. It is inside `strchr`, `memchr`, `find` in many libraries, and the inner loops of many programs, usually with SIMD acceleration."
     },
     {
-      "heading": "Complexity",
+      "heading": "Core Concepts",
       "bullets": [
-        "Best case: O(1), target is first.",
-        "Average: about n/2 comparisons, O(n).",
-        "Worst: n comparisons, O(n): target last or absent.",
-        "Space: O(1)."
+        "**Target (key)**: the value you are looking for.",
+        "**Sequential access**: elements are visited in storage order, one after another.",
+        "**Hit and miss**: a hit returns the position of the match; a miss reaches the end and returns a sentinel such as -1 or NULL.",
+        "**Best, average, worst case**: target first (1 comparison), target uniformly random (about (n + 1) / 2 comparisons), target last or absent (n comparisons).",
+        "**Early exit**: the loop stops at the first match; searching for all matches must scan to the end.",
+        "**Sentinel**: an extra copy of the target planted after the last element so the loop needs no bounds check.",
+        "**Predicate search**: the equality test is replaced by any condition, such as the first element greater than 100.",
+        "**Self-organizing list**: a list that reorders itself on access so frequently used items are found sooner.",
+        "**Sorted input**: if the data is sorted, a linear scan can stop early once it sees a value larger than the target."
       ]
     },
     {
-      "heading": "When to use it",
+      "heading": "How It Works",
+      "body": "Start with index i = 0. Compare a[i] with the target. If they are equal, return i. Otherwise increase i. If i reaches n, no element matched, so return -1. That is the whole algorithm.\n\nWorked example. Search for 7 in [4, 9, 7, 2, 7]. Compare 4 (no), 9 (no), 7 (yes). Return index 2 after 3 comparisons. The second 7 at index 4 is never examined. Search for 5 in the same array: all 5 elements are compared and the function returns -1.\n\nBelow is the plain version, the find-all version, and the same search on a linked list. Use `const` on inputs the search must not modify, and return an index (or a pointer) rather than a bool when the caller needs the position.",
+      "code": "#include <stddef.h>\n\n/* Index of first match, or -1 */\nint linear_search(const int a[], int n, int target) {\n    for (int i = 0; i < n; i++)\n        if (a[i] == target) return i;\n    return -1;\n}\n\n/* Fill out[] with all matching indexes, return how many */\nint find_all(const int a[], int n, int target, int out[]) {\n    int count = 0;\n    for (int i = 0; i < n; i++)\n        if (a[i] == target) out[count++] = i;\n    return count;\n}\n\nstruct node { int v; struct node *next; };\n\n/* Same idea on a singly linked list: return the node or NULL */\nstruct node *list_search(struct node *head, int target) {\n    for (struct node *p = head; p; p = p->next)\n        if (p->v == target) return p;\n    return NULL;\n}"
+    },
+    {
+      "heading": "Variants & Types",
       "bullets": [
-        "Unsorted or small data, where sorting first would cost more.",
-        "Linked lists and streams, which allow only sequential access.",
-        "A single search on data you will not search again.",
-        "When simplicity matters more than speed."
+        "**Plain forward scan**: the baseline shown above.",
+        "**Backward scan**: start at the end. Useful when the most recent items are most likely to be wanted, such as undo history or a log.",
+        "**Sentinel linear search**: plant the target at the end so each iteration does one comparison instead of two. Saves up to about half the loop overhead.",
+        "**Bidirectional search**: scan from both ends at once. Still O(n), but it finds items near either end sooner.",
+        "**Search in sorted data with early stop**: stop when a[i] exceeds the target. Cuts a failed search to about n/2 on average, but binary search is a better answer for large arrays.",
+        "**Move-to-front and transpose heuristics**: reorder on each hit so popular keys get cheaper.",
+        "**Count and find-all**: continue after a match and record indexes.",
+        "**Predicate and min or max scans**: the same loop with a different test, as in `find_if`, or finding the smallest element.",
+        "**SIMD linear search**: compare 16, 32 or 64 bytes at a time. This is how fast `memchr`, `strlen` and `strchr` work."
       ]
     },
     {
-      "heading": "Sentinel optimization",
-      "body": "Put the target at the end of the array as a sentinel so the loop needs only one comparison per element (no index bound check). Afterward, restore the last element and decide whether the match was real.",
-      "code": "int sentinel_search(int a[], int n, int target) {\n  int last = a[n - 1]; a[n - 1] = target;\n  int i = 0; while (a[i] != target) i++;\n  a[n - 1] = last;\n  return (i < n - 1 || last == target) ? i : -1;\n}"
+      "heading": "Complexity & Costs",
+      "bullets": [
+        "**Best case**: O(1), one comparison when the target is first.",
+        "**Average case**: about (n + 1) / 2 comparisons if the target is present and equally likely anywhere, so O(n). If the miss probability is q, the average is a bit higher.",
+        "**Worst case**: n comparisons, O(n), when the target is last or missing.",
+        "**Space**: O(1). Only an index is needed.",
+        "**Preprocessing**: none. This is its key advantage over binary search (sorting costs O(n log n)) and hash lookups (build costs O(n)).",
+        "**Break-even**: searching k times in n unsorted items costs k * n for linear, versus n log n + k log n for sort then binary search. Sorting first pays off after roughly log n searches.",
+        "**Practical speed**: a plain loop over a contiguous int array processes roughly 1 to 2 billion elements per second on a modern core; SIMD versions reach 10 times that. For arrays under about 16 to 64 elements linear search often beats binary search due to branch prediction and cache."
+      ]
+    },
+    {
+      "heading": "Common Pitfalls & Gotchas",
+      "bullets": [
+        "**Using the wrong sentinel for a miss**: returning 0 for not found collides with a valid index 0. Use -1 or a separate found flag.",
+        "**Comparing floating point values with `==`**: rounding makes equal-looking values differ. Compare with a tolerance, or avoid searching floating point by equality.",
+        "**Comparing strings with `==`** in C compares pointers, not contents. Use `strcmp`.",
+        "**Off-by-one on the bound**: `i <= n` reads one past the end of the array, which is undefined behavior.",
+        "**Sentinel trick on read-only or shared data**: writing to the array may crash on const data and is a data race in threaded code. Restore the last element and do not use it on shared arrays.",
+        "**Using linear search in a loop over another collection**: nested searches make O(n * m) code. A hash set or sorted array removes the inner scan.",
+        "**Assuming sortedness**: an early-exit variant on unsorted data returns false misses."
+      ]
+    },
+    {
+      "heading": "Real-World Use",
+      "bullets": [
+        "**Standard libraries**: `strchr`, `memchr`, `strstr` (naive), C++ `std::find`, Python `x in list` and `list.index`, Java `List.indexOf`, JavaScript `Array.indexOf`.",
+        "**Small tables**: command lookup, option parsing, and enum-to-string tables with a handful of entries.",
+        "**Linked structures**: finding a node in a list, a hash chain, or a free list.",
+        "**Unsorted data**: log scanning, `grep` on files, and database full table scans when no index exists.",
+        "**Streams**: finding the first matching event in data that cannot be indexed or buffered.",
+        "**Caches**: small fully associative lookup tables, such as a TLB or a branch target buffer in software models."
+      ]
+    },
+    {
+      "heading": "Interview Notes",
+      "bullets": [
+        "**Complexity?** O(n) time, O(1) space; best case O(1).",
+        "**When is it preferable to binary search?** Unsorted data, small n, one-time searches, linked lists.",
+        "**Does linear search need sorted data?** No, that is its main strength.",
+        "**How can you make it faster without sorting?** Sentinel, SIMD, move-to-front, or a hash index if you search many times.",
+        "**Average comparisons?** (n + 1) / 2 for a successful search with uniform position, and n for an unsuccessful one.",
+        "**Return value for not found?** -1 for indexes, NULL for pointers.",
+        "**Can you do linear search on a linked list?** Yes, and it is the only option, since binary search needs random access."
+      ]
     }
   ],
   "subtopics": [
     {
-      "title": "Searching for all occurrences",
-      "summary": "Collecting matches.",
+      "title": "Sentinel linear search",
+      "summary": "Drop the bounds check from the loop.",
       "sections": [
         {
-          "body": "Do not return on the first match; record every index (or count). Time stays O(n)."
+          "body": "The plain loop does two tests per element: i < n and a[i] == target. Place a copy of the target in the last slot first, so the scan is guaranteed to stop. The loop then needs a single comparison. After it ends, put the original last element back and decide whether the match was genuine: it is real if the stop index is before the last slot, or if the saved last element equals the target. The gain is modest on modern CPUs, but it is a classic example of removing work from the inner loop."
+        },
+        {
+          "code": "int sentinel_search(int a[], int n, int target) {\n    if (n == 0) return -1;\n    int last = a[n - 1];\n    a[n - 1] = target;                   /* guarantee termination */\n    int i = 0;\n    while (a[i] != target) i++;\n    a[n - 1] = last;                     /* restore */\n    return (i < n - 1 || last == target) ? i : -1;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Searching for all occurrences",
+      "summary": "Count or collect every match.",
+      "sections": [
+        {
+          "body": "Do not stop at the first hit. Keep scanning to the end and either count the matches or store their indexes in an output array of the right capacity. The cost is always exactly n comparisons. For a count only, no extra memory is needed. To get the first and last occurrence, remember the first hit and keep updating the last. If the array is sorted, binary search can find the first and last occurrence in O(log n) each, and the count is the difference, which is much faster for large arrays with duplicates."
         }
       ]
     },
     {
       "title": "Self-organizing lists",
-      "summary": "Move-to-front and transpose.",
+      "summary": "Reorder on access to adapt to usage.",
       "sections": [
         {
-          "body": "If some items are searched far more often, moving a found item toward the front makes future searches cheaper. Effective on skewed access patterns such as caches of recent keys."
+          "body": "If some keys are requested far more often than others, a list that moves popular keys toward the front lowers the average cost. Move-to-front moves a found element to the head, which adapts quickly but can be thrown off by one-off lookups. Transpose swaps the found element with its predecessor, which moves slowly but is stable against noise. Count keeps a hit counter and keeps the list sorted by it. Under a skewed (Zipf-like) distribution, move-to-front is within a factor of 2 of the best static ordering in the amortized sense. It is a simple way to get cache-like behavior from a plain list."
         }
       ]
     },
     {
       "title": "Linear versus binary search",
-      "summary": "The trade-off.",
+      "summary": "Where the crossover is.",
       "sections": [
         {
-          "body": "Binary search is O(log n) but requires sorted data with random access. If you search once, linear search is cheaper than sorting (O(n log n)) plus binary search. If you search many times, sort once and use binary search or a hash table."
+          "body": "Binary search needs sorted data and random access, then takes about log2 n comparisons: 20 for a million elements against 500,000 on average for linear search. But linear search has no setup cost, a perfectly predictable access pattern, and tiny code. For arrays up to roughly 16 to 64 elements the simple loop is often as fast or faster, and SIMD extends that range. Rule of thumb: one search on unsorted data, use linear; many searches on static data, sort once and use binary search or build a hash table."
         }
       ]
     },
     {
-      "title": "Search in a linked list",
-      "summary": "Pointer walk.",
+      "title": "Sequential search on linked lists and streams",
+      "summary": "When random access is not available.",
       "sections": [
         {
-          "code": "Node *find(Node *head, int key) {\n  for (Node *p = head; p; p = p->next) if (p->val == key) return p;\n  return NULL;\n}"
+          "body": "A singly linked list gives only forward access to the next node, so even if it is sorted, you cannot jump to the middle in O(1). Linear search is therefore the standard lookup, with O(n) time and pointer chasing that is hard on caches. Streams and files read through a buffer behave the same way: process the items as they arrive and stop at the first match. For repeated lookups, build an auxiliary index (hash map from key to node) or switch to a skip list or balanced tree, which offer O(log n) search with pointer-based storage."
         }
       ]
     },
     {
-      "title": "Early termination on sorted data",
-      "summary": "A small gain.",
+      "title": "Predicate search and search by key",
+      "summary": "Generalizing the equality test.",
       "sections": [
         {
-          "body": "If the data is sorted ascending, stop as soon as an element exceeds the target. This halves the average cost for absent targets but is still O(n)."
+          "body": "Real code rarely compares plain ints. Search a struct array by a field, or by any condition, by passing a comparison or a predicate. In C this is a function pointer; the C++ equivalent is `std::find_if` and the Java one is a stream filter. The loop structure is unchanged, so the cost is still O(n) evaluations of the predicate. Be careful that the predicate has no side effects and is cheap, because it runs on every element."
+        },
+        {
+          "code": "typedef int (*pred_fn)(const void *elem, void *ctx);\n\n/* Returns pointer to first element for which pred is nonzero, else NULL */\nvoid *find_if(const void *base, size_t n, size_t size, pred_fn pred, void *ctx) {\n    const char *p = base;\n    for (size_t i = 0; i < n; i++, p += size)\n        if (pred(p, ctx)) return (void *)p;\n    return NULL;\n}"
+        }
+      ]
+    },
+    {
+      "title": "Fast linear search with SIMD and word tricks",
+      "summary": "How libraries make O(n) very quick.",
+      "sections": [
+        {
+          "body": "The big-O is unchanged, but the constant can be tiny. `memchr` compares 16 to 64 bytes per instruction with SSE2, AVX2 or NEON by broadcasting the target and comparing for equality, then extracting a bitmask of matches. Word-at-a-time tricks do the same for 8 bytes in plain C, for example the zero-byte detection expression used in `strlen`. Loop unrolling and prefetching help too. This is the reason you should call `memchr` instead of writing a byte loop, and why linear scans over contiguous data are far cheaper than their big-O suggests."
         }
       ]
     }
   ],
   "takeaways": [
-    "Check each element in order: O(n) time, O(1) space.",
-    "Works on unsorted data and linked lists.",
-    "Best for small or one-off searches.",
-    "Sentinels and move-to-front are micro-optimizations."
+    "Check elements in order until you hit the target or run out: O(n) time, O(1) space.",
+    "Needs no sorting and no random access, so it works on lists, files and streams.",
+    "Best case 1 comparison, average about n/2, worst case n.",
+    "Fastest choice for small data and one-off searches; sorting or hashing is only worth it for repeated searches.",
+    "A sentinel removes the bounds check from the loop; move-to-front adapts to skewed access.",
+    "Never use `==` for strings or floats; return -1, not 0, for not found.",
+    "SIMD versions such as `memchr` make linear scans many times faster without changing big-O."
+  ],
+  "practice": [
+    {
+      "title": "Implement linear search that returns the first matching index or -1",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Return the count and positions of every occurrence of a value",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Implement sentinel linear search and prove it handles a miss correctly",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the first element greater than a threshold in an unsorted array",
+      "difficulty": "Easy"
+    },
+    {
+      "title": "Search a linked list for a value and return the node before it",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Implement a move-to-front list and measure comparisons on a skewed workload",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Find the first and last position of a value in a sorted array, and explain why not to use linear search",
+      "difficulty": "Medium"
+    },
+    {
+      "title": "Write a word-at-a-time memchr in plain C",
+      "difficulty": "Hard"
+    }
   ],
   "references": [
     {
-      "label": "CLRS: Introduction to Algorithms, 4th ed.",
+      "label": "CLRS: Introduction to Algorithms, 4th ed. (Chapter 2, exercises on linear search)",
       "url": "https://mitpress.mit.edu/9780262046305/introduction-to-algorithms/"
+    },
+    {
+      "label": "Sedgewick & Wayne: Algorithms, 4th ed. (Searching)",
+      "url": "https://algs4.cs.princeton.edu/home/"
     },
     {
       "label": "Reference: Linear search (GeeksforGeeks)",
       "url": "https://www.geeksforgeeks.org/linear-search/"
-    }
-  ],
-  "practice": [
-    {
-      "title": "Return the index of the first occurrence",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Count all occurrences of a value",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Implement sentinel linear search",
-      "difficulty": "Medium"
-    },
-    {
-      "title": "Find the second occurrence",
-      "difficulty": "Easy"
-    },
-    {
-      "title": "Search a linked list for a key",
-      "difficulty": "Easy"
     }
   ]
 }
