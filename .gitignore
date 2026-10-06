@@ -77,3 +77,6 @@ lint-results.json
 # Temporary files
 *.tmp
 *.temp
+
+# Copyrighted study material (see reference-data/README.md); never ship or publish
+reference-data/
